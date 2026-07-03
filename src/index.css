@@ -1,0 +1,138 @@
+:root {
+  color-scheme: light;
+
+  --ao-blue: #3F5BD9;
+  --ao-blue-hover: #354CB5;
+  --ao-blue-surface: #E8ECFC;
+  --ao-blue-bg: #F1F4FD;
+  --ao-green: #008F75;
+  --ao-green-bg: #F0FAF5;
+  --ao-red: #D64D4D;
+  --ao-red-bg: #FFF2F2;
+  --ao-purple: #581DBE;
+  --ao-gold: #FF9933;
+  --ao-bold: #253040;
+  --ao-base: #425061;
+  --ao-caption: #717A89;
+  --ao-placeholder: #959FB0;
+  --ao-bg: #F5F7FA;
+  --ao-surface: #FFFFFF;
+  --ao-surface-2: #F1F4FD;
+  --ao-hover: #F5F7FA;
+  --ao-border: #DDDFE4;
+  --ao-border-soft: #EAEBF1;
+  --shadow-card: 0 1px 2px rgba(43, 47, 63, .06), 0 4px 16px rgba(43, 47, 63, .06);
+  --shadow-pop: 0 4px 24px rgba(0, 0, 0, .12);
+  --radius: 10px;
+
+  font-family: Roboto, ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--ao-bg);
+  color: var(--ao-base);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: var(--ao-blue-surface);
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #cdd2dc;
+  border: 2px solid transparent;
+  border-radius: 9px;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #b6bdca;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell {
+  height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ao-bg);
+}
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 18px;
+  background: var(--ao-bg);
+}
+
+.page-shell {
+  height: 100%;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.MuiPaper-root {
+  border-color: var(--ao-border-soft);
+}
+
+table {
+  color: var(--ao-base);
+}
+
+th {
+  color: var(--ao-caption);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+td {
+  color: var(--ao-base);
+  font-size: 0.8125rem;
+}
