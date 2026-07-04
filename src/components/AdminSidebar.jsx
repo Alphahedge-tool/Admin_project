@@ -21,6 +21,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  Rss,
   Scale,
   TrendingUp,
   UserRound,
@@ -185,6 +186,11 @@ function AdminSidebar() {
               <ListItemButton component={Link} to="/admin/masters/brokers" sx={navSx('/admin/masters/brokers', true)}>
                 <NavIcon><UserRound size={15} /></NavIcon>
                 <ListItemText primary="Broker Master" />
+              </ListItemButton>
+
+              <ListItemButton component={Link} to="/admin/masters/feedmaster" sx={navSx('/admin/masters/feedmaster', true)}>
+                <NavIcon><Rss size={15} /></NavIcon>
+                <ListItemText primary="Feedmaster" />
               </ListItemButton>
             </List>
           </AccordionDetails>

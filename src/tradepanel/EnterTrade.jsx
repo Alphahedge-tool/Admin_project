@@ -4,8 +4,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Crosshair, LoaderCircle, Search, X } from 'lucide-react';
 import Basket from './Basket.jsx';
-import AngelAccountBar from './AngelAccountBar';
 import { useAngelAccount } from './useAngelAccount';
+import { loginAngelClient, useFeedMasterAccount } from '../feedmaster/feedMasterStore';
 import './tradepanel.css';
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -15,10 +15,16 @@ import './tradepanel.css';
    ══════════════════════════════════════════════════════════════════════ */
 export default function EnterTrade() {
   const acc = useAngelAccount();
+  const feedMaster = useFeedMasterAccount();
   return (
     <div className="trade-panel">
-      <AngelAccountBar {...acc} />
-      <Strategies clients={acc.clients} demoMode={false} onClientSession={acc.handleClientSession} />
+      <Strategies
+        clients={acc.clients}
+        demoMode={false}
+        feedMasterClient={feedMaster.client}
+        onClientSession={acc.handleClientSession}
+        onFeedMasterSession={feedMaster.handleSession}
+      />
     </div>
   );
 }
@@ -26,13 +32,15 @@ export default function EnterTrade() {
 /* ══════════════════════════════════════════════════════════════════════
    Strategies — basket legs + option chain (port of main.jsx Strategies).
    ══════════════════════════════════════════════════════════════════════ */
-function Strategies({ clients, demoMode, onClientSession }) {
+function Strategies({ clients, demoMode, feedMasterClient, onClientSession, onFeedMasterSession }) {
   const [legs, setLegs] = useState([]);
   const legsRef = useRef([]);
   legsRef.current = legs;
   const [marginClient, setMarginClient] = useState(null);
   const marginClientRef = useRef(null);
   marginClientRef.current = marginClient;
+  const feedMasterClientRef = useRef(null);
+  feedMasterClientRef.current = feedMasterClient;
   const [margin, setMargin] = useState({ status: 'idle', value: 0, message: '' });
   const [charges, setCharges] = useState({ status: 'idle', value: 0, message: '' });
   const [expiryIndex, setExpiryIndex] = useState({});
@@ -217,29 +225,49 @@ function Strategies({ clients, demoMode, onClientSession }) {
   }, [legs]);
 
   useEffect(() => {
-    const client = marginClientRef.current;
-    const session = client?.session;
-    if (!session?.jwtToken || !session?.feedToken) return;
+    let cancelled = false;
 
-    const items = (legFeedKey ? legFeedKey.split(',') : []).map((pair) => {
-      const [exchange, token] = pair.split('|');
-      return { exchange, token };
-    });
+    async function syncBasketFeed() {
+      const client = feedMasterClientRef.current || marginClientRef.current;
+      let session = client?.session;
+      if (!client) return;
 
-    fetch('/api/angel/basket-tokens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        credentials: {
-          jwtToken: session.jwtToken,
-          feedToken: session.feedToken,
-          apiKey: client.apiKey,
-          clientCode: client.clientCode,
-        },
-        items,
-      }),
-    }).catch((error) => console.error('basket-tokens sync failed:', error));
-  }, [legFeedKey, marginClient]);
+      const items = (legFeedKey ? legFeedKey.split(',') : []).map((pair) => {
+        const [exchange, token] = pair.split('|');
+        return { exchange, token };
+      });
+
+      if (!items.length && (!session?.jwtToken || !session?.feedToken)) return;
+
+      if (feedMasterClientRef.current && (!session?.jwtToken || !session?.feedToken)) {
+        const login = await loginAngelClient(client);
+        session = login.session || null;
+        if (session?.jwtToken) onFeedMasterSession?.(session);
+      }
+
+      if (cancelled || !session?.jwtToken || !session?.feedToken) return;
+
+      fetch('/api/angel/basket-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          credentials: {
+            jwtToken: session.jwtToken,
+            feedToken: session.feedToken,
+            apiKey: client.apiKey,
+            clientCode: client.clientCode,
+          },
+          items,
+        }),
+      }).catch((error) => console.error('basket-tokens sync failed:', error));
+    }
+
+    syncBasketFeed().catch((error) => console.error('basket-tokens sync failed:', error));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [legFeedKey, marginClient, feedMasterClient, onFeedMasterSession]);
 
   const removeLeg = useCallback((id) => {
     setLegs((current) => current.filter((leg) => leg.id !== id));
@@ -394,6 +422,8 @@ function Strategies({ clients, demoMode, onClientSession }) {
         clients={clients}
         demoMode={demoMode}
         onClientSession={onClientSession}
+        feedMasterClient={feedMasterClient}
+        onFeedMasterSession={onFeedMasterSession}
         onAddLeg={addLeg}
         onMarginContext={setMarginClient}
         onExpiryIndex={setExpiryIndex}
@@ -426,7 +456,17 @@ function Strategies({ clients, demoMode, onClientSession }) {
 /* ══════════════════════════════════════════════════════════════════════
    Option chain panel (port of main.jsx OptionChainPanel).
    ══════════════════════════════════════════════════════════════════════ */
-const OptionChainPanel = React.memo(function OptionChainPanel({ clients, demoMode, onClientSession, onAddLeg, onMarginContext, onExpiryIndex, onLiveTicks }) {
+const OptionChainPanel = React.memo(function OptionChainPanel({
+  clients,
+  demoMode,
+  feedMasterClient,
+  onClientSession,
+  onFeedMasterSession,
+  onAddLeg,
+  onMarginContext,
+  onExpiryIndex,
+  onLiveTicks,
+}) {
   const [chainIndex, setChainIndex] = useState({});
   const [clientIndex, setClientIndex] = useState(0);
   const [symbol, setSymbol] = useState('');
@@ -456,6 +496,8 @@ const OptionChainPanel = React.memo(function OptionChainPanel({ clients, demoMod
   const expiryRef = useRef('');
   const exchangeRef = useRef('NFO');
   const lotSizeRef = useRef(1);
+  const feedMasterClientRef = useRef(null);
+  feedMasterClientRef.current = feedMasterClient;
 
   useEffect(() => () => {
     closeStream(esRef);
@@ -666,8 +708,35 @@ const OptionChainPanel = React.memo(function OptionChainPanel({ clients, demoMod
 
   async function startLiveFeed(body) {
     const tokens = body.liveTokens || [];
-    if (!body.feed?.feedToken || !tokens.length) {
-      setStatus('Loaded (live feed unavailable - no feed token)');
+    if (!tokens.length) {
+      setStatus('Loaded (no live tokens available)');
+      feedSpotTokenRef.current = null;
+      feedTokenSetRef.current = new Set();
+      setFeedOn(false);
+      return;
+    }
+
+    let feedCredentials = body.feed || null;
+    const masterClient = feedMasterClientRef.current;
+    if (masterClient) {
+      let masterSession = masterClient.session;
+      if (!masterSession?.jwtToken || !masterSession?.feedToken) {
+        setStatus('Logging in Feedmaster for live feed...');
+        const login = await loginAngelClient(masterClient);
+        masterSession = login.session || null;
+        if (masterSession?.jwtToken) onFeedMasterSession?.(masterSession);
+      }
+
+      feedCredentials = masterSession?.jwtToken && masterSession?.feedToken ? {
+        jwtToken: masterSession.jwtToken,
+        feedToken: masterSession.feedToken,
+        apiKey: masterClient.apiKey,
+        clientCode: masterClient.clientCode,
+      } : null;
+    }
+
+    if (!feedCredentials?.feedToken) {
+      setStatus(masterClient ? 'Loaded (Feedmaster has no feed token)' : 'Loaded (live feed unavailable - no feed token)');
       feedSpotTokenRef.current = null;
       feedTokenSetRef.current = new Set();
       setFeedOn(false);
@@ -683,7 +752,7 @@ const OptionChainPanel = React.memo(function OptionChainPanel({ clients, demoMod
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          credentials: body.feed,
+          credentials: feedCredentials,
           exchange: body.exchange,
           tokens,
           spot: body.spotToken ? { token: body.spotToken, exchange: body.spotExchange } : null,
