@@ -1,111 +1,398 @@
-import { useState } from 'react'
-import {
-  Box,
-  Typography,
-  Paper,
-  Button,
-  Divider
-} from '@mui/material'
-import { apiPost } from '../config/api'
+import { useEffect, useState } from 'react'
+import { apiGet, apiPost } from '../config/api'
+import { getSavedSession, isAngelBroker } from '../feedmaster/feedMasterStore'
+import { compactProductTag, parseTradingSymbol } from '../tradepanel/symbolParse'
+import { CompactSelect } from '../tradepanel/PositionSelect'
+import '../tradepanel/tradepanel.css'
+
+function money(v) {
+  const n = Number(v || 0)
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function priceCell(value, strong = false) {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n) || n === 0) return <span className="position-price-muted">-</span>
+  return <span className={strong ? 'position-price ltp' : 'position-price'}>{money(n)}</span>
+}
 
 function SyncNetPositions() {
+  const [users, setUsers] = useState([])
+  const [userId, setUserId] = useState('')
+  const [configs, setConfigs] = useState([])
+  const [configId, setConfigId] = useState('')
+  const [status, setStatus] = useState('Select a user and account')
   const [running, setRunning] = useState(false)
+  const [configLoading, setConfigLoading] = useState(false)
   const [log, setLog] = useState([])
   const [summary, setSummary] = useState(null)
+  const [strategies, setStrategies] = useState([])
+  const [strategiesLoading, setStrategiesLoading] = useState(false)
 
-  const startSync = async () => {
-    setRunning(true)
+  const selectedConfig = configs.find((config) => String(config.id) === String(configId))
+  const selectedBrokerName = selectedConfig?.broker_name || ''
+  const selectedIsAngel = isAngelBroker(selectedBrokerName)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadUsers() {
+      try {
+        const [usersOut, authOut] = await Promise.allSettled([
+          apiGet('/users/list.php'),
+          apiGet('/auth/me.php'),
+        ])
+        if (cancelled) return
+
+        if (usersOut.status !== 'fulfilled') {
+          setStatus('Failed to load users')
+          return
+        }
+
+        const list = usersOut.value.data || []
+        setUsers(list)
+        const auth = authOut.status === 'fulfilled' ? authOut.value : null
+        const principal = auth?.user || auth?.admin || auth?.data || auth || {}
+        const current = findLoggedInUser(list, principal) || list[0]
+        if (current?.id) {
+          setUserId(String(current.id))
+          setStatus(`Select account for ${current.username || 'user'}`)
+        } else {
+          setStatus('No users available')
+        }
+      } catch {
+        if (!cancelled) setStatus('Failed to load users')
+      }
+    }
+
+    loadUsers()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadConfigs() {
+      if (!userId) {
+        setConfigs([])
+        setConfigId('')
+        return
+      }
+
+      setConfigLoading(true)
+      setLog([])
+      setSummary(null)
+      try {
+        const res = await apiGet(`/users/broker-config/list.php?user_id=${userId}`)
+        if (cancelled) return
+
+        const list = res.data || []
+        setConfigs(list)
+        setConfigId(String(list[0]?.id || ''))
+        setStatus(list.length ? '' : 'No broker accounts configured for this user')
+      } catch {
+        if (!cancelled) setStatus('Failed to load broker accounts')
+      } finally {
+        if (!cancelled) setConfigLoading(false)
+      }
+    }
+
+    loadConfigs()
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  // Show the strategies (and their legs) this user has saved.
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadStrategies() {
+      if (!userId) {
+        setStrategies([])
+        return
+      }
+
+      setStrategiesLoading(true)
+      try {
+        const res = await apiGet(`/strategy-master/list.php?user_id=${userId}`)
+        if (!cancelled) setStrategies(res.data || [])
+      } catch {
+        if (!cancelled) setStrategies([])
+      } finally {
+        if (!cancelled) setStrategiesLoading(false)
+      }
+    }
+
+    loadStrategies()
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  useEffect(() => {
     setLog([])
     setSummary(null)
 
+    if (!selectedConfig) return
+    if (!selectedIsAngel) {
+      setStatus(`${selectedBrokerName || 'Selected broker'} sync is not wired yet`)
+      return
+    }
+
+    const session = getSavedSession(configId)
+    setStatus(session?.jwtToken ? '' : 'This account is not logged in. Login from Broker Configuration first.')
+  }, [configId, selectedBrokerName, selectedConfig, selectedIsAngel])
+
+  const startSync = async () => {
+    if (!selectedConfig) {
+      setStatus('Select an account first')
+      return
+    }
+    if (!selectedIsAngel) {
+      setStatus(`${selectedBrokerName || 'Selected broker'} sync is not wired yet`)
+      return
+    }
+    if (!getSavedSession(configId)?.jwtToken) {
+      setStatus('This account is not logged in. Login from Broker Configuration first.')
+      return
+    }
+
+    setRunning(true)
+    setLog([])
+    setSummary(null)
+    setStatus('Syncing net positions...')
+
     try {
       const res = await apiPost('/transactions/sync-net-positions.php', {
-        live: true
+        live: true,
+        user_id: userId,
+        broker_config_id: configId,
       })
 
-      setSummary(res.summary)
+      setSummary(res.summary || null)
       setLog(res.log || [])
-    } catch (e) {
-      setLog(prev => [...prev, '❌ Sync failed'])
+      setStatus('Sync completed')
+    } catch (error) {
+      setStatus(error.message || 'Sync failed')
+      setLog((prev) => [...prev, 'Sync failed'])
     } finally {
       setRunning(false)
     }
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h5" fontWeight={600} mb={2}>
-        Sync Net Positions
-      </Typography>
+    <div className="trade-panel">
+      <div className="positions-view">
+        <div className="positions-toolbar">
+          <CompactSelect
+            title="User"
+            value={userId}
+            onChange={setUserId}
+            options={users.map((user) => ({
+              value: String(user.id),
+              label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
+            }))}
+          />
 
-      <Paper sx={{ p: 3, maxWidth: 700 }}>
-        <Typography fontSize="0.9rem" color="text.secondary">
-          This will sync net positions for all active Angel accounts.
-        </Typography>
+          <CompactSelect
+            title="Account"
+            value={configId}
+            onChange={setConfigId}
+            disabled={configLoading || !configs.length}
+            options={configs.map((config) => ({
+              value: String(config.id),
+              label: config.account_id || `Account ${config.id}`,
+              meta: config.broker_name || 'Broker',
+            }))}
+          />
 
-        <Divider sx={{ my: 2 }} />
+          <button
+            className="positions-load-btn"
+            onClick={startSync}
+            disabled={running || !selectedConfig}
+            type="button"
+          >
+            {running ? 'Syncing' : 'Sync Net Positions'}
+          </button>
 
-        <Button
-          variant="contained"
-          disabled={running}
-          onClick={startSync}
-        >
-          {running ? 'Syncing…' : 'Start Sync'}
-        </Button>
+          {summary && (
+            <span className="positions-total up">
+              Synced: {summary.success || 0} / {summary.total_accounts || 0}
+            </span>
+          )}
+          {status && <span className="positions-status">{status}</span>}
+        </div>
 
-        {/* STATUS */}
-        {running && (
-          <Typography sx={{ mt: 2 }} color="primary">
-            🔄 Syncing records…
-          </Typography>
-        )}
+        <div className="positions-table-wrap">
+          <table className="positions-table">
+            <thead>
+              <tr>
+                <th>Result</th>
+                <th className="num">Total Accounts</th>
+                <th className="num">Success</th>
+                <th className="num">Failed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary ? (
+                <tr>
+                  <td>Net positions sync completed</td>
+                  <td className="num">{summary.total_accounts || 0}</td>
+                  <td className="num up">{summary.success || 0}</td>
+                  <td className="num down">{summary.failed || 0}</td>
+                </tr>
+              ) : (
+                <tr>
+                  <td className="positions-empty" colSpan={4}>No sync result to show</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
-        {/* SUMMARY */}
-        {summary && (
-          <Box sx={{ mt: 3 }}>
-            <Typography fontWeight={600}>
-              Total Active Accounts: {summary.total_accounts}
-            </Typography>
-            <Typography fontSize="0.9rem" color="green">
-              Successfully Synced: {summary.success}
-            </Typography>
-            <Typography fontSize="0.9rem" color="red">
-              Failed: {summary.failed}
-            </Typography>
-          </Box>
-        )}
-
-        {/* LIVE LOG */}
         {log.length > 0 && (
-          <Box sx={{ mt: 3 }}>
-            <Typography fontWeight={600} mb={1}>
-              Sync Log
-            </Typography>
-
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                maxHeight: 300,
-                overflowY: 'auto',
-                background: '#f9fafb'
-              }}
-            >
-              {log.map((l, i) => (
-                <Typography
-                  key={i}
-                  fontSize="0.8rem"
-                  sx={{ mb: 0.5 }}
-                >
-                  {l}
-                </Typography>
-              ))}
-            </Paper>
-          </Box>
+          <div className="positions-table-wrap sync-log-wrap">
+            <table className="positions-table">
+              <thead>
+                <tr>
+                  <th>Sync Log</th>
+                </tr>
+              </thead>
+              <tbody>
+                {log.map((item, index) => (
+                  <tr key={`${index}-${item}`}>
+                    <td>{item}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Paper>
-    </Box>
+
+        {userId && (
+          <div className="strategy-list">
+            <div className="strategy-list-head">
+              <strong>Saved Strategies</strong>
+              <span>
+                {strategiesLoading
+                  ? 'Loading…'
+                  : `${strategies.length} ${strategies.length === 1 ? 'strategy' : 'strategies'}`}
+              </span>
+            </div>
+
+            {!strategiesLoading && strategies.length === 0 && (
+              <div className="strategy-list-empty">No strategies saved for this user yet</div>
+            )}
+
+            {strategies.map((strategy) => {
+              const legs = strategy.legs || []
+              const totalPnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
+              return (
+                <div className="strategy-card" key={strategy.strategy_code}>
+                  <div className="strategy-card-head">
+                    <div className="strategy-card-title">
+                      <strong>{strategy.strategy_name}</strong>
+                    </div>
+                    <div className="strategy-card-meta">
+                      <span>{legs.length} {legs.length === 1 ? 'leg' : 'legs'}</span>
+                      <span className={totalPnl >= 0 ? 'up' : 'down'}>P&amp;L {money(totalPnl)}</span>
+                    </div>
+                  </div>
+
+                  {legs.length > 0 ? (
+                    <div className="positions-table-wrap">
+                      <table className="positions-table position-book-table strategy-legs-table">
+                        <thead>
+                          <tr>
+                            <th>Stock Name</th>
+                            <th>Product Type</th>
+                            <th className="num">Net Qty.</th>
+                            <th className="num">Buy Avg</th>
+                            <th className="num">Sell Avg</th>
+                            <th className="num">LTP</th>
+                            <th className="num">P&amp;L</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {legs.map((leg) => {
+                            const parsed = parseTradingSymbol(leg.trading_symbol)
+                            const qty = Number(leg.net_qty || 0)
+                            const pnl = Number(leg.pnl || 0)
+                            return (
+                              <tr key={leg.id} className={qty < 0 ? 'position-row-short' : ''}>
+                                <td>
+                                  <div className="position-symbol-line" title={leg.trading_symbol}>
+                                    <strong>{parsed.root}</strong>
+                                    {parsed.expiry && <span className="position-expiry">{parsed.expiry}</span>}
+                                    {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
+                                    {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
+                                    {leg.exchange && <span className="book-tag exchange">{leg.exchange}</span>}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="book-product-cell">
+                                    {qty !== 0 && <span className={`book-tag side ${qty > 0 ? 'buy' : 'sell'}`}>{qty > 0 ? 'LONG' : 'SHORT'}</span>}
+                                    <span className="book-tag product">{compactProductTag(leg.product_type)}</span>
+                                  </div>
+                                </td>
+                                <td className="num">
+                                  <div className="book-qty-cell">
+                                    <span className={qty >= 0 ? 'up' : 'down'}>{qty.toLocaleString('en-IN')}</span>
+                                  </div>
+                                </td>
+                                <td className="num">{priceCell(leg.buy_avg)}</td>
+                                <td className="num">{priceCell(leg.sell_avg)}</td>
+                                <td className="num">{priceCell(leg.ltp, true)}</td>
+                                <td className="num">
+                                  <span className={`position-pnl-value ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="strategy-card-nolegs">No legs saved for this strategy</div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   )
+}
+
+function findLoggedInUser(users, principal = {}) {
+  const candidates = [
+    principal.id,
+    principal.user_id,
+    principal.userId,
+    principal.admin_id,
+  ].filter((value) => value != null).map(String)
+
+  if (candidates.length) {
+    const byId = users.find((user) => candidates.includes(String(user.id)))
+    if (byId) return byId
+  }
+
+  const names = [
+    principal.username,
+    principal.user_name,
+    principal.email,
+  ].filter(Boolean).map((value) => String(value).toLowerCase())
+
+  if (!names.length) return null
+  return users.find((user) => {
+    const username = String(user.username || '').toLowerCase()
+    const email = String(user.email || '').toLowerCase()
+    return names.includes(username) || names.includes(email)
+  }) || null
 }
 
 export default SyncNetPositions
