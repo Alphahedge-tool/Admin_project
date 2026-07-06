@@ -916,7 +916,7 @@ const OptionChainPanel = React.memo(function OptionChainPanel({
             };
           })}
         />
-        <button className="chain-icon-btn" disabled={loading} onClick={refreshMaster} type="button" title="Refresh master">↻</button>
+        <button className="chain-icon-btn" disabled={loading} onClick={refreshMaster} type="button" data-tip="Refresh master" aria-label="Refresh master">↻</button>
         <button className="load-chain-btn" disabled={loading} onClick={loadChain} type="button">
           {loading && <LoaderCircle className="load-chain-spinner" size={14} />}
           <span>{loading ? 'LOADING' : 'LOAD'}</span>
@@ -1007,7 +1007,7 @@ const OptionChainPanel = React.memo(function OptionChainPanel({
         </table>
       </div>
       {showAtmButton && (
-        <button className="atm-jump-btn" type="button" onClick={() => scrollToAtm()} title="Back to ATM strike">
+        <button className="atm-jump-btn" type="button" onClick={() => scrollToAtm()} data-tip="Back to ATM strike" aria-label="Back to ATM strike">
           <Crosshair size={15} />
           <span className="atm-jump-label">ATM</span>
           <strong>{atm}</strong>

@@ -130,7 +130,8 @@ export default function Basket({
           <button
             className="basket-rename"
             type="button"
-            title="Rename basket"
+            data-tip="Rename basket"
+            aria-label="Rename basket"
             onClick={() => setEditingName(true)}
           >
             <Pencil size={13} />
@@ -139,8 +140,8 @@ export default function Basket({
         </div>
         <BasketSearch onAdd={addFromSearch} />
         <div className="basket-window-actions">
-          <button className="basket-window-btn" type="button" title="Minimise"><Minus size={15} /></button>
-          <button className="basket-window-btn" type="button" title="Close basket" onClick={onClose}><X size={15} /></button>
+          <button className="basket-window-btn" type="button" data-tip="Minimise" aria-label="Minimise"><Minus size={15} /></button>
+          <button className="basket-window-btn" type="button" data-tip="Close basket" aria-label="Close basket" onClick={onClose}><X size={15} /></button>
         </div>
       </header>
 

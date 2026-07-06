@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AlignJustify, Table, ArrowUpDown } from 'lucide-react'
 import { apiGet, apiPost } from '../config/api'
 import { getSavedSession, isAngelBroker } from '../feedmaster/feedMasterStore'
 import { compactProductTag, parseTradingSymbol } from '../tradepanel/symbolParse'
@@ -16,6 +17,114 @@ function priceCell(value, strong = false) {
   return <span className={strong ? 'position-price ltp' : 'position-price'}>{money(n)}</span>
 }
 
+function CompactLegs({ legs }) {
+  return (
+    <div className="compact-legs">
+      <div className="compact-leg-row compact-leg-head">
+        <span />
+        <span>Symbol</span>
+        <span>Qty</span>
+        <span>Buy Avg</span>
+        <span>Sell Avg</span>
+        <span>LTP</span>
+        <span>P&amp;L</span>
+      </div>
+      {legs.map((leg) => {
+        const parsed = parseTradingSymbol(leg.trading_symbol)
+        const qty = Number(leg.net_qty || 0)
+        const pnl = Number(leg.pnl || 0)
+        return (
+          <div className="compact-leg-row" key={leg.id} title={leg.trading_symbol}>
+            <span className={`book-tag side ${qty >= 0 ? 'buy' : 'sell'}`}>{qty >= 0 ? 'B' : 'S'}</span>
+            <span className="compact-leg-symbol">
+              <strong>{parsed.root}</strong>
+              {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
+              {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
+            </span>
+            <span className={`compact-leg-qty ${qty >= 0 ? 'up' : 'down'}`}>{qty.toLocaleString('en-IN')}</span>
+            <span className="compact-leg-cell">{priceCell(leg.buy_avg)}</span>
+            <span className="compact-leg-cell">{priceCell(leg.sell_avg)}</span>
+            <span className="compact-leg-cell compact-leg-ltp">{priceCell(leg.ltp, true)}</span>
+            <span className={`compact-leg-pnl ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function LegsTable({ legs, title }) {
+  const sidePnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
+  return (
+    <div className="positions-table-wrap">
+      {title && (
+        <div className="legs-table-title">
+          <span className="legs-table-title-label">{title}</span>
+          <span className={`legs-table-title-pnl ${sidePnl >= 0 ? 'up' : 'down'}`}>
+            P&amp;L {money(sidePnl)}
+          </span>
+        </div>
+      )}
+      <table className="positions-table position-book-table strategy-legs-table">
+        <thead>
+          <tr>
+            <th>Stock Name</th>
+            <th>Product Type</th>
+            <th className="num">Net Qty.</th>
+            <th className="num">Buy Avg</th>
+            <th className="num">Sell Avg</th>
+            <th className="num">LTP</th>
+            <th className="num">P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody>
+          {legs.length === 0 ? (
+            <tr>
+              <td className="positions-empty" colSpan={7}>No {title ? title.toLowerCase() : ''} legs</td>
+            </tr>
+          ) : (
+            legs.map((leg) => {
+              const parsed = parseTradingSymbol(leg.trading_symbol)
+              const qty = Number(leg.net_qty || 0)
+              const pnl = Number(leg.pnl || 0)
+              return (
+                <tr key={leg.id} className={qty < 0 ? 'position-row-short' : ''}>
+                  <td>
+                    <div className="position-symbol-line" title={leg.trading_symbol}>
+                      <strong>{parsed.root}</strong>
+                      {parsed.expiry && <span className="position-expiry">{parsed.expiry}</span>}
+                      {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
+                      {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
+                      {leg.exchange && <span className="book-tag exchange">{leg.exchange}</span>}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="book-product-cell">
+                      {qty !== 0 && <span className={`book-tag side ${qty > 0 ? 'buy' : 'sell'}`}>{qty > 0 ? 'LONG' : 'SHORT'}</span>}
+                      <span className="book-tag product">{compactProductTag(leg.product_type)}</span>
+                    </div>
+                  </td>
+                  <td className="num">
+                    <div className="book-qty-cell">
+                      <span className={qty >= 0 ? 'up' : 'down'}>{qty.toLocaleString('en-IN')}</span>
+                    </div>
+                  </td>
+                  <td className="num">{priceCell(leg.buy_avg)}</td>
+                  <td className="num">{priceCell(leg.sell_avg)}</td>
+                  <td className="num">{priceCell(leg.ltp, true)}</td>
+                  <td className="num">
+                    <span className={`position-pnl-value ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
+                  </td>
+                </tr>
+              )
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function SyncNetPositions() {
   const [users, setUsers] = useState([])
   const [userId, setUserId] = useState('')
@@ -28,6 +137,7 @@ function SyncNetPositions() {
   const [summary, setSummary] = useState(null)
   const [strategies, setStrategies] = useState([])
   const [strategiesLoading, setStrategiesLoading] = useState(false)
+  const [view, setView] = useState('normal') // 'compact' | 'normal' | 'buysell'
 
   const selectedConfig = configs.find((config) => String(config.id) === String(configId))
   const selectedBrokerName = selectedConfig?.broker_name || ''
@@ -224,6 +334,39 @@ function SyncNetPositions() {
             </span>
           )}
           {status && <span className="positions-status">{status}</span>}
+
+          <div className="view-toggle" role="group" aria-label="Table view">
+            <button
+              type="button"
+              className={`view-toggle-btn ${view === 'compact' ? 'active' : ''}`}
+              onClick={() => setView('compact')}
+              data-tip="Compact view"
+              aria-label="Compact view"
+              aria-pressed={view === 'compact'}
+            >
+              <AlignJustify size={16} />
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${view === 'normal' ? 'active' : ''}`}
+              onClick={() => setView('normal')}
+              data-tip="Normal view"
+              aria-label="Normal view"
+              aria-pressed={view === 'normal'}
+            >
+              <Table size={16} />
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${view === 'buysell' ? 'active' : ''}`}
+              onClick={() => setView('buysell')}
+              data-tip="Buy / Sell view"
+              aria-label="Buy / Sell view"
+              aria-pressed={view === 'buysell'}
+            >
+              <ArrowUpDown size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="positions-table-wrap">
@@ -273,7 +416,7 @@ function SyncNetPositions() {
         )}
 
         {userId && (
-          <div className="strategy-list">
+          <div className={`strategy-list strategy-list--${view}`}>
             <div className="strategy-list-head">
               <strong>Saved Strategies</strong>
               <span>
@@ -303,58 +446,16 @@ function SyncNetPositions() {
                   </div>
 
                   {legs.length > 0 ? (
-                    <div className="positions-table-wrap">
-                      <table className="positions-table position-book-table strategy-legs-table">
-                        <thead>
-                          <tr>
-                            <th>Stock Name</th>
-                            <th>Product Type</th>
-                            <th className="num">Net Qty.</th>
-                            <th className="num">Buy Avg</th>
-                            <th className="num">Sell Avg</th>
-                            <th className="num">LTP</th>
-                            <th className="num">P&amp;L</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {legs.map((leg) => {
-                            const parsed = parseTradingSymbol(leg.trading_symbol)
-                            const qty = Number(leg.net_qty || 0)
-                            const pnl = Number(leg.pnl || 0)
-                            return (
-                              <tr key={leg.id} className={qty < 0 ? 'position-row-short' : ''}>
-                                <td>
-                                  <div className="position-symbol-line" title={leg.trading_symbol}>
-                                    <strong>{parsed.root}</strong>
-                                    {parsed.expiry && <span className="position-expiry">{parsed.expiry}</span>}
-                                    {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
-                                    {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
-                                    {leg.exchange && <span className="book-tag exchange">{leg.exchange}</span>}
-                                  </div>
-                                </td>
-                                <td>
-                                  <div className="book-product-cell">
-                                    {qty !== 0 && <span className={`book-tag side ${qty > 0 ? 'buy' : 'sell'}`}>{qty > 0 ? 'LONG' : 'SHORT'}</span>}
-                                    <span className="book-tag product">{compactProductTag(leg.product_type)}</span>
-                                  </div>
-                                </td>
-                                <td className="num">
-                                  <div className="book-qty-cell">
-                                    <span className={qty >= 0 ? 'up' : 'down'}>{qty.toLocaleString('en-IN')}</span>
-                                  </div>
-                                </td>
-                                <td className="num">{priceCell(leg.buy_avg)}</td>
-                                <td className="num">{priceCell(leg.sell_avg)}</td>
-                                <td className="num">{priceCell(leg.ltp, true)}</td>
-                                <td className="num">
-                                  <span className={`position-pnl-value ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                    view === 'buysell' ? (
+                      <div className="legs-split">
+                        <LegsTable title="Buy" legs={legs.filter((leg) => Number(leg.net_qty || 0) > 0)} />
+                        <LegsTable title="Sell" legs={legs.filter((leg) => Number(leg.net_qty || 0) < 0)} />
+                      </div>
+                    ) : view === 'compact' ? (
+                      <CompactLegs legs={legs} />
+                    ) : (
+                      <LegsTable legs={legs} />
+                    )
                   ) : (
                     <div className="strategy-card-nolegs">No legs saved for this strategy</div>
                   )}

@@ -2404,6 +2404,13 @@ select { min-width: 96px; }
 
 /* Saved strategies panel (Sync Net Positions) */
 .strategy-list { margin-top: 14px; display: grid; gap: 12px; }
+.strategy-list--compact {
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  align-items: start;
+}
+.strategy-list--compact .strategy-list-head {
+  grid-column: 1 / -1;
+}
 .strategy-list-head {
   display: flex;
   align-items: baseline;
@@ -2424,23 +2431,57 @@ select { min-width: 96px; }
 .strategy-card {
   background: var(--ao-surface);
   border: 1px solid var(--ao-border);
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
+  box-shadow: var(--shadow-card);
 }
 .strategy-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 14px;
-  background: var(--ao-surface-2);
+  padding: 12px 16px;
+  background: linear-gradient(180deg, var(--ao-surface-2), var(--ao-surface));
   border-bottom: 1px solid var(--ao-border);
 }
-.strategy-card-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.strategy-card-title strong { color: var(--ao-bold); font-size: var(--fs-base); }
-.strategy-card-meta { display: flex; align-items: center; gap: 14px; font-size: var(--fs-sm); }
-.strategy-card-meta .up { color: var(--ao-green); font-weight: 700; }
-.strategy-card-meta .down { color: var(--ao-red); font-weight: 700; }
+.strategy-card-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.strategy-card-title::before {
+  content: '';
+  width: 4px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--ao-blue);
+  flex: none;
+}
+.strategy-card-title strong {
+  color: var(--ao-bold);
+  font-size: var(--fs-md, 15px);
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+.strategy-card-meta { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+.strategy-card-meta > span {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--ao-surface);
+  border: 1px solid var(--ao-border-soft);
+  color: var(--ao-caption);
+}
+.strategy-card-meta .up {
+  color: var(--ao-green);
+  background: color-mix(in srgb, var(--ao-green) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ao-green) 30%, transparent);
+}
+.strategy-card-meta .down {
+  color: var(--ao-red);
+  background: color-mix(in srgb, var(--ao-red) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ao-red) 30%, transparent);
+}
 .strategy-legs-table { margin: 0; }
 .strategy-card-nolegs {
   padding: 12px 14px;
@@ -2694,6 +2735,246 @@ select { min-width: 96px; }
 .positions-clear-filters:hover {
   background: var(--ao-hover);
   color: var(--ao-base);
+}
+.legs-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.compact-legs {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) repeat(5, minmax(52px, auto));
+  column-gap: 10px;
+  padding: 0 14px;
+}
+.compact-leg-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  padding: 6px 0;
+  font-size: var(--fs-sm);
+  border-bottom: 1px solid var(--ao-border-soft);
+}
+.compact-leg-row:last-child { border-bottom: 0; }
+.compact-leg-row:not(.compact-leg-head):hover { background: var(--ao-surface-2); }
+.compact-leg-head {
+  position: sticky;
+  top: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-size: var(--fs-xs, 11px);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ao-caption);
+  background: var(--ao-surface-2);
+}
+.compact-leg-head span:not(:nth-child(2)) { text-align: right; }
+.compact-leg-cell {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* Keep every number in a compact row the same size (LTP stays blue, just not bigger) */
+.compact-leg-row .position-price,
+.compact-leg-row .position-price-muted,
+.compact-leg-row .position-price.ltp {
+  font-size: var(--fs-sm);
+}
+.compact-leg-row .position-price.ltp {
+  font-weight: 800;
+}
+/* Make the live LTP pop as a subtle chip so it's easy to read at a glance */
+.compact-leg-ltp {
+  justify-self: end;
+}
+.compact-leg-ltp .position-price.ltp {
+  width: auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ao-blue) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 26%, transparent);
+}
+.compact-leg-row .book-tag.side {
+  justify-content: center;
+  width: 20px;
+  padding: 0;
+  font-weight: 800;
+}
+.compact-leg-symbol {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.compact-leg-symbol strong { color: var(--ao-bold); }
+.compact-leg-qty {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.compact-leg-pnl {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.compact-leg-qty.up, .compact-leg-pnl.up { color: var(--ao-green); }
+.compact-leg-qty.down, .compact-leg-pnl.down { color: var(--ao-red); }
+.legs-table-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  font-size: var(--fs-base);
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: linear-gradient(180deg, var(--ao-surface-2), var(--ao-surface));
+}
+.legs-table-title-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-base);
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.legs-table-title-label::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+.legs-table-title-pnl {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: var(--fs-base);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--ao-border-soft);
+}
+.legs-table-title-pnl.up {
+  color: var(--ao-green);
+  background: color-mix(in srgb, var(--ao-green) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ao-green) 30%, transparent);
+}
+.legs-table-title-pnl.down {
+  color: var(--ao-red);
+  background: color-mix(in srgb, var(--ao-red) 12%, transparent);
+  border-color: color-mix(in srgb, var(--ao-red) 30%, transparent);
+}
+.legs-split .positions-table-wrap:first-child .legs-table-title-label {
+  color: var(--ao-green);
+}
+.legs-split .positions-table-wrap:last-child .legs-table-title-label {
+  color: var(--ao-red);
+}
+@media (max-width: 900px) {
+  .legs-split {
+    grid-template-columns: 1fr;
+  }
+}
+.view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 8px;
+  background: var(--ao-surface);
+}
+.view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ao-caption);
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.view-toggle-btn:hover {
+  color: var(--ao-text);
+  background: var(--ao-border-soft);
+}
+.view-toggle-btn.active {
+  background: var(--ao-blue);
+  color: #fff;
+}
+/* ───────────── Reusable tooltip utility: add data-tip="text" to any element ─────────────
+   Default shows below the element. Add data-tip-pos="top" to show above (use near the
+   bottom of the screen). Not for elements inside overflow:hidden/scroll containers. */
+[data-tip] {
+  position: relative;
+}
+[data-tip]::after,
+[data-tip]::before {
+  position: absolute;
+  left: 50%;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .14s ease, transform .14s ease;
+  pointer-events: none;
+  z-index: 2000;
+}
+[data-tip]::after {
+  content: attr(data-tip);
+  top: calc(100% + 9px);
+  transform: translateX(-50%) translateY(-3px);
+  padding: 5px 9px;
+  white-space: nowrap;
+  font-size: var(--fs-xs, 11px);
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: #fff;
+  background: #1e2330;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(15, 22, 40, .28);
+}
+[data-tip]::before {
+  content: '';
+  top: calc(100% + 4px);
+  width: 8px;
+  height: 8px;
+  background: #1e2330;
+  border-radius: 2px 0 0 0;
+  transform: translateX(-50%) translateY(-3px) rotate(45deg);
+}
+/* Show above the element */
+[data-tip][data-tip-pos="top"]::after {
+  top: auto;
+  bottom: calc(100% + 9px);
+}
+[data-tip][data-tip-pos="top"]::before {
+  top: auto;
+  bottom: calc(100% + 4px);
+  border-radius: 0 0 2px 0;
+}
+[data-tip]:hover::after,
+[data-tip]:hover::before,
+[data-tip]:focus-visible::after,
+[data-tip]:focus-visible::before {
+  opacity: 1;
+  visibility: visible;
+}
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  transform: translateX(-50%) translateY(0);
+}
+[data-tip]:hover::before,
+[data-tip]:focus-visible::before {
+  transform: translateX(-50%) translateY(0) rotate(45deg);
 }
 .positions-status {
   margin-left: auto;
