@@ -25,6 +25,7 @@ import {
   Scale,
   TrendingUp,
   UserRound,
+  Users2,
   UsersRound,
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
@@ -186,6 +187,11 @@ function AdminSidebar() {
               <ListItemButton component={Link} to="/admin/masters/brokers" sx={navSx('/admin/masters/brokers', true)}>
                 <NavIcon><UserRound size={15} /></NavIcon>
                 <ListItemText primary="Broker Master" />
+              </ListItemButton>
+
+              <ListItemButton component={Link} to="/admin/masters/groups" sx={navSx('/admin/masters/groups', true)}>
+                <NavIcon><Users2 size={15} /></NavIcon>
+                <ListItemText primary="Group Master" />
               </ListItemButton>
 
               <ListItemButton component={Link} to="/admin/masters/feedmaster" sx={navSx('/admin/masters/feedmaster', true)}>

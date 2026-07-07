@@ -7,6 +7,7 @@ import AdminLayout from './layout/AdminLayout'
 import AdminDashboard from './pages/AdminDashboard'
 import UsersPage from './pages/UsersPage'
 import BrokerMaster from './masters/BrokerMaster'
+import GroupMaster from './masters/GroupMaster'
 import Feedmaster from './masters/Feedmaster'
 import UserBalances from './transactions/UserBalances'
 import SyncNetPositions from './transactions/SyncNetPositions'
@@ -74,6 +75,7 @@ function App() {
               <Route index element={<AdminDashboard />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="masters/brokers" element={<BrokerMaster />} />
+              <Route path="masters/groups" element={<GroupMaster />} />
               <Route path="masters/feedmaster" element={<Feedmaster />} />
                <Route path="transactions/user-balances" element={<UserBalances />} />
                <Route path="transactions/sync-net-positions" element={<SyncNetPositions />}/>

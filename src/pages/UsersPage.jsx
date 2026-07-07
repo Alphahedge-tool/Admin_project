@@ -52,6 +52,7 @@ function UsersPage() {
     username: '',
     email: '',
     mobile: '',
+    group_name: '',
     password: '@welcome#123',
     segments: { mf: false, equity: false, fno: false },
     is_active: 1
@@ -69,6 +70,7 @@ function UsersPage() {
         username: u.username,
         email: u.email,
         mobile: u.mobile,
+        group_name: u.group_name ?? '',
         segments: {
           mf: Boolean(u.segment_mf),
           eq: Boolean(u.segment_equity),
@@ -191,9 +193,10 @@ function UsersPage() {
       username: row.username,
       email: row.email,
       mobile: row.mobile,
+      group_name: row.group_name ?? '',
       password: '',
       segments: row.segments,
-      status: row.active ? 1 : 0
+      is_active: row.active ? 1 : 0
     })
 
     setOpen(true)
@@ -218,6 +221,7 @@ const handleDelete = (row) => {
         username: form.username,
         email: form.email,
         mobile: form.mobile,
+        group_name: form.group_name,
         segment_mf: form.segments.mf,
         segment_equity: form.segments.equity,
         segment_fno: form.segments.fno,
@@ -249,6 +253,7 @@ const handleDelete = (row) => {
       username: '',
       email: '',
       mobile: '',
+      group_name: '',
       password: '@welcome#123',
       segments: { mf: false, equity: false, fno: false },
       is_active: 1
@@ -304,6 +309,11 @@ const handleDelete = (row) => {
           <TextField fullWidth label="Mobile" margin="normal"
             value={form.mobile} onChange={handleChange('mobile')}
             error={!!errors.mobile} helperText={errors.mobile}
+          />
+          <TextField fullWidth label="Group" margin="normal"
+            placeholder="Enter group name"
+            value={form.group_name} onChange={handleChange('group_name')}
+            error={!!errors.group_name} helperText={errors.group_name}
           />
 
           <Typography mt={2} fontWeight={500}>Segments</Typography>
