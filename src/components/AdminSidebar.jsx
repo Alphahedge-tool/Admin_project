@@ -21,7 +21,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  ReceiptText,
   Rss,
+  ScrollText,
   Scale,
   TrendingUp,
   UserRound,
@@ -270,6 +272,16 @@ function AdminSidebar() {
               <ListItemButton component={Link} to="/admin/trade-panel/positions" sx={navSx('/admin/trade-panel/positions', true)}>
                 <NavIcon><BriefcaseBusiness size={15} /></NavIcon>
                 <ListItemText primary="Get Position" />
+              </ListItemButton>
+
+              <ListItemButton component={Link} to="/admin/trade-panel/order-book" sx={navSx('/admin/trade-panel/order-book', true)}>
+                <NavIcon><ScrollText size={15} /></NavIcon>
+                <ListItemText primary="Get OrderBook" />
+              </ListItemButton>
+
+              <ListItemButton component={Link} to="/admin/trade-panel/trade-book" sx={navSx('/admin/trade-panel/trade-book', true)}>
+                <NavIcon><ReceiptText size={15} /></NavIcon>
+                <ListItemText primary="Get TradeBook" />
               </ListItemButton>
             </List>
           </AccordionDetails>

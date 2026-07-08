@@ -14,6 +14,8 @@ import SyncNetPositions from './transactions/SyncNetPositions'
 import { apiGet } from './config/api'
 import NetPositionsReport from './pages/NetPositionsReport'
 import GetPositions from './tradepanel/GetPositions'
+import GetOrderBook from './tradepanel/GetOrderBook'
+import GetTradeBook from './tradepanel/GetTradeBook'
 import TradePanelStandalone from './tradepanel/TradePanelStandalone'
 
 
@@ -83,6 +85,8 @@ function App() {
                {/* TRADE PANEL */}
                <Route path="trade-panel/enter-trade" element={null} />
                <Route path="trade-panel/positions" element={<GetPositions />} />
+               <Route path="trade-panel/order-book" element={<GetOrderBook />} />
+               <Route path="trade-panel/trade-book" element={<GetTradeBook />} />
                <Route path="trade-panel" element={<Navigate to="/admin/trade-panel/enter-trade" replace />} />
             </Route>
 

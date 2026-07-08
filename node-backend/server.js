@@ -2,6 +2,7 @@
 // surface the option chain + basket frontend expects. Port of the Go httpapi.
 import express from 'express';
 import cors from 'cors';
+import WebSocket from 'ws';
 
 import { config } from './src/config.js';
 import { Client } from './src/httpClient.js';
@@ -126,6 +127,87 @@ app.post('/api/angel/order-book', h(async (req) => {
   const cc = req.body?.client || {};
   return book(client, auth, cc, '/rest/secure/angelbroking/order/v1/getOrderBook', 'orders');
 }));
+
+app.post('/api/angel/order-updates', async (req, res) => {
+  const cc = req.body?.client || {};
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+
+  const send = (event, data) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  let upstream = null;
+  let keepAlive = null;
+  let closed = false;
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    if (keepAlive) clearInterval(keepAlive);
+    if (upstream && upstream.readyState === WebSocket.OPEN) upstream.close(1000, 'client closed');
+  };
+
+  req.on('close', cleanup);
+
+  try {
+    const session = await auth.sessionOrLogin(cc);
+    send('session', { status: true, session });
+
+    upstream = new WebSocket('wss://tns.angelone.in/smart-order-update', {
+      headers: { Authorization: `Bearer ${session.jwtToken}` },
+    });
+
+    upstream.on('open', () => {
+      send('status', { status: true, message: 'Order status stream connected' });
+      keepAlive = setInterval(() => {
+        if (upstream?.readyState !== WebSocket.OPEN) return;
+        try {
+          upstream.ping();
+          upstream.send('ping');
+        } catch {
+          // The close/error handlers below will report broken connections.
+        }
+      }, 10000);
+    });
+
+    upstream.on('message', (raw) => {
+      const text = raw.toString();
+      if (text.toLowerCase() === 'pong') {
+        send('pong', { status: true, at: new Date().toISOString() });
+        return;
+      }
+
+      let payload = null;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        send('message', { status: true, raw: text });
+        return;
+      }
+
+      send('order', payload);
+    });
+
+    upstream.on('close', (code, reason) => {
+      if (keepAlive) clearInterval(keepAlive);
+      if (!closed) send('status', { status: false, message: `Order status stream closed (${code})`, reason: reason.toString() });
+      cleanup();
+    });
+
+    upstream.on('error', (err) => {
+      if (!closed) send('error', { status: false, message: err.message || 'Order status stream error' });
+    });
+  } catch (err) {
+    send('error', { status: false, message: err.message || 'Order status stream unavailable' });
+    cleanup();
+    res.end();
+  }
+});
 
 app.post('/api/angel/trade-book', h(async (req) => {
   const cc = req.body?.client || {};

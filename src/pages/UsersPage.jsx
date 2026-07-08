@@ -33,7 +33,9 @@ const mobileRegex = /^[0-9]{10}$/
 function UsersPage() {
   /* ================= STATE ================= */
   const [users, setUsers] = useState([])
+  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
+  const [groupsLoading, setGroupsLoading] = useState(false)
 
   const [open, setOpen] = useState(false)
   const [errors, setErrors] = useState({})
@@ -87,8 +89,22 @@ function UsersPage() {
     }
   }
 
+  const loadGroups = async () => {
+    setGroupsLoading(true)
+    try {
+      const res = await apiGet('/masters/groups/list.php')
+      setGroups(res.data || [])
+    } catch (e) {
+      console.error(e)
+      setGroups([])
+    } finally {
+      setGroupsLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadUsers()
+    loadGroups()
   }, [])
 
   /* ================= TABLE CONFIG ================= */
@@ -97,6 +113,16 @@ function UsersPage() {
     { field: 'username', label: 'Username', sortable: true },
     { field: 'email', label: 'Email', sortable: true },
     { field: 'mobile', label: 'Mobile', sortable: true },
+    {
+      field: 'group_name',
+      label: 'Group',
+      sortable: true,
+      render: (row) => (
+        row.group_name
+          ? <SegmentChip label={row.group_name} bg="#eef2ff" color="#4338ca" />
+          : <Typography variant="caption" color="text.secondary">No group</Typography>
+      )
+    },
     {
       field: 'segments',
       label: 'Segments',
@@ -152,6 +178,8 @@ function UsersPage() {
 
     if (!form.mobile.trim()) e.mobile = 'Mobile required'
     else if (!mobileRegex.test(form.mobile)) e.mobile = 'Mobile must be 10 digits'
+
+    if (!form.group_name) e.group_name = 'Select a group'
 
     if (!form.segments.mf && !form.segments.equity && !form.segments.fno) {
       e.segments = 'Select at least one segment'
@@ -310,11 +338,84 @@ const handleDelete = (row) => {
             value={form.mobile} onChange={handleChange('mobile')}
             error={!!errors.mobile} helperText={errors.mobile}
           />
-          <TextField fullWidth label="Group" margin="normal"
-            placeholder="Enter group name"
-            value={form.group_name} onChange={handleChange('group_name')}
-            error={!!errors.group_name} helperText={errors.group_name}
-          />
+          <FormControl fullWidth margin="normal" error={!!errors.group_name}>
+            <InputLabel>Group</InputLabel>
+            <Select
+              value={form.group_name}
+              label="Group"
+              onChange={handleChange('group_name')}
+              disabled={groupsLoading}
+              renderValue={(selected) => (
+                selected
+                  ? <GroupOptionChip label={selected} />
+                  : <Typography color="text.secondary">Select group</Typography>
+              )}
+              MenuProps={{
+                PaperProps: {
+                  sx: {
+                    mt: 0.75,
+                    borderRadius: 1.5,
+                    border: '1px solid #dbe3ee',
+                    boxShadow: '0 18px 45px rgba(15, 23, 42, 0.16)',
+                    overflow: 'hidden',
+                    '& .MuiMenuItem-root': {
+                      minHeight: 42,
+                      px: 1.5,
+                      py: 0.75,
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      '&:hover': {
+                        bgcolor: '#f8fbff'
+                      },
+                      '&.Mui-selected': {
+                        bgcolor: '#eef2ff',
+                        '&:hover': { bgcolor: '#e0e7ff' }
+                      }
+                    }
+                  }
+                }
+              }}
+              sx={{
+                borderRadius: 1.25,
+                bgcolor: '#fff',
+                '& .MuiOutlinedInput-notchedOutline': {
+                  borderColor: '#d7deea'
+                },
+                '&:hover .MuiOutlinedInput-notchedOutline': {
+                  borderColor: '#9fb1d1'
+                },
+                '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                  borderColor: '#4f63ff',
+                  borderWidth: 2,
+                  boxShadow: '0 0 0 3px rgba(79, 99, 255, 0.12)'
+                },
+                '& .MuiSelect-select': {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  minHeight: 26,
+                  py: 1.25,
+                  fontWeight: 700
+                }
+              }}
+            >
+              <MenuItem value="" disabled>
+                {groupsLoading ? 'Loading groups...' : 'Select group'}
+              </MenuItem>
+              {groups.map((group) => (
+                <MenuItem key={group.id} value={group.name}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <GroupOptionChip label={group.name} />
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+            {errors.group_name && (
+              <Typography color="error" variant="caption" sx={{ mt: 0.5, ml: 1.75 }}>
+                {errors.group_name}
+              </Typography>
+            )}
+          </FormControl>
 
           <Typography mt={2} fontWeight={500}>Segments</Typography>
           <FormGroup row>
@@ -403,6 +504,25 @@ function SegmentChip({ label, bg, color }) {
       background: bg,
       color,
       fontWeight: 600
+    }}>
+      {label}
+    </Box>
+  )
+}
+
+function GroupOptionChip({ label }) {
+  return (
+    <Box sx={{
+      px: 1.15,
+      py: '5px',
+      borderRadius: 1.25,
+      border: '1px solid #c7d2fe',
+      background: 'linear-gradient(180deg, #f8fbff 0%, #eef2ff 100%)',
+      color: '#3730a3',
+      fontSize: '0.75rem',
+      fontWeight: 800,
+      lineHeight: 1,
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.9)'
     }}>
       {label}
     </Box>

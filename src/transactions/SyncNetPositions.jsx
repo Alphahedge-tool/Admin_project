@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AlignJustify, Table, ArrowUpDown } from 'lucide-react'
 import { apiGet, apiPost } from '../config/api'
 import { getSavedSession, isAngelBroker } from '../feedmaster/feedMasterStore'
@@ -17,6 +17,29 @@ function priceCell(value, strong = false) {
   return <span className={strong ? 'position-price ltp' : 'position-price'}>{money(n)}</span>
 }
 
+function legIsClosed(leg) {
+  return Boolean(
+    Number(leg.is_closed || leg.closed || 0) ||
+    leg.closed_at ||
+    leg.exit_price ||
+    leg.exitPrice
+  )
+}
+
+function legExitPrice(leg) {
+  return Number(leg.exit_price || leg.exitPrice || leg.close_price || leg.closePrice || 0)
+}
+
+function exitPriceCell(leg) {
+  const exit = legExitPrice(leg)
+  if (!legIsClosed(leg) || !exit) return priceCell(leg.ltp, true)
+  return (
+    <span className="strategy-exit-price">
+      <span>Exit</span>{money(exit)}
+    </span>
+  )
+}
+
 function CompactLegs({ legs }) {
   return (
     <div className="compact-legs">
@@ -33,18 +56,20 @@ function CompactLegs({ legs }) {
         const parsed = parseTradingSymbol(leg.trading_symbol)
         const qty = Number(leg.net_qty || 0)
         const pnl = Number(leg.pnl || 0)
+        const closed = legIsClosed(leg)
         return (
-          <div className="compact-leg-row" key={leg.id} title={leg.trading_symbol}>
-            <span className={`book-tag side ${qty >= 0 ? 'buy' : 'sell'}`}>{qty >= 0 ? 'B' : 'S'}</span>
+          <div className={`compact-leg-row ${closed ? 'strategy-leg-closed' : ''}`} key={leg.id} title={leg.trading_symbol}>
+            <span className={`book-tag side ${qty >= 0 ? 'buy' : 'sell'}`}>{closed ? 'C' : (qty >= 0 ? 'B' : 'S')}</span>
             <span className="compact-leg-symbol">
               <strong>{parsed.root}</strong>
               {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
               {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
+              {closed && <span className="strategy-closed-tag">Closed</span>}
             </span>
             <span className={`compact-leg-qty ${qty >= 0 ? 'up' : 'down'}`}>{qty.toLocaleString('en-IN')}</span>
             <span className="compact-leg-cell">{priceCell(leg.buy_avg)}</span>
             <span className="compact-leg-cell">{priceCell(leg.sell_avg)}</span>
-            <span className="compact-leg-cell compact-leg-ltp">{priceCell(leg.ltp, true)}</span>
+            <span className="compact-leg-cell compact-leg-ltp">{exitPriceCell(leg)}</span>
             <span className={`compact-leg-pnl ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
           </div>
         )
@@ -87,8 +112,9 @@ function LegsTable({ legs, title }) {
               const parsed = parseTradingSymbol(leg.trading_symbol)
               const qty = Number(leg.net_qty || 0)
               const pnl = Number(leg.pnl || 0)
+              const closed = legIsClosed(leg)
               return (
-                <tr key={leg.id} className={qty < 0 ? 'position-row-short' : ''}>
+                <tr key={leg.id} className={`${qty < 0 ? 'position-row-short' : ''}${closed ? ' strategy-leg-closed' : ''}`}>
                   <td>
                     <div className="position-symbol-line" title={leg.trading_symbol}>
                       <strong>{parsed.root}</strong>
@@ -96,11 +122,13 @@ function LegsTable({ legs, title }) {
                       {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
                       {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
                       {leg.exchange && <span className="book-tag exchange">{leg.exchange}</span>}
+                      {closed && <span className="strategy-closed-tag">Closed</span>}
                     </div>
                   </td>
                   <td>
                     <div className="book-product-cell">
-                      {qty !== 0 && <span className={`book-tag side ${qty > 0 ? 'buy' : 'sell'}`}>{qty > 0 ? 'LONG' : 'SHORT'}</span>}
+                      {closed && <span className="strategy-closed-tag">CLOSED</span>}
+                      {!closed && qty !== 0 && <span className={`book-tag side ${qty > 0 ? 'buy' : 'sell'}`}>{qty > 0 ? 'LONG' : 'SHORT'}</span>}
                       <span className="book-tag product">{compactProductTag(leg.product_type)}</span>
                     </div>
                   </td>
@@ -111,7 +139,7 @@ function LegsTable({ legs, title }) {
                   </td>
                   <td className="num">{priceCell(leg.buy_avg)}</td>
                   <td className="num">{priceCell(leg.sell_avg)}</td>
-                  <td className="num">{priceCell(leg.ltp, true)}</td>
+                  <td className="num">{exitPriceCell(leg)}</td>
                   <td className="num">
                     <span className={`position-pnl-value ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
                   </td>
@@ -142,6 +170,23 @@ function SyncNetPositions() {
   const selectedConfig = configs.find((config) => String(config.id) === String(configId))
   const selectedBrokerName = selectedConfig?.broker_name || ''
   const selectedIsAngel = isAngelBroker(selectedBrokerName)
+
+  const loadStrategies = useCallback(async (nextUserId = userId, cancelled = false) => {
+    if (!nextUserId) {
+      setStrategies([])
+      return
+    }
+
+    setStrategiesLoading(true)
+    try {
+      const res = await apiGet(`/strategy-master/list.php?user_id=${nextUserId}`)
+      if (!cancelled) setStrategies(res.data || [])
+    } catch {
+      if (!cancelled) setStrategies([])
+    } finally {
+      if (!cancelled) setStrategiesLoading(false)
+    }
+  }, [userId])
 
   useEffect(() => {
     let cancelled = false
@@ -219,28 +264,11 @@ function SyncNetPositions() {
   useEffect(() => {
     let cancelled = false
 
-    async function loadStrategies() {
-      if (!userId) {
-        setStrategies([])
-        return
-      }
-
-      setStrategiesLoading(true)
-      try {
-        const res = await apiGet(`/strategy-master/list.php?user_id=${userId}`)
-        if (!cancelled) setStrategies(res.data || [])
-      } catch {
-        if (!cancelled) setStrategies([])
-      } finally {
-        if (!cancelled) setStrategiesLoading(false)
-      }
-    }
-
-    loadStrategies()
+    loadStrategies(userId, cancelled)
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [loadStrategies, userId])
 
   useEffect(() => {
     setLog([])
@@ -285,6 +313,7 @@ function SyncNetPositions() {
       setSummary(res.summary || null)
       setLog(res.log || [])
       setStatus('Sync completed')
+      await loadStrategies(userId)
     } catch (error) {
       setStatus(error.message || 'Sync failed')
       setLog((prev) => [...prev, 'Sync failed'])
