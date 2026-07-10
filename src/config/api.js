@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost/api'
+const API_BASE_URL = '/api'
 
 // Angel One Go backend (Angelone_frontend project) — handles SmartAPI auto-login
 const ANGEL_API_BASE_URL = 'http://localhost:3001'

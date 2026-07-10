@@ -955,6 +955,8 @@ select { min-width: 96px; }
 }
 .chain-table .ltp.flash-up { animation: ltp-flash-up .6s ease-out; }
 .chain-table .ltp.flash-down { animation: ltp-flash-down .6s ease-out; }
+.position-price.flash-up { animation: ltp-flash-up .6s ease-out; }
+.position-price.flash-down { animation: ltp-flash-down .6s ease-out; }
 
 /* Spot box flashes colour on each underlying tick */
 @keyframes spot-flash-up { 0% { color: var(--ao-green); } 100% { color: var(--ao-bold); } }
@@ -2270,6 +2272,21 @@ select { min-width: 96px; }
   cursor: pointer;
 }
 .positions-group-btn:hover { background: var(--ao-blue-hover); }
+.positions-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--ao-red);
+  color: #fff !important;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.positions-remove-btn:hover { background: color-mix(in srgb, var(--ao-red) 85%, black); }
+.positions-remove-btn:disabled { opacity: .6; cursor: not-allowed; }
 .positions-selection-clear {
   margin-left: auto;
   padding: 6px 10px;
@@ -2444,7 +2461,7 @@ select { min-width: 96px; }
   background: linear-gradient(180deg, var(--ao-surface-2), var(--ao-surface));
   border-bottom: 1px solid var(--ao-border);
 }
-.strategy-card-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.strategy-card-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .strategy-card-title::before {
   content: '';
   width: 4px;
@@ -2459,7 +2476,88 @@ select { min-width: 96px; }
   font-weight: 800;
   letter-spacing: .01em;
 }
-.strategy-card-meta { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); }
+.strategy-title-input {
+  width: min(280px, 52vw);
+  height: 30px;
+  border: 1px solid var(--ao-border);
+  border-radius: 7px;
+  background: var(--ao-surface);
+  color: var(--ao-bold);
+  font-size: var(--fs-md, 15px);
+  font-weight: 800;
+  padding: 0 10px;
+  outline: none;
+}
+.strategy-title-input:focus {
+  border-color: var(--ao-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ao-blue) 15%, transparent);
+}
+.strategy-card-actions { display: inline-flex; align-items: center; gap: 6px; }
+.strategy-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--ao-border);
+  border-radius: 7px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  cursor: pointer;
+}
+.strategy-icon-btn:hover:not(:disabled) {
+  color: var(--ao-bold);
+  background: var(--ao-hover);
+}
+.strategy-icon-btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+.strategy-card-meta { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); flex-wrap: wrap; justify-content: flex-end; }
+.strategy-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  border: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  cursor: pointer;
+}
+.strategy-select-all:hover,
+.strategy-select-all.active {
+  color: var(--ao-blue);
+  border-color: color-mix(in srgb, var(--ao-blue) 30%, transparent);
+  background: color-mix(in srgb, var(--ao-blue) 10%, transparent);
+}
+.strategy-tag-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 26%, transparent);
+  background: color-mix(in srgb, var(--ao-blue) 8%, transparent);
+  color: var(--ao-blue);
+  font-size: var(--fs-sm);
+  font-weight: 800;
+  cursor: pointer;
+}
+.strategy-tag-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ao-blue) 13%, transparent);
+}
+.strategy-tag-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.strategy-tag-done {
+  color: var(--ao-green) !important;
+  border-color: color-mix(in srgb, var(--ao-green) 30%, transparent) !important;
+  background: color-mix(in srgb, var(--ao-green) 10%, transparent) !important;
+}
 .strategy-card-meta > span {
   display: inline-flex;
   align-items: center;
@@ -2512,6 +2610,42 @@ select { min-width: 96px; }
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
+.strategy-open-tag {
+  height: 21px;
+  border-radius: 999px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--ao-green) 40%, transparent);
+  background: color-mix(in srgb, var(--ao-green) 12%, transparent);
+  color: var(--ao-green);
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.leg-entry-tag {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.leg-entry-tag.is-today {
+  background: #EAF7F3;
+  color: var(--ao-green);
+}
+.leg-entry-tag.is-carried {
+  background: #F1F5FB;
+  color: #536179;
+}
 .strategy-exit-price {
   min-height: 23px;
   border-radius: 999px;
@@ -2563,6 +2697,639 @@ select { min-width: 96px; }
   padding: 0;
   overflow: hidden;
   background: var(--ao-bg);
+}
+.client-dashboard-view {
+  height: 100%;
+  min-height: 0;
+  /* Pull up into the app-main padding a touch so the header sits higher. */
+  margin-top: -8px;
+  padding: 0 8px 14px 2px;
+  /* Scroll vertically only - the view-toggle's tooltip sits flush to the right
+     edge and would otherwise force a horizontal scrollbar. Inner tables keep
+     their own horizontal scroll wrappers. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--ao-bg);
+}
+.client-dashboard-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 0;
+  padding: 4px 0;
+  background: var(--ao-bg);
+  border-bottom: 1px solid var(--ao-border-soft);
+}
+.client-dashboard-picker {
+  flex: 0 1 360px;
+  min-width: 280px;
+}
+.client-dashboard-picker.account {
+  flex-basis: 300px;
+  min-width: 240px;
+}
+.client-dashboard-picker .positions-compact-select {
+  width: 100%;
+}
+.client-dashboard-picker .position-select-option {
+  min-height: 44px;
+  align-items: center;
+}
+.client-dashboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 0;
+  padding: 0 0 4px;
+  border-bottom: 1px solid var(--ao-border-soft);
+}
+.client-dashboard-head span {
+  color: var(--ao-caption);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+.client-dashboard-head h2 {
+  margin: 1px 0 0;
+  color: var(--ao-bold);
+  font-size: 1.05rem;
+  font-weight: 850;
+}
+.client-dashboard-account {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  padding: 4px 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 8px;
+  background: var(--ao-surface);
+}
+.client-dashboard-account span {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.client-dashboard-account strong {
+  color: var(--ao-bold);
+  font-size: var(--fs-sm);
+  font-weight: 850;
+}
+.client-strategy-strip {
+  margin-top: 6px;
+  padding: 10px;
+  border: 1px solid var(--ao-border);
+  border-radius: 8px;
+  background: var(--ao-surface);
+  box-shadow: var(--shadow-card);
+}
+.client-strategy-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.client-strategy-strip-head strong {
+  color: var(--ao-bold);
+  font-size: var(--fs-base);
+  font-weight: 850;
+}
+.client-strategy-strip-head span {
+  color: var(--ao-caption);
+  font-size: var(--fs-sm);
+  font-weight: 750;
+}
+.client-strategy-strip-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+/* "Viewing <username>" pill - whose account this dashboard is showing. */
+.client-strategy-strip-head .client-viewing-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.client-strategy-strip-head .client-viewing-user strong {
+  color: var(--ao-blue);
+  font-size: var(--fs-sm);
+  font-weight: 850;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.client-strategy-row {
+  display: grid;
+  gap: 8px;
+}
+.client-strategy-card {
+  min-height: 46px;
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--ao-surface-2), var(--ao-surface));
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.client-strategy-card:hover {
+  border-color: color-mix(in srgb, var(--ao-blue) 34%, var(--ao-border));
+  box-shadow: var(--shadow-card);
+}
+.client-strategy-card.expanded {
+  border-color: color-mix(in srgb, var(--ao-blue) 26%, var(--ao-border));
+  box-shadow: var(--shadow-card);
+}
+.client-strategy-summary {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(420px, 1fr) minmax(360px, 460px);
+  align-items: center;
+  gap: 14px;
+  min-height: 46px;
+  padding: 7px 10px;
+}
+.client-strategy-broker,
+.client-strategy-name {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.client-strategy-name {
+  width: max-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: start;
+}
+.client-strategy-broker span {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.client-strategy-broker strong {
+  justify-self: start;
+  max-width: 100%;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 999px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: var(--fs-sm);
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Broker tag shown under the user name in the All-Users overview. */
+.client-strategy-broker-sub {
+  justify-self: start;
+  max-width: 100%;
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-style: normal;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.client-strategy-expand {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 999px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  cursor: pointer;
+}
+.client-strategy-expand:hover {
+  background: var(--ao-hover);
+  color: var(--ao-blue);
+}
+.client-strategy-expand svg {
+  transition: transform .15s ease;
+}
+.client-strategy-card.expanded .client-strategy-expand svg {
+  transform: rotate(180deg);
+}
+.client-strategy-name strong {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: clamp(160px, 24vw, 360px);
+  color: var(--ao-bold);
+  font-size: var(--fs-base);
+  font-weight: 850;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+.client-strategy-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.client-strategy-metrics div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 8px;
+  border-left: 1px solid var(--ao-border-soft);
+}
+.client-strategy-metrics span {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.client-strategy-metrics strong {
+  color: var(--ao-bold);
+  font-size: var(--fs-base);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+.client-strategy-metrics strong.up { color: var(--ao-green); }
+.client-strategy-metrics strong.down { color: var(--ao-red); }
+.client-strategy-empty {
+  min-height: 92px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--ao-border);
+  border-radius: 8px;
+  color: var(--ao-caption);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+.client-leg-details {
+  display: grid;
+  border-top: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface);
+}
+.client-expanded-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* Let each panel size to its own content instead of stretching the shorter
+     one to match the taller - otherwise a short Strategy Details next to a long
+     Get Position leaves a big empty box. */
+  align-items: start;
+  gap: 10px;
+  padding: 8px;
+  border-top: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface-2);
+}
+.client-detail-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ao-border);
+  border-radius: 8px;
+  background: var(--ao-surface);
+}
+.client-detail-panel-head {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface-2);
+}
+.client-detail-panel-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ao-bold);
+  font-size: var(--fs-base);
+  font-weight: 850;
+}
+.client-detail-panel-head span {
+  flex: none;
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.client-legs-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.client-legs-count {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.client-legs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+.client-legs-chip em {
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: .01em;
+  opacity: .85;
+}
+.client-legs-chip.long {
+  color: var(--ao-green);
+  background: color-mix(in srgb, var(--ao-green) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ao-green) 30%, transparent);
+}
+.client-legs-chip.short {
+  color: var(--ao-red);
+  background: color-mix(in srgb, var(--ao-red) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ao-red) 30%, transparent);
+}
+.client-detail-panel .client-leg-details {
+  border-top: 0;
+  /* Scroll horizontally instead of squeezing/clipping the columns when the
+     panel is narrow (e.g. the half-width Buy/Sell split). */
+  overflow-x: auto;
+}
+.client-detail-panel .client-leg-row {
+  grid-template-columns:
+    minmax(178px, 2.15fr)
+    minmax(50px, .5fr)
+    minmax(66px, .62fr)
+    minmax(66px, .65fr)
+    minmax(66px, .65fr)
+    minmax(58px, .55fr)
+    minmax(86px, .8fr)
+    minmax(68px, .6fr);
+  gap: clamp(6px, .55vw, 10px);
+  /* Keep every column at its natural width; the details area scrolls if the
+     panel can't fit it, so text is never cut off. */
+  min-width: 700px;
+  min-height: 46px;
+  padding: 9px 12px;
+  font-size: clamp(11px, .74vw, 13px);
+}
+.client-detail-panel .client-leg-row.head {
+  min-height: 36px;
+  font-size: clamp(10px, .66vw, 12px);
+}
+.client-detail-panel .client-leg-symbol {
+  gap: 4px;
+  overflow: hidden;
+}
+.client-detail-panel .client-leg-symbol strong {
+  min-width: 54px;
+  max-width: 90px;
+}
+.client-detail-panel .client-leg-symbol em {
+  padding: 2px 6px;
+  font-size: clamp(10px, .64vw, 11px);
+}
+.client-detail-panel .client-leg-status {
+  height: 22px;
+  padding: 0 7px;
+  font-size: clamp(10px, .64vw, 11px);
+}
+.client-detail-empty {
+  min-height: 92px;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  color: var(--ao-caption);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+/* Total P&L footer under each legs panel. */
+.client-panel-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--ao-border);
+  background: var(--ao-surface-2);
+}
+.client-panel-total span {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.client-panel-total strong {
+  font-size: var(--fs-base);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.client-panel-total strong.up { color: var(--ao-green); }
+.client-panel-total strong.down { color: var(--ao-red); }
+/* Push the view toggle to the far end of the toolbar. */
+.client-dashboard-toolbar .view-toggle {
+  margin-left: auto;
+}
+/* Normal view: strategy legs on top, open positions stacked below. */
+.client-expanded-details.view-normal,
+.client-expanded-details.view-buysell,
+.client-expanded-details.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* Buy / Sell view: split each panel's legs into Buy and Sell columns. */
+.client-legs-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  border-top: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface);
+}
+.client-legs-side {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+}
+.client-legs-side-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: var(--fs-xs);
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.client-legs-side-head em {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--ao-caption);
+}
+.client-legs-side-head.buy {
+  color: var(--ao-green);
+  border-bottom: 1px solid color-mix(in srgb, var(--ao-green) 30%, transparent);
+  background: color-mix(in srgb, var(--ao-green) 8%, transparent);
+}
+.client-legs-side-head.sell {
+  color: var(--ao-red);
+  border-bottom: 1px solid color-mix(in srgb, var(--ao-red) 30%, transparent);
+  background: color-mix(in srgb, var(--ao-red) 8%, transparent);
+}
+.client-legs-side .client-leg-details {
+  border-top: 0;
+  background: var(--ao-surface);
+}
+.client-legs-side .client-detail-empty {
+  min-height: 56px;
+}
+@media (max-width: 760px) {
+  .client-legs-split {
+    grid-template-columns: 1fr;
+  }
+}
+.client-leg-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(92px, .65fr) minmax(82px, .55fr) repeat(4, minmax(92px, .65fr)) minmax(78px, .5fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  color: var(--ao-bold);
+  font-size: var(--fs-sm);
+}
+.client-leg-row:last-child {
+  border-bottom: 0;
+}
+.client-leg-row.head {
+  min-height: 34px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.client-leg-row.short {
+  background: color-mix(in srgb, var(--ao-red) 4%, transparent);
+}
+.client-leg-row .up { color: var(--ao-green); font-weight: 800; }
+.client-leg-row .down { color: var(--ao-red); font-weight: 800; }
+.client-leg-symbol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.client-leg-symbol strong {
+  flex: 0 0 auto;
+  min-width: 46px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.client-leg-symbol em {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--ao-blue-bg);
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-style: normal;
+  font-weight: 800;
+}
+.client-leg-status {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  font-style: normal;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.client-leg-status.open {
+  color: var(--ao-green);
+  border: 1px solid color-mix(in srgb, var(--ao-green) 35%, transparent);
+  background: color-mix(in srgb, var(--ao-green) 10%, transparent);
+}
+.client-leg-status.closed {
+  color: var(--ao-caption);
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface-2);
+}
+@media (max-width: 760px) {
+  .client-dashboard-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .client-dashboard-picker,
+  .client-dashboard-picker.account {
+    width: 100%;
+    min-width: 0;
+    flex-basis: auto;
+  }
+  .client-strategy-summary {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .client-strategy-name {
+    min-width: 0;
+  }
+  .client-strategy-name strong {
+    min-width: 0;
+  }
+  .client-strategy-metrics div {
+    padding: 0;
+    border-left: 0;
+  }
+  .client-leg-row {
+    grid-template-columns: minmax(180px, 1fr) repeat(7, minmax(78px, auto));
+    overflow-x: auto;
+  }
+  .client-expanded-details {
+    grid-template-columns: 1fr;
+  }
+  .client-detail-panel .client-leg-row {
+    grid-template-columns:
+      minmax(150px, 1.8fr)
+      minmax(42px, .5fr)
+      minmax(58px, .6fr)
+      minmax(56px, .6fr)
+      minmax(56px, .6fr)
+      minmax(48px, .5fr)
+      minmax(70px, .75fr)
+      minmax(58px, .55fr);
+    overflow-x: visible;
+  }
 }
 .trade-account-bar {
   display: grid;
@@ -2787,6 +3554,27 @@ select { min-width: 96px; }
   background: var(--ao-hover);
   color: var(--ao-base);
 }
+.positions-select-all {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--ao-border);
+  border-radius: 999px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.positions-select-all:hover,
+.positions-select-all.active {
+  color: var(--ao-blue);
+  border-color: color-mix(in srgb, var(--ao-blue) 30%, transparent);
+  background: color-mix(in srgb, var(--ao-blue) 10%, transparent);
+}
 .legs-split {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2797,6 +3585,20 @@ select { min-width: 96px; }
   grid-template-columns: 20px minmax(0, 1fr) repeat(5, minmax(52px, auto));
   column-gap: 10px;
   padding: 0 14px;
+}
+/* Client Dashboard panels are wide, so let the numeric columns share the row
+   instead of jamming to the right with a big empty gap after the symbol. The
+   rows are subgrid, so re-templating the container cascades to every row. */
+.client-detail-panel .compact-legs {
+  grid-template-columns: 20px minmax(238px, 1.6fr) repeat(5, minmax(62px, 1fr));
+  padding: 0 12px;
+}
+/* Tighter leg rows inside the dashboard panels (Normal / Buy-Sell tables) -
+   scoped so Get Position / OrderBook tables keep their taller rows. */
+.client-detail-panel .positions-table th,
+.client-detail-panel .positions-table td {
+  height: 30px;
+  padding: 3px 12px;
 }
 .compact-leg-row {
   display: grid;

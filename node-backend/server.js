@@ -13,6 +13,7 @@ import {
   scripOptionsWithSpot, chainPrices, getOptionChain, resolveLeg,
 } from './src/market.js';
 import { getMargin, getCharges, placeBasket, book } from './src/orders.js';
+import { getHistoricalCandle } from './src/historical.js';
 import { Feed, wsType } from './src/feed.js';
 
 const client = new Client();
@@ -217,6 +218,19 @@ app.post('/api/angel/trade-book', h(async (req) => {
 app.post('/api/angel/positions', h(async (req) => {
   const cc = req.body?.client || {};
   return book(client, auth, cc, '/rest/secure/angelbroking/order/v1/getPosition', 'positions');
+}));
+
+// Historical candle data - used to reconcile a leg's LTP for a PAST date
+// (Sync Net Positions' date filter) instead of a live feed tick.
+app.post('/api/angel/historical-candle', h(async (req) => {
+  const b = req.body || {};
+  return getHistoricalCandle(client, auth, b.client || {}, {
+    exchange: b.exchange,
+    symboltoken: b.symboltoken,
+    interval: b.interval,
+    fromdate: b.fromdate,
+    todate: b.todate,
+  });
 }));
 
 // ── live feed: subscribe + basket sync + SSE stream ──────────────────────────

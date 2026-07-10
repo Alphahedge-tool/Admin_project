@@ -1,156 +1,89 @@
-import { useCallback, useEffect, useState } from 'react'
-import { AlignJustify, Table, ArrowUpDown } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlignJustify, Table, ArrowUpDown, Check, History, Pencil, Radio, Trash2, X } from 'lucide-react'
 import { apiGet, apiPost } from '../config/api'
-import { getSavedSession, isAngelBroker } from '../feedmaster/feedMasterStore'
-import { compactProductTag, parseTradingSymbol } from '../tradepanel/symbolParse'
+import { getSavedSession, isAngelBroker, loginAngelClient, useFeedMasterAccount } from '../feedmaster/feedMasterStore'
+import { getSavedTradeAccount, saveTradeAccount } from '../tradepanel/tradeAccountStore'
 import { CompactSelect } from '../tradepanel/PositionSelect'
+import { legIsClosed, money, withLiveTick } from '../tradepanel/legFormat'
+import { CompactLegs, LegsTable } from '../tradepanel/strategyLegsView'
 import '../tradepanel/tradepanel.css'
 
-function money(v) {
-  const n = Number(v || 0)
-  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Marks an open leg to market using that day's historical closing price
+// instead of a live tick — used when browsing a PAST date, where no
+// websocket is opened at all (see the historical-candle fetch below).
+// Closed-that-day legs already carry real, locked-in exit data.
+function withHistoricalLtp(leg, dateFilter, historicalLtps) {
+  if (dateFilter === 'all' || legIsClosed(leg)) return leg
+
+  const token = leg.symbol_token != null ? String(leg.symbol_token) : ''
+  const entry = token ? historicalLtps[token] : null
+  if (!entry || !(entry.close > 0)) return leg
+
+  const qty = Number(leg.net_qty || 0)
+  const pnl = qty > 0
+    ? (entry.close - Number(leg.buy_avg || 0)) * qty
+    : qty < 0
+      ? (Number(leg.sell_avg || 0) - entry.close) * Math.abs(qty)
+      : Number(leg.pnl || 0)
+
+  return { ...leg, ltp: entry.close, pnl }
 }
 
-function priceCell(value, strong = false) {
-  const n = Number(value || 0)
-  if (!Number.isFinite(n) || n === 0) return <span className="position-price-muted">-</span>
-  return <span className={strong ? 'position-price ltp' : 'position-price'}>{money(n)}</span>
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Raw YYYY-MM-DD slice straight off the backend's created_at, no Date()
+// parsing/timezone shifting, so the filter matches exactly what was stored.
+function legDateKey(leg) {
+  const raw = leg.created_at || leg.createdAt
+  if (!raw) return ''
+  return String(raw).slice(0, 10)
 }
 
-function legIsClosed(leg) {
-  return Boolean(
-    Number(leg.is_closed || leg.closed || 0) ||
-    leg.closed_at ||
-    leg.exit_price ||
-    leg.exitPrice
-  )
+function formatDateKey(key) {
+  const [y, m, d] = key.split('-')
+  return `${d} ${MONTHS[Number(m) - 1] || m} ${y}`
 }
 
-function legExitPrice(leg) {
-  return Number(leg.exit_price || leg.exitPrice || leg.close_price || leg.closePrice || 0)
+// Raw YYYY-MM-DD slice of closed_at, same rules as legDateKey.
+function legClosedDateKey(leg) {
+  const raw = leg.closed_at || leg.closedAt
+  if (!raw) return ''
+  return String(raw).slice(0, 10)
 }
 
-function exitPriceCell(leg) {
-  const exit = legExitPrice(leg)
-  if (!legIsClosed(leg) || !exit) return priceCell(leg.ltp, true)
-  return (
-    <span className="strategy-exit-price">
-      <span>Exit</span>{money(exit)}
-    </span>
-  )
-}
+// A leg's is_closed/exit_price are permanent, current-state flags in the
+// backend — closing overwrites them regardless of which day the position
+// was actually opened on. Browsing a PAST date should show exactly what had
+// happened BY that date, nothing from later:
+//   - closed on the exact date being viewed -> real entry + real exit/pnl,
+//     both genuinely happened that day.
+//   - closed on a LATER date -> as of this date the position hadn't exited
+//     yet, so the exit price/closed badge are hidden (that exit is a future
+//     event relative to the date being viewed). Its ltp/pnl (mark-to-market
+//     detail) are still shown as-is, since that's genuine data, not
+//     something to hide.
+//   - still genuinely open -> shown as-is, nothing to derive.
+function deriveLegForDate(leg, dateFilter) {
+  if (dateFilter === 'all' || !legIsClosed(leg)) return leg
 
-function CompactLegs({ legs }) {
-  return (
-    <div className="compact-legs">
-      <div className="compact-leg-row compact-leg-head">
-        <span />
-        <span>Symbol</span>
-        <span>Qty</span>
-        <span>Buy Avg</span>
-        <span>Sell Avg</span>
-        <span>LTP</span>
-        <span>P&amp;L</span>
-      </div>
-      {legs.map((leg) => {
-        const parsed = parseTradingSymbol(leg.trading_symbol)
-        const qty = Number(leg.net_qty || 0)
-        const pnl = Number(leg.pnl || 0)
-        const closed = legIsClosed(leg)
-        return (
-          <div className={`compact-leg-row ${closed ? 'strategy-leg-closed' : ''}`} key={leg.id} title={leg.trading_symbol}>
-            <span className={`book-tag side ${qty >= 0 ? 'buy' : 'sell'}`}>{closed ? 'C' : (qty >= 0 ? 'B' : 'S')}</span>
-            <span className="compact-leg-symbol">
-              <strong>{parsed.root}</strong>
-              {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
-              {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
-              {closed && <span className="strategy-closed-tag">Closed</span>}
-            </span>
-            <span className={`compact-leg-qty ${qty >= 0 ? 'up' : 'down'}`}>{qty.toLocaleString('en-IN')}</span>
-            <span className="compact-leg-cell">{priceCell(leg.buy_avg)}</span>
-            <span className="compact-leg-cell">{priceCell(leg.sell_avg)}</span>
-            <span className="compact-leg-cell compact-leg-ltp">{exitPriceCell(leg)}</span>
-            <span className={`compact-leg-pnl ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
+  const closedKey = legClosedDateKey(leg)
+  if (closedKey === dateFilter) return leg // closed on the very date being viewed - show as is
 
-function LegsTable({ legs, title }) {
-  const sidePnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
-  return (
-    <div className="positions-table-wrap">
-      {title && (
-        <div className="legs-table-title">
-          <span className="legs-table-title-label">{title}</span>
-          <span className={`legs-table-title-pnl ${sidePnl >= 0 ? 'up' : 'down'}`}>
-            P&amp;L {money(sidePnl)}
-          </span>
-        </div>
-      )}
-      <table className="positions-table position-book-table strategy-legs-table">
-        <thead>
-          <tr>
-            <th>Stock Name</th>
-            <th>Product Type</th>
-            <th className="num">Net Qty.</th>
-            <th className="num">Buy Avg</th>
-            <th className="num">Sell Avg</th>
-            <th className="num">LTP</th>
-            <th className="num">P&amp;L</th>
-          </tr>
-        </thead>
-        <tbody>
-          {legs.length === 0 ? (
-            <tr>
-              <td className="positions-empty" colSpan={7}>No {title ? title.toLowerCase() : ''} legs</td>
-            </tr>
-          ) : (
-            legs.map((leg) => {
-              const parsed = parseTradingSymbol(leg.trading_symbol)
-              const qty = Number(leg.net_qty || 0)
-              const pnl = Number(leg.pnl || 0)
-              const closed = legIsClosed(leg)
-              return (
-                <tr key={leg.id} className={`${qty < 0 ? 'position-row-short' : ''}${closed ? ' strategy-leg-closed' : ''}`}>
-                  <td>
-                    <div className="position-symbol-line" title={leg.trading_symbol}>
-                      <strong>{parsed.root}</strong>
-                      {parsed.expiry && <span className="position-expiry">{parsed.expiry}</span>}
-                      {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
-                      {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
-                      {leg.exchange && <span className="book-tag exchange">{leg.exchange}</span>}
-                      {closed && <span className="strategy-closed-tag">Closed</span>}
-                    </div>
-                  </td>
-                  <td>
-                    <div className="book-product-cell">
-                      {closed && <span className="strategy-closed-tag">CLOSED</span>}
-                      {!closed && qty !== 0 && <span className={`book-tag side ${qty > 0 ? 'buy' : 'sell'}`}>{qty > 0 ? 'LONG' : 'SHORT'}</span>}
-                      <span className="book-tag product">{compactProductTag(leg.product_type)}</span>
-                    </div>
-                  </td>
-                  <td className="num">
-                    <div className="book-qty-cell">
-                      <span className={qty >= 0 ? 'up' : 'down'}>{qty.toLocaleString('en-IN')}</span>
-                    </div>
-                  </td>
-                  <td className="num">{priceCell(leg.buy_avg)}</td>
-                  <td className="num">{priceCell(leg.sell_avg)}</td>
-                  <td className="num">{exitPriceCell(leg)}</td>
-                  <td className="num">
-                    <span className={`position-pnl-value ${pnl >= 0 ? 'up' : 'down'}`}>{money(pnl)}</span>
-                  </td>
-                </tr>
-              )
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
-  )
+  const exitQty = Number(leg.exit_qty || 0)
+  const magnitude = exitQty > 0 ? exitQty : Math.abs(Number(leg.net_qty || 0))
+  const wasShort = Number(leg.sell_avg || 0) > 0 && !(Number(leg.buy_avg || 0) > 0)
+
+  return {
+    ...leg,
+    net_qty: wasShort ? -magnitude : magnitude,
+    // legIsClosed() also treats closed_at/exit_price/exitPrice as closed
+    // flags on their own, so all of them must be cleared - not just is_closed.
+    is_closed: 0,
+    closed: 0,
+    closed_at: null,
+    exit_price: null,
+    exitPrice: null,
+  }
 }
 
 function SyncNetPositions() {
@@ -166,10 +99,292 @@ function SyncNetPositions() {
   const [strategies, setStrategies] = useState([])
   const [strategiesLoading, setStrategiesLoading] = useState(false)
   const [view, setView] = useState('normal') // 'compact' | 'normal' | 'buysell'
+  const [dateFilter, setDateFilter] = useState('all')
+  const [selectedLegKeys, setSelectedLegKeys] = useState(() => new Set())
+  const [removingLegs, setRemovingLegs] = useState(false)
+  const [editingStrategyCode, setEditingStrategyCode] = useState('')
+  const [editingStrategyId, setEditingStrategyId] = useState('')
+  const [editingStrategyName, setEditingStrategyName] = useState('')
+  const [savingStrategyName, setSavingStrategyName] = useState(false)
+  const [savingBrokerTagCode, setSavingBrokerTagCode] = useState('')
+  const [brokerTagDoneCode, setBrokerTagDoneCode] = useState('')
+
+  const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount()
+  const [liveTicks, setLiveTicks] = useState({})
+  const [feedStatus, setFeedStatus] = useState('offline') // 'offline' | 'connecting' | 'live'
+  const [historicalLtps, setHistoricalLtps] = useState({})
+  const [historicalStatus, setHistoricalStatus] = useState('idle') // 'idle' | 'loading' | 'done' | 'error'
+  const feedMasterClientRef = useRef(null)
+  const esRef = useRef(null)
+  const feedTokenSetRef = useRef(new Set())
+  const liveRef = useRef({})
+  const prevRef = useRef({})
+  const rafRef = useRef(0)
+  const dirtyRef = useRef(false)
+  const brokerTagDoneTimerRef = useRef(null)
+
+  useEffect(() => {
+    feedMasterClientRef.current = feedMasterClient
+  }, [feedMasterClient])
+
+  // Every OPEN leg across all saved strategies, regardless of the date/view
+  // filter currently on screen - closed legs have a locked-in exit and don't
+  // need a live mark.
+  const legFeedKey = useMemo(() => {
+    const seen = new Set()
+    strategies.forEach((strategy) => {
+      (strategy.legs || []).forEach((leg) => {
+        if (legIsClosed(leg)) return
+        const token = leg.symbol_token
+        if (token == null || token === '') return
+        seen.add(`${leg.exchange || 'NFO'}|${token}`)
+      })
+    })
+    return [...seen].sort().join(',')
+  }, [strategies])
+
+  // Keep the feed reconciled to exactly this leg set, and stream ticks over
+  // the same Feedmaster SSE connection the rest of Trade Panel uses. Only
+  // for the "All dates" (live/today) view — browsing a past date never
+  // opens a websocket at all, it's reconciled from the historical API
+  // instead (see below).
+  useEffect(() => {
+    let cancelled = false
+
+    function scheduleFlush() {
+      dirtyRef.current = true
+      if (rafRef.current) return
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0
+        if (!dirtyRef.current) return
+        dirtyRef.current = false
+        setLiveTicks({ ...liveRef.current })
+      })
+    }
+
+    async function syncFeedTokens() {
+      if (dateFilter !== 'all') {
+        esRef.current?.close()
+        esRef.current = null
+        setFeedStatus('offline')
+        return
+      }
+
+      const client = feedMasterClientRef.current
+      if (!client) return
+
+      let session = client.session
+      if (!session?.jwtToken || !session?.feedToken) {
+        setFeedStatus('connecting')
+        try {
+          const login = await loginAngelClient(client)
+          session = login.session || null
+          if (session?.jwtToken) onFeedMasterSession?.(session)
+        } catch {
+          setFeedStatus('offline')
+          return
+        }
+      }
+      if (cancelled || !session?.jwtToken || !session?.feedToken) {
+        setFeedStatus('offline')
+        return
+      }
+
+      const items = (legFeedKey ? legFeedKey.split(',') : []).map((pair) => {
+        const [exchange, token] = pair.split('|')
+        return { exchange, token }
+      })
+      feedTokenSetRef.current = new Set(items.map((item) => String(item.token)))
+
+      if (!items.length) {
+        setFeedStatus('offline')
+        return
+      }
+
+      try {
+        await fetch('/api/angel/basket-tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            credentials: {
+              jwtToken: session.jwtToken,
+              feedToken: session.feedToken,
+              apiKey: client.apiKey,
+              clientCode: client.clientCode,
+            },
+            items,
+          }),
+        })
+      } catch {
+        setFeedStatus('offline')
+        return
+      }
+      if (cancelled) return
+
+      let source = esRef.current
+      if (!source || source.readyState === 2) {
+        setFeedStatus('connecting')
+        source = new EventSource('/api/angel/stream')
+        esRef.current = source
+        source.addEventListener('status', (event) => {
+          try {
+            const info = JSON.parse(event.data)
+            setFeedStatus(info.connected ? 'live' : 'offline')
+          } catch {
+            // ignore malformed status payloads
+          }
+        })
+        source.onerror = () => setFeedStatus('offline')
+      } else {
+        setFeedStatus('live')
+      }
+
+      source.onmessage = (event) => {
+        let tick
+        try { tick = JSON.parse(event.data) } catch { return }
+        const token = String(tick.token)
+        if (!feedTokenSetRef.current.has(token)) return
+        const prev = prevRef.current[token]
+        const dir = prev == null ? '' : tick.ltp > prev ? 'up' : tick.ltp < prev ? 'down' : ''
+        prevRef.current[token] = tick.ltp
+        liveRef.current[token] = { ltp: tick.ltp, dir, at: event.timeStamp || performance.now() }
+        scheduleFlush()
+      }
+    }
+
+    syncFeedTokens()
+    return () => {
+      cancelled = true
+    }
+  }, [legFeedKey, feedMasterClient, onFeedMasterSession, dateFilter])
+
+  useEffect(() => () => {
+    esRef.current?.close()
+  }, [])
+
+  useEffect(() => () => {
+    if (brokerTagDoneTimerRef.current) clearTimeout(brokerTagDoneTimerRef.current)
+  }, [])
+
+  // Every leg entered on the date being browsed that doesn't already have a
+  // real, locked-in exit for that exact day - these need a historical close
+  // price to mark to, since there's no live feed running for a past date.
+  const historicalFeedKey = useMemo(() => {
+    if (dateFilter === 'all') return ''
+    const seen = new Set()
+    strategies.forEach((strategy) => {
+      (strategy.legs || []).forEach((leg) => {
+        if (legDateKey(leg) !== dateFilter) return
+        if (legIsClosed(leg) && legClosedDateKey(leg) === dateFilter) return
+        const token = leg.symbol_token
+        if (token == null || token === '') return
+        seen.add(`${leg.exchange || 'NFO'}|${token}`)
+      })
+    })
+    return [...seen].sort().join(',')
+  }, [strategies, dateFilter])
+
+  // Reconcile that day's LTP from Angel's Historical Candle API (one day's
+  // close, via Feedmaster's session) instead of any live feed connection.
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadHistorical() {
+      if (dateFilter === 'all' || !historicalFeedKey) {
+        setHistoricalLtps({})
+        setHistoricalStatus('idle')
+        return
+      }
+
+      const feedClient = feedMasterClientRef.current
+      if (!feedClient) {
+        setHistoricalStatus('error')
+        return
+      }
+
+      setHistoricalStatus('loading')
+
+      let session = feedClient.session
+      if (!session?.jwtToken) {
+        try {
+          const login = await loginAngelClient(feedClient)
+          session = login.session || null
+          if (session?.jwtToken) onFeedMasterSession?.(session)
+        } catch {
+          if (!cancelled) setHistoricalStatus('error')
+          return
+        }
+      }
+      if (cancelled || !session?.jwtToken) return
+
+      const items = historicalFeedKey.split(',').map((pair) => {
+        const [exchange, token] = pair.split('|')
+        return { exchange, token }
+      })
+
+      const results = await Promise.all(items.map(async (item) => {
+        try {
+          const res = await fetch('/api/angel/historical-candle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client: feedClient,
+              exchange: item.exchange,
+              symboltoken: item.token,
+              interval: 'ONE_DAY',
+              fromdate: `${dateFilter} 00:00`,
+              todate: `${dateFilter} 23:59`,
+            }),
+          })
+          const body = await res.json().catch(() => ({}))
+          if (!res.ok || body.status === false) return null
+          const candles = body.candles || []
+          const last = candles[candles.length - 1]
+          const close = last ? Number(last[4]) : null
+          return close > 0 ? { token: item.token, close } : null
+        } catch {
+          return null
+        }
+      }))
+
+      if (cancelled) return
+      const next = {}
+      results.forEach((entry) => { if (entry) next[String(entry.token)] = { close: entry.close } })
+      setHistoricalLtps(next)
+      setHistoricalStatus('done')
+    }
+
+    loadHistorical()
+    return () => {
+      cancelled = true
+    }
+  }, [historicalFeedKey, dateFilter, onFeedMasterSession])
+
+  const availableDates = useMemo(() => {
+    const keys = new Set()
+    strategies.forEach((strategy) => {
+      (strategy.legs || []).forEach((leg) => {
+        const key = legDateKey(leg)
+        if (key) keys.add(key)
+      })
+    })
+    return Array.from(keys).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+  }, [strategies])
 
   const selectedConfig = configs.find((config) => String(config.id) === String(configId))
   const selectedBrokerName = selectedConfig?.broker_name || ''
   const selectedIsAngel = isAngelBroker(selectedBrokerName)
+
+  // Manual picks here should also become the shared Trade Panel selection.
+  const handleUserId = useCallback((value) => {
+    setUserId(value)
+    saveTradeAccount({ userId: value, configId: '' })
+  }, [])
+
+  const handleConfigId = useCallback((value) => {
+    setConfigId(value)
+    saveTradeAccount({ userId, configId: value })
+  }, [userId])
 
   const loadStrategies = useCallback(async (nextUserId = userId, cancelled = false) => {
     if (!nextUserId) {
@@ -187,6 +402,141 @@ function SyncNetPositions() {
       if (!cancelled) setStrategiesLoading(false)
     }
   }, [userId])
+
+  const toggleLegSelection = useCallback((legId) => {
+    setSelectedLegKeys((current) => {
+      const next = new Set(current)
+      if (next.has(legId)) next.delete(legId)
+      else next.add(legId)
+      return next
+    })
+  }, [])
+
+  const legSelection = useMemo(
+    () => ({ selectedKeys: selectedLegKeys, onToggle: toggleLegSelection }),
+    [selectedLegKeys, toggleLegSelection],
+  )
+
+  const selectStrategyLegs = useCallback((legs) => {
+    const ids = legs.map((leg) => leg.id).filter((id) => id != null)
+    if (!ids.length) return
+
+    setSelectedLegKeys((current) => {
+      const next = new Set(current)
+      const allSelected = ids.every((id) => next.has(id))
+      ids.forEach((id) => {
+        if (allSelected) next.delete(id)
+        else next.add(id)
+      })
+      return next
+    })
+  }, [])
+
+  const startEditStrategy = useCallback((strategy) => {
+    setEditingStrategyCode(strategy.strategy_code)
+    setEditingStrategyId(strategy.id || strategy.strategy_id || '')
+    setEditingStrategyName(strategy.strategy_name || '')
+  }, [])
+
+  const cancelEditStrategy = useCallback(() => {
+    setEditingStrategyCode('')
+    setEditingStrategyId('')
+    setEditingStrategyName('')
+  }, [])
+
+  const saveStrategyName = useCallback(async () => {
+    const name = editingStrategyName.trim()
+    if (savingStrategyName || !editingStrategyCode || !name) return
+
+    setSavingStrategyName(true)
+    try {
+      const payload = {
+        id: editingStrategyId,
+        strategy_id: editingStrategyId,
+        user_id: Number(userId),
+        strategy_code: editingStrategyCode,
+        strategyCode: editingStrategyCode,
+        strategy_name: name,
+        strategyName: name,
+        name,
+      }
+      await apiPost('/strategy-master/update.php', payload)
+      setStrategies((current) => current.map((strategy) => (
+        String(strategy.strategy_code) === String(editingStrategyCode)
+          ? { ...strategy, strategy_name: name, strategyName: name, name }
+          : strategy
+      )))
+      setStatus('Strategy name updated')
+      cancelEditStrategy()
+      await loadStrategies(userId)
+    } catch (error) {
+      setStatus(error.message || 'Failed to update strategy name')
+    } finally {
+      setSavingStrategyName(false)
+    }
+  }, [cancelEditStrategy, editingStrategyCode, editingStrategyId, editingStrategyName, loadStrategies, userId])
+
+  const saveStrategyBrokerTag = useCallback(async (strategy) => {
+    if (!selectedConfig || !strategy?.strategy_code || savingBrokerTagCode) return
+
+    const brokerPatch = {
+      broker_config_id: Number(configId || 0) || null,
+      broker_name: selectedBrokerName || selectedConfig.broker_name || '',
+      broker_account_id: selectedConfig.account_id || '',
+    }
+
+    setSavingBrokerTagCode(strategy.strategy_code)
+    try {
+      await apiPost('/strategy-master/update.php', {
+        id: strategy.id,
+        strategy_id: strategy.id,
+        user_id: Number(userId),
+        strategy_code: strategy.strategy_code,
+        strategyCode: strategy.strategy_code,
+        ...brokerPatch,
+      })
+      setStrategies((current) => current.map((item) => (
+        String(item.strategy_code) === String(strategy.strategy_code)
+          ? { ...item, ...brokerPatch }
+          : item
+      )))
+      setStatus('Broker tag updated')
+      setBrokerTagDoneCode(strategy.strategy_code)
+      if (brokerTagDoneTimerRef.current) clearTimeout(brokerTagDoneTimerRef.current)
+      brokerTagDoneTimerRef.current = window.setTimeout(() => {
+        setBrokerTagDoneCode((current) => (
+          current === strategy.strategy_code ? '' : current
+        ))
+      }, 1800)
+      await loadStrategies(userId)
+    } catch (error) {
+      setStatus(error.message || 'Failed to update broker tag')
+    } finally {
+      setSavingBrokerTagCode('')
+    }
+  }, [configId, loadStrategies, savingBrokerTagCode, selectedBrokerName, selectedConfig, userId])
+
+  const removeSelectedLegs = useCallback(async () => {
+    const ids = Array.from(selectedLegKeys)
+    if (!ids.length) return
+
+    setRemovingLegs(true)
+    try {
+      await Promise.all(ids.map((id) => apiPost('/strategy-master/delete-leg.php', { id })))
+      setStatus(`Removed ${ids.length} leg${ids.length === 1 ? '' : 's'}`)
+      setSelectedLegKeys(new Set())
+      await loadStrategies(userId)
+    } catch (error) {
+      setStatus(error.message || 'Failed to remove legs')
+    } finally {
+      setRemovingLegs(false)
+    }
+  }, [selectedLegKeys, loadStrategies, userId])
+
+  useEffect(() => {
+    setSelectedLegKeys(new Set())
+    cancelEditStrategy()
+  }, [userId, cancelEditStrategy])
 
   useEffect(() => {
     let cancelled = false
@@ -208,9 +558,18 @@ function SyncNetPositions() {
         setUsers(list)
         const auth = authOut.status === 'fulfilled' ? authOut.value : null
         const principal = auth?.user || auth?.admin || auth?.data || auth || {}
-        const current = findLoggedInUser(list, principal) || list[0]
+
+        // Reuse whichever user/account was last picked on any Trade Panel
+        // page (Get Position, Get OrderBook, Get TradeBook, Sync Net
+        // Positions), so switching pages keeps the same account selected.
+        const saved = getSavedTradeAccount()
+        const savedUser = saved.userId && list.some((u) => String(u.id) === String(saved.userId))
+          ? list.find((u) => String(u.id) === String(saved.userId))
+          : null
+        const current = savedUser || findLoggedInUser(list, principal) || list[0]
         if (current?.id) {
           setUserId(String(current.id))
+          saveTradeAccount({ userId: String(current.id) })
           setStatus(`Select account for ${current.username || 'user'}`)
         } else {
           setStatus('No users available')
@@ -245,7 +604,14 @@ function SyncNetPositions() {
 
         const list = res.data || []
         setConfigs(list)
-        setConfigId(String(list[0]?.id || ''))
+        const saved = getSavedTradeAccount()
+        const savedConfigId = String(saved.userId || '') === String(userId) && saved.configId
+          && list.some((c) => String(c.id) === String(saved.configId))
+          ? saved.configId
+          : ''
+        const nextConfigId = String(savedConfigId || list[0]?.id || '')
+        setConfigId(nextConfigId)
+        if (nextConfigId) saveTradeAccount({ userId: String(userId), configId: nextConfigId })
         setStatus(list.length ? '' : 'No broker accounts configured for this user')
       } catch {
         if (!cancelled) setStatus('Failed to load broker accounts')
@@ -329,7 +695,7 @@ function SyncNetPositions() {
           <CompactSelect
             title="User"
             value={userId}
-            onChange={setUserId}
+            onChange={handleUserId}
             options={users.map((user) => ({
               value: String(user.id),
               label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
@@ -339,7 +705,7 @@ function SyncNetPositions() {
           <CompactSelect
             title="Account"
             value={configId}
-            onChange={setConfigId}
+            onChange={handleConfigId}
             disabled={configLoading || !configs.length}
             options={configs.map((config) => ({
               value: String(config.id),
@@ -363,6 +729,38 @@ function SyncNetPositions() {
             </span>
           )}
           {status && <span className="positions-status">{status}</span>}
+
+          {dateFilter === 'all' ? (
+            <span className={`orderbook-live-pill ${feedStatus}`} title="Live LTP feed (Feedmaster)">
+              <Radio size={13} />
+              {feedStatus === 'live' ? 'Live' : feedStatus === 'connecting' ? 'Connecting' : 'Offline'}
+            </span>
+          ) : (
+            <span
+              className={`orderbook-live-pill ${historicalStatus === 'done' ? 'live' : historicalStatus === 'loading' ? 'connecting' : historicalStatus === 'error' ? 'offline' : ''}`}
+              title="Historical closing price for this date - no live feed for a past date"
+            >
+              <History size={13} />
+              {historicalStatus === 'done' ? 'Historical'
+                : historicalStatus === 'loading' ? 'Loading history'
+                  : historicalStatus === 'error' ? 'Historical unavailable'
+                    : 'Historical'}
+            </span>
+          )}
+
+          <CompactSelect
+            title="Date"
+            value={dateFilter}
+            onChange={setDateFilter}
+            disabled={!availableDates.length}
+            options={[
+              { value: 'all', label: 'All dates' },
+              ...availableDates.map((key, index) => ({
+                value: key,
+                label: index === 0 ? `${formatDateKey(key)} (Latest)` : formatDateKey(key),
+              })),
+            ]}
+          />
 
           <div className="view-toggle" role="group" aria-label="Table view">
             <button
@@ -459,16 +857,124 @@ function SyncNetPositions() {
               <div className="strategy-list-empty">No strategies saved for this user yet</div>
             )}
 
+            {selectedLegKeys.size > 0 && (
+              <div className="positions-selection-bar">
+                <span className="positions-selection-count">{selectedLegKeys.size} selected</span>
+                <button
+                  type="button"
+                  className="positions-remove-btn"
+                  onClick={removeSelectedLegs}
+                  disabled={removingLegs}
+                >
+                  <Trash2 size={14} /> {removingLegs ? 'Removing…' : 'Remove'}
+                </button>
+                <button
+                  type="button"
+                  className="positions-selection-clear"
+                  onClick={() => setSelectedLegKeys(new Set())}
+                >
+                  <X size={13} /> Clear
+                </button>
+              </div>
+            )}
+
             {strategies.map((strategy) => {
-              const legs = strategy.legs || []
+              const allLegs = strategy.legs || []
+              const legs = (dateFilter === 'all'
+                ? allLegs
+                : allLegs.filter((leg) => legDateKey(leg) === dateFilter)
+              ).map((leg) => {
+                const derived = deriveLegForDate(leg, dateFilter)
+                return dateFilter === 'all'
+                  ? withLiveTick(derived, liveTicks)
+                  : withHistoricalLtp(derived, dateFilter, historicalLtps)
+              })
               const totalPnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
+              const legIds = legs.map((leg) => leg.id).filter((id) => id != null)
+              const allVisibleSelected = legIds.length > 0 && legIds.every((id) => selectedLegKeys.has(id))
+              const isEditing = editingStrategyCode === strategy.strategy_code
+              const brokerLabel = strategyBrokerLabel(strategy)
+              const brokerMatchesSelected = strategyBrokerMatchesSelected(strategy, selectedConfig, selectedBrokerName, configId)
+              const showBrokerTagButton = selectedConfig && !brokerMatchesSelected
+              const showBrokerDone = brokerTagDoneCode === strategy.strategy_code
               return (
                 <div className="strategy-card" key={strategy.strategy_code}>
                   <div className="strategy-card-head">
                     <div className="strategy-card-title">
-                      <strong>{strategy.strategy_name}</strong>
+                      {isEditing ? (
+                        <input
+                          className="strategy-title-input"
+                          value={editingStrategyName}
+                          onChange={(event) => setEditingStrategyName(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') saveStrategyName()
+                            if (event.key === 'Escape') cancelEditStrategy()
+                          }}
+                          autoFocus
+                        />
+                      ) : (
+                        <strong>{strategy.strategy_name}</strong>
+                      )}
+                      {isEditing ? (
+                        <span className="strategy-card-actions">
+                          <button
+                            type="button"
+                            className="strategy-icon-btn"
+                            onClick={saveStrategyName}
+                            disabled={savingStrategyName || !editingStrategyName.trim()}
+                            aria-label="Save strategy name"
+                            title="Save name"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="strategy-icon-btn"
+                            onClick={cancelEditStrategy}
+                            disabled={savingStrategyName}
+                            aria-label="Cancel strategy name edit"
+                            title="Cancel"
+                          >
+                            <X size={14} />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="strategy-icon-btn"
+                          onClick={() => startEditStrategy(strategy)}
+                          aria-label={`Edit ${strategy.strategy_name}`}
+                          title="Edit name"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      )}
                     </div>
                     <div className="strategy-card-meta">
+                      {legs.length > 0 && (
+                        <button
+                          type="button"
+                          className={`strategy-select-all${allVisibleSelected ? ' active' : ''}`}
+                          onClick={() => selectStrategyLegs(legs)}
+                        >
+                          <Check size={13} /> {allVisibleSelected ? 'Clear all' : 'Select all'}
+                        </button>
+                      )}
+                      {brokerLabel && <span>{brokerLabel}</span>}
+                      {showBrokerDone && <span className="strategy-tag-done">Done</span>}
+                      {showBrokerTagButton && (
+                        <button
+                          type="button"
+                          className="strategy-tag-btn"
+                          onClick={() => saveStrategyBrokerTag(strategy)}
+                          disabled={savingBrokerTagCode === strategy.strategy_code}
+                          title={`Use selected account: ${selectedBrokerName || 'Broker'} ${selectedConfig.account_id || ''}`}
+                        >
+                          {savingBrokerTagCode === strategy.strategy_code
+                            ? 'Saving tag'
+                            : brokerLabel ? 'Update broker' : 'Add broker'}
+                        </button>
+                      )}
                       <span>{legs.length} {legs.length === 1 ? 'leg' : 'legs'}</span>
                       <span className={totalPnl >= 0 ? 'up' : 'down'}>P&amp;L {money(totalPnl)}</span>
                     </div>
@@ -477,16 +983,20 @@ function SyncNetPositions() {
                   {legs.length > 0 ? (
                     view === 'buysell' ? (
                       <div className="legs-split">
-                        <LegsTable title="Buy" legs={legs.filter((leg) => Number(leg.net_qty || 0) > 0)} />
-                        <LegsTable title="Sell" legs={legs.filter((leg) => Number(leg.net_qty || 0) < 0)} />
+                        <LegsTable title="Buy" legs={legs.filter((leg) => Number(leg.net_qty || 0) > 0)} selection={legSelection} />
+                        <LegsTable title="Sell" legs={legs.filter((leg) => Number(leg.net_qty || 0) < 0)} selection={legSelection} />
                       </div>
                     ) : view === 'compact' ? (
-                      <CompactLegs legs={legs} />
+                      <CompactLegs legs={legs} selection={legSelection} />
                     ) : (
-                      <LegsTable legs={legs} />
+                      <LegsTable legs={legs} selection={legSelection} />
                     )
                   ) : (
-                    <div className="strategy-card-nolegs">No legs saved for this strategy</div>
+                    <div className="strategy-card-nolegs">
+                      {dateFilter === 'all' || allLegs.length === 0
+                        ? 'No legs saved for this strategy'
+                        : `No legs added on ${formatDateKey(dateFilter)}`}
+                    </div>
                   )}
                 </div>
               )
@@ -496,6 +1006,30 @@ function SyncNetPositions() {
       </div>
     </div>
   )
+}
+
+function strategyBrokerLabel(strategy) {
+  const broker = String(strategy.broker_name || '').trim()
+  const account = String(strategy.broker_account_id || '').trim()
+  if (broker && account) return `${broker} ${account}`
+  return broker || account
+}
+
+function strategyBrokerMatchesSelected(strategy, selectedConfig, selectedBrokerName, configId) {
+  if (!strategy || !selectedConfig) return false
+
+  const savedConfigId = String(strategy.broker_config_id || '')
+  const selectedConfigId = String(configId || selectedConfig.id || '')
+  if (savedConfigId && selectedConfigId && savedConfigId === selectedConfigId) return true
+
+  const savedBroker = String(strategy.broker_name || '').trim().toLowerCase()
+  const selectedBroker = String(selectedBrokerName || selectedConfig.broker_name || '').trim().toLowerCase()
+  const savedAccount = String(strategy.broker_account_id || '').trim()
+  const selectedAccount = String(selectedConfig.account_id || '').trim()
+
+  return Boolean(savedBroker && selectedBroker && savedAccount && selectedAccount
+    && savedBroker === selectedBroker
+    && savedAccount === selectedAccount)
 }
 
 function findLoggedInUser(users, principal = {}) {

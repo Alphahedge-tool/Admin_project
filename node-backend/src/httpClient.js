@@ -15,6 +15,7 @@ const ENDPOINT_LIMITS = {
   '/rest/secure/angelbroking/margin/v1/batch': 9,
   '/rest/secure/angelbroking/brokerage/v1/estimateCharges': 9,
   '/rest/secure/angelbroking/marketData/v1/optionGreek': 9,
+  '/rest/secure/angelbroking/historical/v1/getCandleData': 3,
 };
 const DEFAULT_LIMIT = 8;
 

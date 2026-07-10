@@ -2,9 +2,10 @@
 // Angel One is wired today; other brokers can be selected and added later.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpDown, Check, Filter, Info, Layers, X } from 'lucide-react';
+import { ArrowUpDown, Check, Filter, Info, Layers, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet, apiPost } from '../config/api';
-import { getSavedSession, isAngelBroker, saveSession } from '../feedmaster/feedMasterStore';
+import { getSavedSession, isAngelBroker, loginAngelClient, saveSession, useFeedMasterAccount } from '../feedmaster/feedMasterStore';
+import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { compactProductTag, parseTradingSymbol } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
 import './tradepanel.css';
@@ -36,6 +37,24 @@ function pnlOf(row) {
   return Number(row.realised || 0) + Number(row.unrealised || 0);
 }
 
+// Marks an open position to market from a live feed tick: recomputes ltp/pnl
+// from the tick instead of the last REST snapshot. A flat (netqty 0) position
+// has nothing to mark - its pnl is already fully realised.
+function withLivePositionTick(row, liveTicks) {
+  const qty = Number(row.netqty || 0);
+  if (qty === 0) return row;
+
+  const token = row.symboltoken != null ? String(row.symboltoken) : '';
+  const tick = token ? liveTicks[token] : null;
+  if (!tick || !(tick.ltp > 0)) return row;
+
+  const buy = positionBuyAvg(row);
+  const sell = positionSellAvg(row);
+  const pnl = qty > 0 ? (tick.ltp - buy) * qty : (sell - tick.ltp) * Math.abs(qty);
+
+  return { ...row, ltp: tick.ltp, pnl, liveDir: tick.dir };
+}
+
 export default function GetPositions() {
   const [users, setUsers] = useState([]);
   const [userId, setUserId] = useState('');
@@ -44,9 +63,13 @@ export default function GetPositions() {
   const [client, setClient] = useState(null);
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('Select a user and account');
-  const [loading, setLoading] = useState(false);
+  // Starts true: until the user/config/credential setup below settles one way
+  // or another, we're still "preparing" - staying in the loading state avoids
+  // a "No positions" flash before the real auto-load kicks in.
+  const [loading, setLoading] = useState(true);
   const [configLoading, setConfigLoading] = useState(false);
   const [sort, setSort] = useState({ key: 'stock', dir: 'asc' });
+  const [query, setQuery] = useState('');
   const [filters, setFilters] = useState(defaultPositionFilters);
   const [openFilter, setOpenFilter] = useState('');
   const [selectedPositionKeys, setSelectedPositionKeys] = useState(() => new Set());
@@ -58,6 +81,159 @@ export default function GetPositions() {
   const [strategyMode, setStrategyMode] = useState('new'); // 'new' | 'existing'
   const [selectedStrategyCode, setSelectedStrategyCode] = useState('');
   const autoLoadedAccountRef = useRef('');
+  const fillStreamAbortRef = useRef(null);
+  const [fillSyncStatus, setFillSyncStatus] = useState('offline'); // 'offline' | 'connecting' | 'live'
+
+  const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount();
+  const [liveTicks, setLiveTicks] = useState({});
+  const [feedStatus, setFeedStatus] = useState('offline'); // 'offline' | 'connecting' | 'live'
+  const feedMasterClientRef = useRef(null);
+  const esRef = useRef(null);
+  const feedTokenSetRef = useRef(new Set());
+  const liveRef = useRef({});
+  const prevRef = useRef({});
+  const rafRef = useRef(0);
+  const dirtyRef = useRef(false);
+
+  const strategyLegKeys = useMemo(
+    () => buildStrategyLegKeySet(existingStrategies),
+    [existingStrategies],
+  );
+  const positionRows = useMemo(
+    () => rows.filter((row) => !strategyLegKeys.has(positionIdentityKey(row))),
+    [rows, strategyLegKeys],
+  );
+
+  useEffect(() => {
+    feedMasterClientRef.current = feedMasterClient;
+  }, [feedMasterClient]);
+
+  // Every currently open (non-flat) position's exchange|token - a flat
+  // position has nothing left to mark to market.
+  const legFeedKey = useMemo(() => {
+    const seen = new Set();
+    positionRows.forEach((row) => {
+      if (Number(row.netqty || 0) === 0) return;
+      const token = row.symboltoken;
+      if (token == null || token === '') return;
+      seen.add(`${row.exchange || 'NFO'}|${token}`);
+    });
+    return [...seen].sort().join(',');
+  }, [positionRows]);
+
+  // Keep the feed reconciled to exactly this position set, streaming ticks
+  // over the same Feedmaster SSE connection the rest of Trade Panel uses.
+  useEffect(() => {
+    let cancelled = false;
+
+    function scheduleFlush() {
+      dirtyRef.current = true;
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        if (!dirtyRef.current) return;
+        dirtyRef.current = false;
+        setLiveTicks({ ...liveRef.current });
+      });
+    }
+
+    async function syncFeedTokens() {
+      const feedClient = feedMasterClientRef.current;
+      if (!feedClient) return;
+
+      let session = feedClient.session;
+      if (!session?.jwtToken || !session?.feedToken) {
+        setFeedStatus('connecting');
+        try {
+          const login = await loginAngelClient(feedClient);
+          session = login.session || null;
+          if (session?.jwtToken) onFeedMasterSession?.(session);
+        } catch {
+          setFeedStatus('offline');
+          return;
+        }
+      }
+      if (cancelled || !session?.jwtToken || !session?.feedToken) {
+        setFeedStatus('offline');
+        return;
+      }
+
+      const items = (legFeedKey ? legFeedKey.split(',') : []).map((pair) => {
+        const [exchange, token] = pair.split('|');
+        return { exchange, token };
+      });
+      feedTokenSetRef.current = new Set(items.map((item) => String(item.token)));
+
+      if (!items.length) {
+        setFeedStatus('offline');
+        return;
+      }
+
+      try {
+        await fetch('/api/angel/basket-tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            credentials: {
+              jwtToken: session.jwtToken,
+              feedToken: session.feedToken,
+              apiKey: feedClient.apiKey,
+              clientCode: feedClient.clientCode,
+            },
+            items,
+          }),
+        });
+      } catch {
+        setFeedStatus('offline');
+        return;
+      }
+      if (cancelled) return;
+
+      let source = esRef.current;
+      if (!source || source.readyState === 2) {
+        setFeedStatus('connecting');
+        source = new EventSource('/api/angel/stream');
+        esRef.current = source;
+        source.addEventListener('status', (event) => {
+          try {
+            const info = JSON.parse(event.data);
+            setFeedStatus(info.connected ? 'live' : 'offline');
+          } catch {
+            // ignore malformed status payloads
+          }
+        });
+        source.onerror = () => setFeedStatus('offline');
+      } else {
+        setFeedStatus('live');
+      }
+
+      source.onmessage = (event) => {
+        let tick;
+        try { tick = JSON.parse(event.data); } catch { return; }
+        const token = String(tick.token);
+        if (!feedTokenSetRef.current.has(token)) return;
+        const prev = prevRef.current[token];
+        const dir = prev == null ? '' : tick.ltp > prev ? 'up' : tick.ltp < prev ? 'down' : '';
+        prevRef.current[token] = tick.ltp;
+        liveRef.current[token] = { ltp: tick.ltp, dir, at: event.timeStamp || performance.now() };
+        scheduleFlush();
+      };
+    }
+
+    syncFeedTokens();
+    return () => {
+      cancelled = true;
+    };
+  }, [legFeedKey, feedMasterClient, onFeedMasterSession]);
+
+  useEffect(() => () => {
+    esRef.current?.close();
+  }, []);
+
+  const liveRows = useMemo(
+    () => positionRows.map((row) => withLivePositionTick(row, liveTicks)),
+    [positionRows, liveTicks],
+  );
 
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedUser = users.find((user) => String(user.id) === String(userId));
@@ -66,6 +242,22 @@ export default function GetPositions() {
     : '';
   const selectedBrokerName = selectedConfig?.broker_name || '';
   const selectedIsAngel = isAngelBroker(selectedBrokerName);
+
+  // Manual picks here should also become the shared Trade Panel selection.
+  // setLoading(true) here (not just inside the effects below) closes the gap
+  // between clicking and the account-hydration effects actually running, so
+  // the table never flashes "No positions" for a frame while switching account.
+  const handleUserId = useCallback((value) => {
+    setUserId(value);
+    setLoading(true);
+    saveTradeAccount({ userId: value, configId: '' });
+  }, []);
+
+  const handleConfigId = useCallback((value) => {
+    setConfigId(value);
+    setLoading(true);
+    saveTradeAccount({ userId, configId: value });
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +272,7 @@ export default function GetPositions() {
 
         if (usersOut.status !== 'fulfilled') {
           setStatus('Failed to load users');
+          setLoading(false);
           return;
         }
 
@@ -87,15 +280,28 @@ export default function GetPositions() {
         setUsers(list);
         const auth = authOut.status === 'fulfilled' ? authOut.value : null;
         const principal = auth?.user || auth?.admin || auth?.data || auth || {};
-        const current = findLoggedInUser(list, principal) || list[0];
+
+        // Reuse whichever user/account was last picked on any Trade Panel
+        // page (Get Position, Get OrderBook, Get TradeBook, Sync Net
+        // Positions), so switching pages keeps the same account selected.
+        const saved = getSavedTradeAccount();
+        const savedUser = saved.userId && list.some((u) => String(u.id) === String(saved.userId))
+          ? list.find((u) => String(u.id) === String(saved.userId))
+          : null;
+        const current = savedUser || findLoggedInUser(list, principal) || list[0];
         if (current?.id) {
           setUserId(String(current.id));
+          saveTradeAccount({ userId: String(current.id) });
           setStatus(`Select account for ${current.username || 'user'}`);
         } else {
           setStatus('No users available');
+          setLoading(false);
         }
       } catch {
-        if (!cancelled) setStatus('Failed to load users');
+        if (!cancelled) {
+          setStatus('Failed to load users');
+          setLoading(false);
+        }
       }
     }
 
@@ -112,10 +318,12 @@ export default function GetPositions() {
       if (!userId) {
         setConfigs([]);
         setConfigId('');
+        setExistingStrategies([]);
         setClient(null);
         return;
       }
 
+      setLoading(true);
       setConfigLoading(true);
       setRows([]);
       setClient(null);
@@ -125,10 +333,21 @@ export default function GetPositions() {
 
         const list = res.data || [];
         setConfigs(list);
-        setConfigId(String(list[0]?.id || ''));
+        const saved = getSavedTradeAccount();
+        const savedConfigId = String(saved.userId || '') === String(userId) && saved.configId
+          && list.some((c) => String(c.id) === String(saved.configId))
+          ? saved.configId
+          : '';
+        const nextConfigId = String(savedConfigId || list[0]?.id || '');
+        setConfigId(nextConfigId);
+        if (nextConfigId) saveTradeAccount({ userId: String(userId), configId: nextConfigId });
         setStatus(list.length ? 'Select account, then Get Positions' : 'No broker accounts configured for this user');
+        if (!list.length) setLoading(false);
       } catch {
-        if (!cancelled) setStatus('Failed to load broker accounts');
+        if (!cancelled) {
+          setStatus('Failed to load broker accounts');
+          setLoading(false);
+        }
       } finally {
         if (!cancelled) setConfigLoading(false);
       }
@@ -148,8 +367,11 @@ export default function GetPositions() {
       setClient(null);
       if (!configId) return;
 
+      setLoading(true);
+
       if (!selectedIsAngel) {
         setStatus(`${selectedBrokerName || 'Selected broker'} positions are not wired yet`);
+        setLoading(false);
         return;
       }
 
@@ -161,6 +383,7 @@ export default function GetPositions() {
         const c = res.data || {};
         if (!c.account_id || !c.app_key || !c.pin || !c.totp_secret) {
           setStatus('This Angel account is missing Client Code / PIN / TOTP / API Key');
+          setLoading(false);
           return;
         }
 
@@ -175,9 +398,20 @@ export default function GetPositions() {
           loggedIn: !!session?.jwtToken,
           session,
         });
-        setStatus(session?.jwtToken ? '' : 'This account is not logged in. Login from Broker Configuration first.');
+        // A valid session hands off to the auto-load effect next, which
+        // manages `loading` itself from here - only flip it off here when
+        // there's no session, since nothing further will auto-load then.
+        if (session?.jwtToken) {
+          setStatus('');
+        } else {
+          setStatus('This account is not logged in. Login from Broker Configuration first.');
+          setLoading(false);
+        }
       } catch {
-        if (!cancelled) setStatus('Failed to load account credentials');
+        if (!cancelled) {
+          setStatus('Failed to load account credentials');
+          setLoading(false);
+        }
       }
     }
 
@@ -218,40 +452,130 @@ export default function GetPositions() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body.status === false) throw new Error(body.message || `HTTP ${res.status}`);
+      // Use the just-refreshed session (not the stale `client` closure) to
+      // start the stream, so it doesn't redundantly log in again from
+      // scratch when this very request just did that login.
+      let freshClient = client;
       if (body.session?.jwtToken) {
         saveSession(configId, body.session);
-        setClient((current) => (current ? { ...current, session: body.session, loggedIn: true } : current));
+        freshClient = client ? { ...client, session: body.session, loggedIn: true } : client;
+        setClient(freshClient);
       }
       const positions = body.positions || [];
       setRows(positions);
       setStatus(positions.length ? `${positions.length} positions` : 'No open positions');
+      startOrderFillStream(freshClient);
     } catch (e) {
       setStatus(toPositionError(e));
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, configId, selectedBrokerName, selectedConfig, selectedIsAngel]);
 
   useEffect(() => {
     const accountKey = String(configId || '');
-    if (!accountKey || !selectedConfig || !selectedIsAngel || !client?.session?.jwtToken || loading) return;
+    if (!accountKey || !selectedConfig || !selectedIsAngel || !client?.session?.jwtToken) return;
+    // `loading` is deliberately NOT part of this guard: it's now also true
+    // while hydrateConfig is still preparing the account (see above), and
+    // gating on it here would mean this effect never fires. autoLoadedAccountRef
+    // alone is what prevents re-triggering load() for the same account.
     if (autoLoadedAccountRef.current === accountKey) return;
 
     autoLoadedAccountRef.current = accountKey;
     load();
-  }, [client, configId, load, loading, selectedConfig, selectedIsAngel]);
+  }, [client, configId, load, selectedConfig, selectedIsAngel]);
 
-  const totalPnl = rows.reduce((sum, r) => sum + pnlOf(r), 0);
-  const longCount = rows.filter((row) => Number(row.netqty || 0) > 0).length;
-  const shortCount = rows.filter((row) => Number(row.netqty || 0) < 0).length;
-  const filterOptions = useMemo(() => buildFilterOptions(rows), [rows]);
-  const visibleRows = useMemo(() => sortPositionRows(filterPositionRows(rows, filters), sort), [rows, filters, sort]);
+  // Brokers never push "your position changed" - only order status changes
+  // (placed/complete/rejected/...). So to keep the position LIST (not just
+  // LTP) in sync with reality, listen on the same order-status stream Get
+  // OrderBook uses, and re-fetch positions the moment a fill completes.
+  //
+  // Started once from load() (like Get OrderBook's own live stream) rather
+  // than from an effect watching `client` - onSession below refreshes
+  // `client` on every reconnect, and a watching effect would treat that as
+  // "something changed, reconnect" and loop forever.
+  const startOrderFillStream = useCallback(async (streamClient = client) => {
+    fillStreamAbortRef.current?.abort();
+    if (!streamClient?.session?.jwtToken) {
+      setFillSyncStatus('offline');
+      return;
+    }
+
+    const controller = new AbortController();
+    fillStreamAbortRef.current = controller;
+    setFillSyncStatus('connecting');
+
+    try {
+      const res = await fetch('/api/angel/order-updates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client: streamClient }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok || !res.body) throw new Error(`Fill stream HTTP ${res.status}`);
+      setFillSyncStatus('live');
+      await readOrderStream(res.body, {
+        onSession: (session) => {
+          if (!session?.jwtToken || session.jwtToken === streamClient.session?.jwtToken) return;
+          saveSession(configId, session);
+          setClient((current) => (current ? { ...current, session, loggedIn: true } : current));
+        },
+        onOrder: (payload) => {
+          const order = normalizeSocketOrder(payload);
+          if (!order) {
+            if (payload?.['order-status'] === 'AB00') setFillSyncStatus('live');
+            return;
+          }
+          const status = String(order.orderstatus || order.status || '').toLowerCase();
+          if (status.includes('complete') || status.includes('traded')) {
+            setStatus(`Order filled${order.tradingsymbol ? ` (${order.tradingsymbol})` : ''} - refreshing positions...`);
+            load();
+          }
+        },
+        onStatus: (payload) => {
+          setFillSyncStatus(payload?.status === false ? 'offline' : 'live');
+        },
+        onError: () => {
+          setFillSyncStatus('offline');
+        },
+      });
+    } catch {
+      if (controller.signal.aborted) return;
+      setFillSyncStatus('offline');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, configId]);
+
+  useEffect(() => {
+    fillStreamAbortRef.current?.abort();
+    setFillSyncStatus('offline');
+  }, [configId]);
+
+  useEffect(() => () => {
+    fillStreamAbortRef.current?.abort();
+  }, []);
+
+  const totalPnl = liveRows.reduce((sum, r) => sum + pnlOf(r), 0);
+  const longCount = liveRows.filter((row) => Number(row.netqty || 0) > 0).length;
+  const shortCount = liveRows.filter((row) => Number(row.netqty || 0) < 0).length;
+  const filterOptions = useMemo(() => buildFilterOptions(liveRows), [liveRows]);
+  const searchedRows = useMemo(() => filterPositionSearchRows(liveRows, query), [liveRows, query]);
+  const visibleRows = useMemo(() => sortPositionRows(filterPositionRows(searchedRows, filters), sort), [searchedRows, filters, sort]);
   const tableRows = useMemo(
     () => (sort.key === 'stock'
       ? groupPositionsByExpiryAndExchange(visibleRows)
       : visibleRows.map((row) => ({ type: 'row', row }))),
     [visibleRows, sort.key],
   );
+  const visiblePositionSelections = useMemo(() => (
+    tableRows
+      .map((item, index) => (item.type === 'row' ? positionRowKey(item.row, index) : null))
+      .filter(Boolean)
+  ), [tableRows]);
+  const allVisibleSelected = visiblePositionSelections.length > 0
+    && visiblePositionSelections.every((key) => selectedPositionKeys.has(key));
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
   const togglePositionSelection = useCallback((key) => {
     setSelectedPositionKeys((current) => {
@@ -261,6 +585,19 @@ export default function GetPositions() {
       return next;
     });
   }, []);
+  const toggleVisibleSelection = useCallback(() => {
+    if (!visiblePositionSelections.length) return;
+
+    setSelectedPositionKeys((current) => {
+      const next = new Set(current);
+      const allSelected = visiblePositionSelections.every((key) => next.has(key));
+      visiblePositionSelections.forEach((key) => {
+        if (allSelected) next.delete(key);
+        else next.add(key);
+      });
+      return next;
+    });
+  }, [visiblePositionSelections]);
 
   useEffect(() => {
     setSelectedPositionKeys(new Set());
@@ -281,6 +618,27 @@ export default function GetPositions() {
     return legs;
   }, [tableRows, selectedPositionKeys]);
 
+  const loadExistingStrategies = useCallback(async (nextUserId = userId) => {
+    if (!nextUserId) {
+      setExistingStrategies([]);
+      return [];
+    }
+
+    try {
+      const res = await apiGet(`/strategy-master/list.php?user_id=${nextUserId}`);
+      const list = res.data || [];
+      setExistingStrategies(list);
+      return list;
+    } catch {
+      setExistingStrategies([]);
+      return [];
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    loadExistingStrategies(userId);
+  }, [loadExistingStrategies, userId]);
+
   const openStrategyDialog = useCallback(async () => {
     if (!userId) {
       setStatus('Select a user first');
@@ -290,17 +648,11 @@ export default function GetPositions() {
     setStrategyName('');
     setStrategyMode('new');
     setSelectedStrategyCode('');
-    setExistingStrategies([]);
     setStrategyDialogOpen(true);
 
     // Load this user's existing strategies so they can add legs to one.
-    try {
-      const res = await apiGet(`/strategy-master/list.php?user_id=${userId}`);
-      setExistingStrategies(res.data || []);
-    } catch {
-      setExistingStrategies([]);
-    }
-  }, [userId]);
+    loadExistingStrategies(userId);
+  }, [loadExistingStrategies, userId]);
 
   const saveStrategy = useCallback(async () => {
     if (!userId) {
@@ -319,6 +671,11 @@ export default function GetPositions() {
       ltp: positionValue(row, ['ltp', 'LTP', 'lasttradedprice']),
       pnl: pnlOf(row),
     }));
+    const brokerTag = {
+      broker_config_id: Number(configId || 0) || null,
+      broker_name: selectedBrokerName || selectedConfig?.broker_name || '',
+      broker_account_id: selectedConfig?.account_id || '',
+    };
 
     let body;
     if (strategyMode === 'existing') {
@@ -327,14 +684,14 @@ export default function GetPositions() {
         setStrategyError('Pick a strategy to add to');
         return;
       }
-      body = { user_id: Number(userId), strategy_code: selectedStrategyCode, legs };
+      body = { user_id: Number(userId), strategy_code: selectedStrategyCode, ...brokerTag, legs };
     } else {
       const name = strategyName.trim();
       if (!name) {
         setStrategyError('Enter a strategy name');
         return;
       }
-      body = { user_id: Number(userId), strategy_name: name, legs };
+      body = { user_id: Number(userId), strategy_name: name, ...brokerTag, legs };
     }
 
     setSavingStrategy(true);
@@ -349,12 +706,13 @@ export default function GetPositions() {
       setStrategyName('');
       setSelectedStrategyCode('');
       setSelectedPositionKeys(new Set());
+      await loadExistingStrategies(userId);
     } catch (error) {
       setStrategyError(error.message || 'Failed to save strategy');
     } finally {
       setSavingStrategy(false);
     }
-  }, [strategyMode, selectedStrategyCode, strategyName, userId, selectedLegs]);
+  }, [configId, loadExistingStrategies, selectedBrokerName, selectedConfig, strategyMode, selectedStrategyCode, strategyName, userId, selectedLegs]);
 
   return (
     <div className="trade-panel">
@@ -363,7 +721,7 @@ export default function GetPositions() {
           <CompactSelect
             title="User"
             value={userId}
-            onChange={setUserId}
+            onChange={handleUserId}
             options={users.map((user) => ({
               value: String(user.id),
               label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
@@ -373,7 +731,7 @@ export default function GetPositions() {
           <CompactSelect
             title="Account"
             value={configId}
-            onChange={setConfigId}
+            onChange={handleConfigId}
             disabled={configLoading || !configs.length}
             options={configs.map((config) => ({
               value: String(config.id),
@@ -385,11 +743,46 @@ export default function GetPositions() {
           <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsAngel && !client)} type="button">
             {loading ? 'Loading' : 'Get Positions'}
           </button>
-          {rows.length > 0 && (
+          {positionRows.length > 0 && (
             <span className={`positions-total ${totalPnl >= 0 ? 'up' : 'down'}`}>
               Total P&amp;L: {money(totalPnl)}
             </span>
           )}
+
+          <span className={`orderbook-live-pill ${feedStatus}`} title="Live LTP feed (Feedmaster)">
+            <Radio size={13} />
+            {feedStatus === 'live' ? 'Live' : feedStatus === 'connecting' ? 'Connecting' : 'Offline'}
+          </span>
+
+          <span className={`orderbook-live-pill ${fillSyncStatus}`} title="Auto re-syncs positions when an order fills">
+            <RefreshCw size={13} />
+            Auto-sync: {fillSyncStatus === 'live' ? 'On' : fillSyncStatus === 'connecting' ? 'Connecting' : 'Off'}
+          </span>
+
+          <label className="orderbook-search">
+            <Search size={14} />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search symbol, qty, P&L..."
+            />
+            {query && (
+              <button type="button" onClick={() => setQuery('')} aria-label="Clear search">
+                <X size={13} />
+              </button>
+            )}
+          </label>
+
+          {visiblePositionSelections.length > 0 && (
+            <button
+              className={`positions-select-all${allVisibleSelected ? ' active' : ''}`}
+              type="button"
+              onClick={toggleVisibleSelection}
+            >
+              <Check size={14} /> {allVisibleSelected ? 'Clear all' : 'Select all'}
+            </button>
+          )}
+
           {activeFilterCount > 0 && (
             <button className="positions-clear-filters" type="button" onClick={() => setFilters(defaultPositionFilters)}>
               <X size={14} /> Clear filters
@@ -414,7 +807,7 @@ export default function GetPositions() {
           </div>
         )}
 
-        {rows.length > 0 && (
+        {positionRows.length > 0 && (
           <div className="position-book-summary">
             <div>
               <span className="buy">Long Positions</span>
@@ -429,7 +822,7 @@ export default function GetPositions() {
             <div>
               <span>Total P&amp;L</span>
               <strong className={totalPnl >= 0 ? 'up' : 'down'}>{money(totalPnl)}</strong>
-              <em>{rows.length} Positions</em>
+              <em>{positionRows.length} Positions</em>
             </div>
           </div>
         )}
@@ -492,7 +885,7 @@ export default function GetPositions() {
                   })()
                 )
               ))}
-              {rows.length === 0 && (
+              {positionRows.length === 0 && (
                 <tr>
                   <td className="positions-empty" colSpan={POSITION_COLUMNS.length}>
                     <div className="positions-empty-state">
@@ -504,7 +897,7 @@ export default function GetPositions() {
                       >
                         <Info size={18} />
                       </button>
-                      <strong>{loading ? 'Loading positions' : 'No positions'}</strong>
+                      <strong>{loading ? 'Loading positions' : rows.length > 0 ? 'No positions outside strategies' : 'No positions'}</strong>
                     </div>
                   </td>
                 </tr>
@@ -571,7 +964,7 @@ export default function GetPositions() {
                       options={existingStrategies.map((strategy) => ({
                         value: strategy.strategy_code,
                         label: strategy.strategy_name,
-                        meta: `${(strategy.legs || []).length} legs`,
+                        meta: strategyBrokerLabel(strategy) || `${(strategy.legs || []).length} legs`,
                       }))}
                     />
                   </label>
@@ -676,6 +1069,57 @@ function positionRowKey(row, fallback = '') {
     row.netqty,
     fallback,
   ].filter((value) => value != null && value !== '').join('|');
+}
+
+function buildStrategyLegKeySet(strategies) {
+  const keys = new Set();
+  (strategies || []).forEach((strategy) => {
+    (strategy.legs || []).forEach((leg) => {
+      const key = strategyLegIdentityKey(leg);
+      if (key) keys.add(key);
+    });
+  });
+  return keys;
+}
+
+function strategyBrokerLabel(strategy) {
+  const broker = String(strategy.broker_name || '').trim();
+  const account = String(strategy.broker_account_id || '').trim();
+  if (broker && account) return `${broker} ${account}`;
+  return broker || account;
+}
+
+function positionIdentityKey(row) {
+  return normalizedPositionIdentity({
+    token: row.symboltoken,
+    symbol: row.tradingsymbol || row.symbolname || row.symbol,
+    exchange: row.exchange,
+    product: row.producttype || row.product_type,
+    qty: row.netqty,
+  });
+}
+
+function strategyLegIdentityKey(leg) {
+  return normalizedPositionIdentity({
+    token: leg.symbol_token,
+    symbol: leg.trading_symbol,
+    exchange: leg.exchange,
+    product: leg.product_type,
+    qty: leg.net_qty,
+  });
+}
+
+function normalizedPositionIdentity({ token, symbol, exchange, product, qty }) {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  if (!normalizedSymbol) return '';
+
+  return [
+    String(token || '').trim(),
+    normalizedSymbol,
+    String(exchange || '').trim().toUpperCase(),
+    compactProductTag(product || ''),
+    String(Number(qty || 0)),
+  ].join('|');
 }
 
 function positionLabel(key) {
@@ -954,6 +1398,35 @@ function filterPositionRows(rows, filters) {
   });
 }
 
+function filterPositionSearchRows(rows, query) {
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return rows;
+
+  return rows.filter((row) => positionSearchText(row).includes(needle));
+}
+
+function positionSearchText(row) {
+  const symbol = String(row.tradingsymbol || row.symbolname || row.symbol || '-');
+  const parsed = parseTradingSymbol(symbol);
+  return [
+    row.tradingsymbol,
+    row.symbolname,
+    row.symbol,
+    row.symboltoken,
+    parsed.root,
+    parsed.expiry,
+    parsed.strike,
+    parsed.optionType,
+    row.exchange,
+    compactProductTag(row.producttype || row.product_type || '-'),
+    Number(row.netqty || 0),
+    positionBuyAvg(row),
+    positionSellAvg(row),
+    positionValue(row, ['ltp', 'LTP', 'lasttradedprice']),
+    pnlOf(row),
+  ].filter((value) => value != null && value !== '').join(' ').toLowerCase();
+}
+
 function sortPositionRows(rows, sort) {
   const dir = sort.dir === 'desc' ? -1 : 1;
   return [...rows].sort((a, b) => comparePositionRows(a, b, sort.key) * dir);
@@ -987,7 +1460,7 @@ function renderPositionCell(row, column, selection = {}) {
   if (column === 'netQty') return <PositionQtyCell row={row} />;
   if (column === 'buyAvg') return <PositionPriceCell value={positionBuyAvg(row)} />;
   if (column === 'sellAvg') return <PositionPriceCell value={positionSellAvg(row)} />;
-  if (column === 'ltp') return <PositionPriceCell value={positionValue(row, ['ltp', 'LTP', 'lasttradedprice'])} strong />;
+  if (column === 'ltp') return <PositionPriceCell value={positionValue(row, ['ltp', 'LTP', 'lasttradedprice'])} strong dir={row.liveDir} />;
   if (column === 'pnl') return <PositionPnlCell row={row} />;
   return '-';
 }
@@ -1055,10 +1528,11 @@ function PositionPnlCell({ row }) {
   );
 }
 
-function PositionPriceCell({ value, strong = false }) {
+function PositionPriceCell({ value, strong = false, dir = '' }) {
   const n = Number(value || 0);
   if (!Number.isFinite(n) || n === 0) return <span className="position-price-muted">-</span>;
-  return <span className={strong ? 'position-price ltp' : 'position-price'}>{money(n)}</span>;
+  const cls = strong ? 'position-price ltp' : 'position-price';
+  return <span className={`${cls}${dir ? ` flash-${dir}` : ''}`} key={dir ? `${n}-${dir}` : undefined}>{money(n)}</span>;
 }
 
 function positionValue(row, keys) {
@@ -1165,6 +1639,82 @@ function toPositionError(error) {
     return 'This account is not logged in. Login from Broker Configuration first.';
   }
   return message || 'Failed to load positions';
+}
+
+// Parses the same order-status SSE stream Get OrderBook reads, so this page
+// can hear "an order just filled" and re-fetch positions in response.
+async function readOrderStream(body, handlers) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      const chunk = buffer.slice(0, boundary).trim();
+      buffer = buffer.slice(boundary + 2);
+      handleStreamChunk(chunk, handlers);
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+}
+
+function handleStreamChunk(chunk, handlers) {
+  if (!chunk) return;
+  let event = 'message';
+  let data = '';
+  for (const line of chunk.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    if (line.startsWith('data:')) data += line.slice(5).trim();
+  }
+
+  let payload = null;
+  try {
+    payload = data ? JSON.parse(data) : null;
+  } catch {
+    payload = { raw: data };
+  }
+
+  if (event === 'session') handlers.onSession?.(payload?.session);
+  else if (event === 'order') handlers.onOrder?.(payload);
+  else if (event === 'status') handlers.onStatus?.(payload);
+  else if (event === 'error') handlers.onError?.(payload);
+}
+
+function normalizeSocketOrder(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const data = payload.orderData;
+  if (!data || typeof data !== 'object') return null;
+  if (!data.orderid && !data.uniqueorderid && !data.tradingsymbol) return null;
+
+  return {
+    ...data,
+    orderstatus: data.orderstatus || data.status || orderStatusCodeLabel(payload['order-status']),
+    status: data.status || data.orderstatus || orderStatusCodeLabel(payload['order-status']),
+    websocketStatusCode: payload['order-status'] || '',
+    websocketStatusText: payload['error-message'] || '',
+  };
+}
+
+function orderStatusCodeLabel(code) {
+  const labels = {
+    AB01: 'open',
+    AB02: 'cancelled',
+    AB03: 'rejected',
+    AB04: 'modified',
+    AB05: 'complete',
+    AB06: 'amo received',
+    AB07: 'amo cancelled',
+    AB08: 'amo modify received',
+    AB09: 'open pending',
+    AB10: 'trigger pending',
+    AB11: 'modify pending',
+  };
+  return labels[code] || '';
 }
 
 function findLoggedInUser(users, principal = {}) {

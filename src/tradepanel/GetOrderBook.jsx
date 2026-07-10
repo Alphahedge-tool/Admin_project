@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ClipboardList, Filter, Info, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet } from '../config/api';
 import { getSavedSession, isAngelBroker, saveSession } from '../feedmaster/feedMasterStore';
+import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { parseTradingSymbol, compactProductTag } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
 import './tradepanel.css';
@@ -50,7 +51,10 @@ export default function GetOrderBook() {
   const [client, setClient] = useState(null);
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('Select a user and account');
-  const [loading, setLoading] = useState(false);
+  // Starts true: until the user/config/credential setup below settles one way
+  // or another, we're still "preparing" - staying in the loading state avoids
+  // a "No orders" flash before the real auto-load kicks in.
+  const [loading, setLoading] = useState(true);
   const [configLoading, setConfigLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [query, setQuery] = useState('');
@@ -63,6 +67,22 @@ export default function GetOrderBook() {
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedBrokerName = selectedConfig?.broker_name || '';
   const selectedIsAngel = isAngelBroker(selectedBrokerName);
+
+  // Manual picks here should also become the shared Trade Panel selection.
+  // setLoading(true) here (not just inside the effects below) closes the gap
+  // between clicking and the account-hydration effects actually running, so
+  // the table never flashes "No orders" for a frame while switching account.
+  const handleUserId = useCallback((value) => {
+    setUserId(value);
+    setLoading(true);
+    saveTradeAccount({ userId: value, configId: '' });
+  }, []);
+
+  const handleConfigId = useCallback((value) => {
+    setConfigId(value);
+    setLoading(true);
+    saveTradeAccount({ userId, configId: value });
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +97,7 @@ export default function GetOrderBook() {
 
         if (usersOut.status !== 'fulfilled') {
           setStatus('Failed to load users');
+          setLoading(false);
           return;
         }
 
@@ -84,15 +105,28 @@ export default function GetOrderBook() {
         setUsers(list);
         const auth = authOut.status === 'fulfilled' ? authOut.value : null;
         const principal = auth?.user || auth?.admin || auth?.data || auth || {};
-        const current = findLoggedInUser(list, principal) || list[0];
+
+        // Reuse whichever user/account was last picked on any Trade Panel
+        // page (Get Position, Get OrderBook, Get TradeBook, Sync Net
+        // Positions), so switching pages keeps the same account selected.
+        const saved = getSavedTradeAccount();
+        const savedUser = saved.userId && list.some((u) => String(u.id) === String(saved.userId))
+          ? list.find((u) => String(u.id) === String(saved.userId))
+          : null;
+        const current = savedUser || findLoggedInUser(list, principal) || list[0];
         if (current?.id) {
           setUserId(String(current.id));
+          saveTradeAccount({ userId: String(current.id) });
           setStatus(`Select account for ${current.username || 'user'}`);
         } else {
           setStatus('No users available');
+          setLoading(false);
         }
       } catch {
-        if (!cancelled) setStatus('Failed to load users');
+        if (!cancelled) {
+          setStatus('Failed to load users');
+          setLoading(false);
+        }
       }
     }
 
@@ -113,6 +147,7 @@ export default function GetOrderBook() {
         return;
       }
 
+      setLoading(true);
       setConfigLoading(true);
       setRows([]);
       setClient(null);
@@ -122,10 +157,21 @@ export default function GetOrderBook() {
 
         const list = res.data || [];
         setConfigs(list);
-        setConfigId(String(list[0]?.id || ''));
+        const saved = getSavedTradeAccount();
+        const savedConfigId = String(saved.userId || '') === String(userId) && saved.configId
+          && list.some((c) => String(c.id) === String(saved.configId))
+          ? saved.configId
+          : '';
+        const nextConfigId = String(savedConfigId || list[0]?.id || '');
+        setConfigId(nextConfigId);
+        if (nextConfigId) saveTradeAccount({ userId: String(userId), configId: nextConfigId });
         setStatus(list.length ? 'Select account, then Get OrderBook' : 'No broker accounts configured for this user');
+        if (!list.length) setLoading(false);
       } catch {
-        if (!cancelled) setStatus('Failed to load broker accounts');
+        if (!cancelled) {
+          setStatus('Failed to load broker accounts');
+          setLoading(false);
+        }
       } finally {
         if (!cancelled) setConfigLoading(false);
       }
@@ -145,8 +191,11 @@ export default function GetOrderBook() {
       setClient(null);
       if (!configId) return;
 
+      setLoading(true);
+
       if (!selectedIsAngel) {
         setStatus(`${selectedBrokerName || 'Selected broker'} order book is not wired yet`);
+        setLoading(false);
         return;
       }
 
@@ -158,6 +207,7 @@ export default function GetOrderBook() {
         const c = res.data || {};
         if (!c.account_id || !c.app_key || !c.pin || !c.totp_secret) {
           setStatus('This Angel account is missing Client Code / PIN / TOTP / API Key');
+          setLoading(false);
           return;
         }
 
@@ -172,9 +222,20 @@ export default function GetOrderBook() {
           loggedIn: !!session?.jwtToken,
           session,
         });
-        setStatus(session?.jwtToken ? '' : 'This account is not logged in. Login from Broker Configuration first.');
+        // A valid session hands off to the auto-load effect next, which
+        // manages `loading` itself from here - only flip it off here when
+        // there's no session, since nothing further will auto-load then.
+        if (session?.jwtToken) {
+          setStatus('');
+        } else {
+          setStatus('This account is not logged in. Login from Broker Configuration first.');
+          setLoading(false);
+        }
       } catch {
-        if (!cancelled) setStatus('Failed to load account credentials');
+        if (!cancelled) {
+          setStatus('Failed to load account credentials');
+          setLoading(false);
+        }
       }
     }
 
@@ -220,14 +281,19 @@ export default function GetOrderBook() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body.status === false) throw new Error(body.message || `HTTP ${res.status}`);
+      // Use the just-refreshed session (not the stale `client` closure) to
+      // start the stream, so it doesn't redundantly log in again from
+      // scratch when this very request just did that login.
+      let freshClient = client;
       if (body.session?.jwtToken) {
         saveSession(configId, body.session);
-        setClient((current) => (current ? { ...current, session: body.session, loggedIn: true } : current));
+        freshClient = client ? { ...client, session: body.session, loggedIn: true } : client;
+        setClient(freshClient);
       }
       const orders = body.orders || [];
       setRows(orders);
       setStatus(orders.length ? `${orders.length} orders` : 'No orders in the order book');
-      startOrderStream(client);
+      startOrderStream(freshClient);
     } catch (error) {
       setStatus(toOrderError(error));
     } finally {
@@ -295,12 +361,16 @@ export default function GetOrderBook() {
 
   useEffect(() => {
     const accountKey = String(configId || '');
-    if (!accountKey || !selectedConfig || !selectedIsAngel || !client?.session?.jwtToken || loading) return;
+    if (!accountKey || !selectedConfig || !selectedIsAngel || !client?.session?.jwtToken) return;
+    // `loading` is deliberately NOT part of this guard: it's now also true
+    // while hydrateConfig is still preparing the account (see above), and
+    // gating on it here would mean this effect never fires. autoLoadedAccountRef
+    // alone is what prevents re-triggering load() for the same account.
     if (autoLoadedAccountRef.current === accountKey) return;
 
     autoLoadedAccountRef.current = accountKey;
     load();
-  }, [client, configId, load, loading, selectedConfig, selectedIsAngel]);
+  }, [client, configId, load, selectedConfig, selectedIsAngel]);
 
   const summary = useMemo(() => buildOrderSummary(rows), [rows]);
   const filterOptions = useMemo(() => buildOrderFilterOptions(rows), [rows]);
@@ -318,7 +388,7 @@ export default function GetOrderBook() {
           <CompactSelect
             title="User"
             value={userId}
-            onChange={setUserId}
+            onChange={handleUserId}
             options={users.map((user) => ({
               value: String(user.id),
               label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
@@ -328,7 +398,7 @@ export default function GetOrderBook() {
           <CompactSelect
             title="Account"
             value={configId}
-            onChange={setConfigId}
+            onChange={handleConfigId}
             disabled={configLoading || !configs.length}
             options={configs.map((config) => ({
               value: String(config.id),

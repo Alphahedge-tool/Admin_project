@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 
-export function CompactSelect({ title, value, options, onChange, disabled = false }) {
+export function CompactSelect({ title, value, options, onChange, disabled = false, menuMinWidth = 0 }) {
   return (
     <label className="positions-compact-select">
       <span>{title}</span>
@@ -14,6 +14,7 @@ export function CompactSelect({ title, value, options, onChange, disabled = fals
         disabled={disabled || !options.length}
         emptyLabel={`No ${title.toLowerCase()}`}
         portal
+        menuMinWidth={menuMinWidth}
         options={options.map((option) => ({
           value: option.value,
           label: option.label,
@@ -24,7 +25,7 @@ export function CompactSelect({ title, value, options, onChange, disabled = fals
   );
 }
 
-export function PositionSelect({ value, options, onChange, disabled = false, emptyLabel = 'Select', compact = false, portal = false }) {
+export function PositionSelect({ value, options, onChange, disabled = false, emptyLabel = 'Select', compact = false, portal = false, menuMinWidth = 0 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
   const menuRef = useRef(null);
@@ -51,7 +52,7 @@ export function PositionSelect({ value, options, onChange, disabled = false, emp
       if (!rect) return;
 
       const viewportPad = 8;
-      const width = rect.width;
+      const width = Math.max(rect.width, Number(menuMinWidth || 0));
       const left = Math.min(
         Math.max(viewportPad, rect.left),
         window.innerWidth - width - viewportPad,
@@ -73,7 +74,7 @@ export function PositionSelect({ value, options, onChange, disabled = false, emp
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [open, portal]);
+  }, [open, portal, menuMinWidth]);
 
   const choose = (nextValue) => {
     onChange(nextValue);

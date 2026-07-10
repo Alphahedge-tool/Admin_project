@@ -244,9 +244,15 @@ function AdminSidebar() {
             <NavIcon><TrendingUp size={16} /></NavIcon>
             <ListItemText primary="Trade Panel" />
             <IconButton
+              component="span"
               size="small"
+              role="button"
+              tabIndex={0}
               title="Open Trade Panel in new tab"
               onClick={openTradePanelTab}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') openTradePanelTab(event)
+              }}
               sx={{
                 width: 26,
                 height: 26,
@@ -264,6 +270,11 @@ function AdminSidebar() {
 
           <AccordionDetails sx={{ p: 0 }}>
             <List component="div" disablePadding>
+              <ListItemButton component={Link} to="/admin/trade-panel/client-dashboard" sx={navSx('/admin/trade-panel/client-dashboard', true)}>
+                <NavIcon><LayoutDashboard size={15} /></NavIcon>
+                <ListItemText primary="Client Dashboard" />
+              </ListItemButton>
+
               <ListItemButton component={Link} to="/admin/trade-panel/enter-trade" sx={navSx('/admin/trade-panel/enter-trade', true)}>
                 <NavIcon><BarChart3 size={15} /></NavIcon>
                 <ListItemText primary="Enter Trade" />

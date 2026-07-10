@@ -5,6 +5,7 @@ import { withoutSession } from './auth.js';
 
 const maxFloat = (a, b) => (a > b ? a : b);
 const orDefault = (v, def) => (v ? v : def);
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function tradeType(v) {
   return String(v || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
@@ -330,12 +331,33 @@ export async function book(client, auth, cc, pathName, key) {
   try {
     result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
   } catch (err) {
+    if (isSmartApiStatus(err, 503)) {
+      await sleep(700);
+      try {
+        result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
+      } catch (retryErr) {
+        err = retryErr;
+      }
+    }
+    if (result) return { status: true, [key]: normalizeBookRows(result.data), raw: result, session };
+
     const relogin = await auth.autoLogin(withoutSession(cc)).catch(() => null);
     if (!relogin) throw err;
     session = relogin.session;
-    result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
+    try {
+      result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
+    } catch (freshErr) {
+      if (!isSmartApiStatus(freshErr, 503)) throw freshErr;
+      await sleep(900);
+      result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
+    }
   }
   return { status: true, [key]: normalizeBookRows(result.data), raw: result, session };
+}
+
+function isSmartApiStatus(err, status) {
+  const msg = String(err?.message || '');
+  return msg.includes(`SmartAPI HTTP ${status}`);
 }
 
 export { round2 };
