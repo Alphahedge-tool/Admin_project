@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CircleChevronDown, AlignJustify, Table, ArrowUpDown, Radio } from 'lucide-react'
 import { apiGet } from '../config/api'
-import { getSavedSession, isAngelBroker, loginAngelClient, saveSession } from '../feedmaster/feedMasterStore'
+import {
+  classifyLoginError, ensureSession, getAngelClient, isAngelBroker, isAuthError, isRateLimited,
+  saveSession,
+} from '../feedmaster/angelSessionStore'
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore'
 import { CompactSelect } from './PositionSelect'
 import { compactProductTag } from './symbolParse'
@@ -63,7 +66,7 @@ function ClientDashboard() {
     return [...seen].sort().join(',')
   }, [brokerStrategies, positionRows])
 
-  const { liveTicks, feedStatus } = useLiveLegFeed(legFeedKey)
+  const { liveTicks, feedStatus } = useLiveLegFeed(legFeedKey, { subscriber: 'client-dashboard' })
 
   // Identity keys of every leg already saved in this account's strategies.
   const strategyLegKeys = useMemo(() => {
@@ -243,40 +246,17 @@ function ClientDashboard() {
       setPositionsLoading(true)
       setPositionsStatus('Loading Get Position legs...')
       try {
-        const configRes = await apiGet(`/users/broker-config/get.php?id=${configId}`)
-        if (cancelled) return
-
-        const config = configRes.data || {}
-        let session = getSavedSession(configId)
-        let client = {
-          enabled: true,
-          alias: `${selectedConfig.broker_name || 'Angel'} - ${config.account_id}`,
-          clientCode: config.account_id,
-          apiKey: config.app_key,
-          pin: config.pin,
-          totpSecret: config.totp_secret,
-          loggedIn: !!session?.jwtToken,
-          session,
-        }
-
-        if (!client.clientCode || !client.apiKey || !client.pin || !client.totpSecret) {
-          setPositionsStatus('Selected Angel account credentials are incomplete')
+        // The account was logged in at app start and its token saved (see
+        // StartupGate), so normally there is nothing to do here.
+        let client = getAngelClient(configId)
+        if (!client) {
+          setPositionsStatus('This Angel account is not loaded')
           return
         }
-
-        // No saved token yet? Log this account in from its stored credentials
-        // (Client Code / PIN / TOTP / API Key) and persist the session, so it
-        // never has to be re-logged-in from Broker Configuration - same as
-        // Get Position / Get OrderBook.
-        if (!session?.jwtToken) {
-          setPositionsStatus('Logging in this Angel account...')
-          const login = await loginAngelClient(client)
+        if (!client.session?.jwtToken) {
+          setPositionsStatus('Signing in this Angel account...')
+          client = { ...client, session: await ensureSession(configId), loggedIn: true }
           if (cancelled) return
-          session = login.session || null
-          if (session?.jwtToken) {
-            saveSession(configId, session)
-            client = { ...client, session, loggedIn: true }
-          }
         }
 
         setPositionsStatus('Loading Get Position legs...')
@@ -284,16 +264,11 @@ function ClientDashboard() {
         try {
           body = await fetchAngelPositions(client)
         } catch (error) {
-          // A saved token that has since expired: log in fresh from the stored
-          // credentials, save the new token, and retry once.
+          // A saved token that has since expired: one shared, deduped re-login.
           if (!isAuthError(error)) throw error
-          setPositionsStatus('Refreshing Angel login...')
-          const login = await loginAngelClient({ ...client, session: null })
+          setPositionsStatus('Angel token expired - signing in again...')
+          client = { ...client, session: await ensureSession(configId, { force: true }), loggedIn: true }
           if (cancelled) return
-          session = login.session || null
-          if (!session?.jwtToken) throw error
-          saveSession(configId, session)
-          client = { ...client, session, loggedIn: true }
           body = await fetchAngelPositions(client)
         }
 
@@ -628,17 +603,14 @@ async function fetchAngelPositions(client) {
   return body
 }
 
-function isAuthError(error) {
-  return /SmartAPI HTTP (401|403)|session|token|login|totp|pin|unauthor/i.test(String(error?.message || ''))
-}
-
 function toPositionStatus(error) {
   const message = String(error?.message || '')
   if (/SmartAPI HTTP 503/i.test(message)) {
     return 'SmartAPI is temporarily unavailable. Please retry Get Position in a moment.'
   }
-  if (isAuthError(error)) {
-    return 'Could not auto-login this Angel account. Check its Client Code / PIN / TOTP in Broker Configuration.'
+  if (isAuthError(error) || isRateLimited(error)) {
+    const issue = classifyLoginError(error)
+    return `${issue.title}. ${issue.hint}`
   }
   return message || 'Failed to load Get Position legs'
 }

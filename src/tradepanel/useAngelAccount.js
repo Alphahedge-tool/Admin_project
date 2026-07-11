@@ -1,139 +1,138 @@
-// Shared Angel account picker state, used by both Enter Trade (option chain +
-// basket) and Get Position. Hydrates a single logged-in `client` from a user's
-// Angel broker config (the rows managed in Users -> Broker Configuration).
-import { useCallback, useEffect, useRef, useState } from 'react';
+// Shared Angel account picker state, used by Enter Trade (option chain + basket).
+// It no longer loads credentials or logs anything in: every Angel account was
+// already logged in at app start (see startup/StartupGate +
+// feedmaster/angelSessionStore), so this just picks one of them and hands back
+// the client that already carries a live session.
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiGet } from '../config/api';
+import {
+  clientFromAccount,
+  ensureSession,
+  saveSession,
+  useAngelSessions,
+} from '../feedmaster/angelSessionStore';
 
 export function useAngelAccount() {
-  const [users, setUsers] = useState([]);
-  const [userId, setUserId] = useState('');
-  const [configs, setConfigs] = useState([]); // Angel configs for the selected user
-  const [configId, setConfigId] = useState('');
-  const [client, setClient] = useState(null); // hydrated client creds (single account)
-  const [accStatus, setAccStatus] = useState('Select a user and Angel account');
-  const [loginNotice, setLoginNotice] = useState({ open: false, message: '' });
-  const lastNotifiedJwtRef = useRef('');
+  const { users, accounts, phase } = useAngelSessions();
+  // Explicit picks. Everything else below is derived, so a login finishing in
+  // the store shows up here without a round of extra renders.
+  const [userPick, setUserPick] = useState('');
+  const [configPick, setConfigPick] = useState('');
+  const [statusOverride, setStatusOverride] = useState({ configId: '', text: '' });
+  const [dismissedNotice, setDismissedNotice] = useState('');
+  const [principal, setPrincipal] = useState(null);
 
-  // Load users once.
+  // Who is using the app - so their own user row is preselected.
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([
-      apiGet('/users/list.php'),
-      apiGet('/auth/me.php'),
-    ])
-      .then(([usersOut, authOut]) => {
-        if (cancelled) return;
-        if (usersOut.status !== 'fulfilled') {
-          setAccStatus('Failed to load users');
-          return;
-        }
-
-        const list = usersOut.value.data || [];
-        setUsers(list);
-        if (!list.length) {
-          setAccStatus('No users available');
-          return;
-        }
-
-        const auth = authOut.status === 'fulfilled' ? authOut.value : null;
-        const principal = auth?.user || auth?.admin || auth?.data || auth || {};
-        const current = findLoggedInUser(list, principal) || list[0];
-        if (current?.id) {
-          setUserId(String(current.id));
-          setAccStatus(`Loading Angel accounts for ${current.username || 'selected user'}...`);
-        }
+    apiGet('/auth/me.php')
+      .then((data) => {
+        if (!cancelled) setPrincipal(data?.user || data?.admin || data?.data || data || {});
       })
-      .catch(() => setAccStatus('Failed to load users'));
-
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [client?.alias]);
-
-  // Load the selected user's Angel broker configs.
-  useEffect(() => {
-    if (!userId) {
-      setConfigs([]);
-      setConfigId('');
-      return;
-    }
-    setConfigs([]);
-    setConfigId('');
-    setClient(null);
-    apiGet(`/users/broker-config/list.php?user_id=${userId}`)
-      .then((res) => {
-        const angel = (res.data || []).filter((c) =>
-          String(c.broker_name || '').toLowerCase().replace(/\s/g, '').includes('angel')
-        );
-        setConfigs(angel);
-        if (angel.length > 0) {
-          setConfigId(String(angel[0].id));
-          setAccStatus('Loading first Angel account...');
-        } else {
-          setAccStatus('No Angel account configured for this user');
-        }
-      })
-      .catch(() => setAccStatus('Failed to load broker configs'));
-  }, [userId]);
-
-  // Hydrate full credentials when an account is chosen.
-  useEffect(() => {
-    if (!configId) {
-      setClient(null);
-      return;
-    }
-        setAccStatus('Loading credentials...');
-    apiGet(`/users/broker-config/get.php?id=${configId}`)
-      .then((res) => {
-        const c = res.data || {};
-        if (!c.account_id || !c.app_key || !c.pin || !c.totp_secret) {
-          setClient(null);
-          setAccStatus('This Angel config is missing Client Code / PIN / TOTP / API Key - edit it in Users.');
-          return;
-        }
-        const user = users.find((u) => String(u.id) === String(userId));
-        setClient({
-          enabled: true,
-          alias: `${user?.username || 'user'} - ${c.account_id}`,
-          clientCode: c.account_id,
-          apiKey: c.app_key,
-          pin: c.pin,
-          totpSecret: c.totp_secret,
-          loggedIn: false,
-          session: null,
-        });
-        setAccStatus('Account ready');
-      })
-      .catch(() => {
-        setClient(null);
-        setAccStatus('Failed to load credentials');
-      });
-  }, [configId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Persist the live session back onto the client so re-loads reuse it.
-  const handleClientSession = useCallback((_index, session) => {
-    setClient((c) => (c ? { ...c, session, loggedIn: !!session?.jwtToken } : c));
-    if (session?.jwtToken) {
-      setAccStatus('Logged in - live');
-      if (lastNotifiedJwtRef.current !== session.jwtToken) {
-        lastNotifiedJwtRef.current = session.jwtToken;
-        setLoginNotice({
-          open: true,
-          message: `${client?.alias || session.clientCode || 'Angel account'} logged in successfully`,
-        });
-      }
-    }
   }, []);
+
+  const defaultUserId = useMemo(() => {
+    const current = findLoggedInUser(users, principal || {}) || users[0];
+    return current?.id ? String(current.id) : '';
+  }, [users, principal]);
+
+  const userId = users.some((user) => String(user.id) === userPick) ? userPick : defaultUserId;
+
+  // The selected user's Angel accounts, in the shape the account bar renders.
+  const configs = useMemo(
+    () => accounts
+      .filter((account) => account.userId === String(userId))
+      .map((account) => ({
+        id: account.configId,
+        broker_name: account.brokerName,
+        account_id: account.accountId,
+      })),
+    [accounts, userId],
+  );
+
+  const configId = configs.some((config) => config.id === configPick)
+    ? configPick
+    : (configs[0]?.id || '');
+
+  const account = useMemo(
+    () => accounts.find((item) => item.configId === configId) || null,
+    [accounts, configId],
+  );
+  const client = useMemo(() => clientFromAccount(account), [account]);
+
+  // A live account says so; a failed one says WHAT is wrong (PIN / TOTP / API
+  // key / backend down) rather than a dead "not logged in".
+  const derivedStatus = useMemo(() => {
+    if (!users.length) return phase === 'ready' ? 'No users available' : 'Loading users...';
+    if (!configs.length) {
+      return phase === 'ready'
+        ? 'No Angel account configured for this user'
+        : 'Signing in Angel accounts...';
+    }
+    if (!account) return 'Select an Angel account';
+    if (account.status === 'live') return 'Logged in - live';
+    if (account.status === 'failed') {
+      const issue = account.issue;
+      return `${issue?.title || 'Login failed'} - ${issue?.hint || account.message || ''}`.trim();
+    }
+    return 'Signing in...';
+  }, [account, configs.length, phase, users.length]);
+
+  const accStatus = statusOverride.configId === configId && statusOverride.text
+    ? statusOverride.text
+    : derivedStatus;
+
+  const setAccStatus = useCallback(
+    (text) => setStatusOverride({ configId, text }),
+    [configId],
+  );
+
+  // One toast per account state: "logged in" or the reason it could not be.
+  const noticeKey = account ? `${account.configId}:${account.status}:${account.issue?.code || ''}` : '';
+  const loginNotice = useMemo(() => {
+    if (!account || dismissedNotice === noticeKey) {
+      return { open: false, message: '', severity: 'success' };
+    }
+    if (account.status === 'live') {
+      return { open: true, message: `${account.alias} logged in successfully`, severity: 'success' };
+    }
+    if (account.status === 'failed') {
+      const issue = account.issue;
+      return {
+        open: true,
+        message: `${account.alias}: ${issue?.title || 'Login failed'}. ${issue?.hint || ''}`.trim(),
+        severity: 'error',
+      };
+    }
+    return { open: false, message: '', severity: 'success' };
+  }, [account, dismissedNotice, noticeKey]);
+
+  const clearLoginNotice = useCallback(() => setDismissedNotice(noticeKey), [noticeKey]);
+
+  // A broker call that came back with a refreshed token hands it here, so every
+  // other page picks the new token up too.
+  const handleClientSession = useCallback((_index, session) => {
+    if (configId && session?.jwtToken) saveSession(configId, session);
+  }, [configId]);
+
+  // Forced re-login for this account (expired token, or a retry after the user
+  // fixed the PIN/TOTP in Broker Configuration).
+  const relogin = useCallback(() => ensureSession(configId, { force: true }), [configId]);
 
   const clients = client ? [client] : [];
 
   return {
-    users, userId, setUserId,
-    configs, configId, setConfigId,
+    users, userId, setUserId: setUserPick,
+    configs, configId, setConfigId: setConfigPick,
     client, clients, accStatus, setAccStatus,
     handleClientSession,
+    relogin,
     loginNotice,
-    clearLoginNotice: () => setLoginNotice({ open: false, message: '' }),
+    clearLoginNotice,
   };
 }
 

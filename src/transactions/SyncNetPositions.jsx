@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlignJustify, Table, ArrowUpDown, Check, History, Pencil, Radio, Trash2, X } from 'lucide-react'
 import { apiGet, apiPost } from '../config/api'
-import { getSavedSession, isAngelBroker, loginAngelClient, useFeedMasterAccount } from '../feedmaster/feedMasterStore'
+import { useFeedMasterAccount } from '../feedmaster/feedMasterStore'
+import {
+  classifyLoginError, ensureSession, getAccount, isAngelBroker,
+} from '../feedmaster/angelSessionStore'
+import { releaseFeedTokens } from '../tradepanel/feedTokens'
 import { getSavedTradeAccount, saveTradeAccount } from '../tradepanel/tradeAccountStore'
 import { CompactSelect } from '../tradepanel/PositionSelect'
 import { legIsClosed, money, withLiveTick } from '../tradepanel/legFormat'
@@ -175,10 +179,11 @@ function SyncNetPositions() {
 
       let session = client.session
       if (!session?.jwtToken || !session?.feedToken) {
+        // Startup logged the Feedmaster in; this only covers an expired token,
+        // and it is deduped across every page.
         setFeedStatus('connecting')
         try {
-          const login = await loginAngelClient(client)
-          session = login.session || null
+          session = await ensureSession(client.configId, { force: true })
           if (session?.jwtToken) onFeedMasterSession?.(session)
         } catch {
           setFeedStatus('offline')
@@ -213,6 +218,7 @@ function SyncNetPositions() {
               clientCode: client.clientCode,
             },
             items,
+            subscriber: 'sync-net-positions',
           }),
         })
       } catch {
@@ -258,8 +264,11 @@ function SyncNetPositions() {
     }
   }, [legFeedKey, feedMasterClient, onFeedMasterSession, dateFilter])
 
+  // Leaving the page hands its tokens back to the feed, so coming back re-syncs
+  // them as a fresh subscription (which is what makes Angel re-push a snapshot).
   useEffect(() => () => {
     esRef.current?.close()
+    releaseFeedTokens('sync-net-positions')
   }, [])
 
   useEffect(() => () => {
@@ -307,8 +316,7 @@ function SyncNetPositions() {
       let session = feedClient.session
       if (!session?.jwtToken) {
         try {
-          const login = await loginAngelClient(feedClient)
-          session = login.session || null
+          session = await ensureSession(feedClient.configId, { force: true })
           if (session?.jwtToken) onFeedMasterSession?.(session)
         } catch {
           if (!cancelled) setHistoricalStatus('error')
@@ -646,8 +654,14 @@ function SyncNetPositions() {
       return
     }
 
-    const session = getSavedSession(configId)
-    setStatus(session?.jwtToken ? '' : 'This account is not logged in. Login from Broker Configuration first.')
+    // The account was logged in at app start; if it failed, say why (PIN, TOTP,
+    // API key, backend down) rather than "not logged in".
+    const account = getAccount(configId)
+    if (account?.status === 'failed') {
+      setStatus(`${account.issue?.title || 'Login failed'}. ${account.issue?.hint || ''}`.trim())
+    } else {
+      setStatus('')
+    }
   }, [configId, selectedBrokerName, selectedConfig, selectedIsAngel])
 
   const startSync = async () => {
@@ -659,14 +673,22 @@ function SyncNetPositions() {
       setStatus(`${selectedBrokerName || 'Selected broker'} sync is not wired yet`)
       return
     }
-    if (!getSavedSession(configId)?.jwtToken) {
-      setStatus('This account is not logged in. Login from Broker Configuration first.')
-      return
-    }
-
     setRunning(true)
     setLog([])
     setSummary(null)
+
+    // Make sure this account has a live token before the sync runs - normally a
+    // no-op, since startup logged every account in.
+    try {
+      setStatus('Checking Angel login...')
+      await ensureSession(configId)
+    } catch (error) {
+      const issue = classifyLoginError(error)
+      setStatus(`${issue.title}. ${issue.hint}`)
+      setRunning(false)
+      return
+    }
+
     setStatus('Syncing net positions...')
 
     try {

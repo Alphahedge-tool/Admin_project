@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Alert,
   Box,
   Button,
+  Chip,
   FormControl,
   InputLabel,
   MenuItem,
@@ -11,120 +12,62 @@ import {
   Typography,
 } from '@mui/material'
 import { CheckCircle2, PlugZap, Save } from 'lucide-react'
-import { apiGet } from '../config/api'
 import {
   BROKERS,
-  buildAngelClient,
   clearFeedMaster,
   getSavedFeedMaster,
-  getSavedSession,
-  isAngelBroker,
-  loginAngelClient,
   saveFeedMaster,
-  saveSession,
 } from '../feedmaster/feedMasterStore'
+import { ensureSession, useAngelSessions } from '../feedmaster/angelSessionStore'
 
+// Picks WHICH logged-in account carries the shared live feed. Every account was
+// already logged in at app start (see startup/StartupGate), so this page never
+// logs anything in on its own - "Test Login" just forces a fresh token.
 function Feedmaster() {
-  const [users, setUsers] = useState([])
-  const [configs, setConfigs] = useState([])
-  const [broker, setBroker] = useState('angelone')
-  const [userId, setUserId] = useState('')
-  const [configId, setConfigId] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [configLoading, setConfigLoading] = useState(false)
-  const [status, setStatus] = useState('')
+  const { users, accounts, phase } = useAngelSessions()
+  const saved = getSavedFeedMaster()
+  const [broker, setBroker] = useState(saved?.broker || 'angelone')
+  const [userPick, setUserPick] = useState(saved?.userId ? String(saved.userId) : '')
+  const [configPick, setConfigPick] = useState(saved?.configId ? String(saved.configId) : '')
+  const [status, setStatus] = useState(
+    saved?.configId ? 'Saved Feedmaster loaded' : 'Select the Angel One account for the live feed',
+  )
   const [error, setError] = useState('')
 
-  const selectedUser = users.find((user) => String(user.id) === String(userId))
-  const selectedConfig = configs.find((config) => String(config.id) === String(configId))
-  const canSave = broker === 'angelone' && userId && configId
+  const loading = phase !== 'ready'
 
-  useEffect(() => {
-    let cancelled = false
+  // Selection is derived from the store's accounts, so an account logging in (or
+  // failing) is reflected here without any extra state juggling.
+  const userId = users.some((user) => String(user.id) === userPick)
+    ? userPick
+    : String(accounts[0]?.userId || users[0]?.id || '')
 
-    async function loadUsers() {
-      setLoading(true)
-      setError('')
-      try {
-        const saved = getSavedFeedMaster()
-        const res = await apiGet('/users/list.php')
-        if (cancelled) return
+  const userAccounts = useMemo(
+    () => accounts.filter((account) => account.userId === String(userId)),
+    [accounts, userId],
+  )
 
-        const list = res.data || []
-        setUsers(list)
-        setBroker(saved?.broker || 'angelone')
-        setUserId(saved?.userId ? String(saved.userId) : String(list[0]?.id || ''))
-        setConfigId(saved?.configId ? String(saved.configId) : '')
-        setStatus(saved?.configId ? 'Saved Feedmaster loaded' : 'Select the Angel One account for live feed')
-      } catch (loadError) {
-        if (!cancelled) setError(loadError.message || 'Failed to load users')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
+  const configId = userAccounts.some((account) => account.configId === configPick)
+    ? configPick
+    : (userAccounts[0]?.configId || '')
 
-    loadUsers()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const selectedAccount = accounts.find((account) => account.configId === String(configId)) || null
+  const canSave = broker === 'angelone' && !!selectedAccount
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadConfigs() {
-      if (!userId || broker !== 'angelone') {
-        setConfigs([])
-        setConfigId('')
-        return
-      }
-
-      setConfigLoading(true)
-      setError('')
-      try {
-        const saved = getSavedFeedMaster()
-        const res = await apiGet(`/users/broker-config/list.php?user_id=${userId}`)
-        if (cancelled) return
-
-        const angelConfigs = (res.data || []).filter((config) => isAngelBroker(config.broker_name))
-        setConfigs(angelConfigs)
-        if (saved?.userId && String(saved.userId) === String(userId) && saved?.configId) {
-          setConfigId(String(saved.configId))
-        } else {
-          setConfigId(String(angelConfigs[0]?.id || ''))
-        }
-      } catch (loadError) {
-        if (!cancelled) setError(loadError.message || 'Failed to load Angel One accounts')
-      } finally {
-        if (!cancelled) setConfigLoading(false)
-      }
-    }
-
-    loadConfigs()
-    return () => {
-      cancelled = true
-    }
-  }, [broker, userId])
-
-  const savedLabel = useMemo(() => {
-    const saved = getSavedFeedMaster()
-    if (!saved?.configId) return 'No account saved yet'
-    const user = users.find((item) => String(item.id) === String(saved.userId))
-    const config = configs.find((item) => String(item.id) === String(saved.configId))
-    return `${user?.username || 'Selected user'} - ${config?.account_id || `Config ${saved.configId}`}`
-  }, [users, configs, status])
+  // Read straight from storage on every render: it changes on save/clear, which
+  // this component drives itself.
+  const savedLabel = describeSavedFeedMaster(accounts)
 
   const saveSelection = () => {
     if (!canSave) {
       setError('Select an Angel One account first')
       return
     }
-
     saveFeedMaster({
       broker,
-      userId,
-      configId,
-      accountId: selectedConfig?.account_id || '',
+      userId: selectedAccount.userId,
+      configId: selectedAccount.configId,
+      accountId: selectedAccount.accountId,
     })
     setError('')
     setStatus('Feedmaster account saved')
@@ -137,27 +80,21 @@ function Feedmaster() {
     }
 
     setError('')
-    setStatus('Logging in Feedmaster...')
+    setStatus('Signing the Feedmaster in again...')
     try {
-      const res = await apiGet(`/users/broker-config/get.php?id=${configId}`)
-      const client = buildAngelClient(res.data || {}, selectedUser, getSavedSession(configId))
-      if (!client) {
-        throw new Error('Selected account is missing Client Code, PIN, TOTP Secret or API Key')
-      }
-
-      const login = await loginAngelClient(client)
-      if (login.session) saveSession(configId, login.session)
+      await ensureSession(selectedAccount.configId, { force: true })
       saveSelection()
-      setStatus(login.sessionSource === 'session' ? 'Feedmaster live - saved session reused' : 'Feedmaster live - fresh login saved')
-    } catch (loginError) {
-      setError(loginError.message || 'Feedmaster login failed')
+      setStatus('Feedmaster live - fresh token saved')
+    } catch {
+      const account = accounts.find((item) => item.configId === String(configId))
+      setError(`${account?.issue?.title || 'Login failed'}. ${account?.issue?.hint || ''}`.trim())
       setStatus('')
     }
   }
 
   const clearSelection = () => {
     clearFeedMaster()
-    setConfigId('')
+    setConfigPick('')
     setStatus('Feedmaster cleared')
     setError('')
   }
@@ -191,7 +128,7 @@ function Feedmaster() {
 
           <FormControl fullWidth disabled={loading}>
             <InputLabel>User</InputLabel>
-            <Select label="User" value={userId} onChange={(event) => setUserId(event.target.value)}>
+            <Select label="User" value={userId} onChange={(event) => setUserPick(event.target.value)}>
               {users.map((user) => (
                 <MenuItem key={user.id} value={String(user.id)}>
                   {user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`}
@@ -200,19 +137,26 @@ function Feedmaster() {
             </Select>
           </FormControl>
 
-          <FormControl fullWidth disabled={configLoading || !configs.length} sx={{ gridColumn: { md: '1 / -1' } }}>
+          <FormControl fullWidth disabled={loading || !userAccounts.length} sx={{ gridColumn: { md: '1 / -1' } }}>
             <InputLabel>Angel One Account</InputLabel>
-            <Select label="Angel One Account" value={configId} onChange={(event) => setConfigId(event.target.value)}>
-              {configs.map((config) => (
-                <MenuItem key={config.id} value={String(config.id)}>
-                  {config.broker_name} - {config.account_id || config.id}
+            <Select label="Angel One Account" value={configId} onChange={(event) => setConfigPick(event.target.value)}>
+              {userAccounts.map((account) => (
+                <MenuItem key={account.configId} value={account.configId}>
+                  {account.brokerName} - {account.accountId || account.configId}
+                  {account.status === 'live' ? ' (logged in)' : account.issue ? ` (${account.issue.title})` : ''}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
+        {selectedAccount?.status === 'failed' && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {selectedAccount.issue?.title}: {selectedAccount.issue?.hint}
+          </Alert>
+        )}
+
+        <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <Button variant="contained" startIcon={<Save size={16} />} disabled={!canSave} onClick={saveSelection}>
             Save Feedmaster
           </Button>
@@ -222,6 +166,7 @@ function Feedmaster() {
           <Button color="error" onClick={clearSelection}>
             Clear
           </Button>
+          {selectedAccount?.status === 'live' && <Chip size="small" color="success" label="Logged in" />}
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2, color: 'text.secondary' }}>
@@ -231,6 +176,14 @@ function Feedmaster() {
       </Paper>
     </Box>
   )
+}
+
+function describeSavedFeedMaster(accounts) {
+  const current = getSavedFeedMaster()
+  if (!current?.configId) return 'No account saved yet'
+  const account = accounts.find((item) => item.configId === String(current.configId))
+  if (!account) return `Config ${current.configId} (no longer configured)`
+  return `${account.username} - ${account.accountId}`
 }
 
 export default Feedmaster

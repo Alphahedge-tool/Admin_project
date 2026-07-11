@@ -5,7 +5,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Crosshair, LoaderCircle, Search, X } from 'lucide-react';
 import Basket from './Basket.jsx';
 import { useAngelAccount } from './useAngelAccount';
-import { loginAngelClient, useFeedMasterAccount } from '../feedmaster/feedMasterStore';
+import { useFeedMasterAccount } from '../feedmaster/feedMasterStore';
+import { classifyLoginError, ensureSession } from '../feedmaster/angelSessionStore';
+import { releaseFeedTokens } from './feedTokens';
 import './tradepanel.css';
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -240,8 +242,8 @@ function Strategies({ clients, demoMode, feedMasterClient, onClientSession, onFe
       if (!items.length && (!session?.jwtToken || !session?.feedToken)) return;
 
       if (feedMasterClientRef.current && (!session?.jwtToken || !session?.feedToken)) {
-        const login = await loginAngelClient(client);
-        session = login.session || null;
+        // Expired Feedmaster token - one shared, deduped re-login.
+        session = await ensureSession(client.configId, { force: true }).catch(() => null);
         if (session?.jwtToken) onFeedMasterSession?.(session);
       }
 
@@ -258,6 +260,7 @@ function Strategies({ clients, demoMode, feedMasterClient, onClientSession, onFe
             clientCode: client.clientCode,
           },
           items,
+          subscriber: 'basket',
         }),
       }).catch((error) => console.error('basket-tokens sync failed:', error));
     }
@@ -268,6 +271,13 @@ function Strategies({ clients, demoMode, feedMasterClient, onClientSession, onFe
       cancelled = true;
     };
   }, [legFeedKey, marginClient, feedMasterClient, onFeedMasterSession]);
+
+  // Leaving the page hands the basket's tokens back to the feed, so coming back
+  // re-syncs them as a fresh subscription (Angel only pushes a snapshot when a
+  // token is subscribed).
+  useEffect(() => () => {
+    releaseFeedTokens('basket');
+  }, []);
 
   const removeLeg = useCallback((id) => {
     setLegs((current) => current.filter((leg) => leg.id !== id));
@@ -595,18 +605,20 @@ const OptionChainPanel = React.memo(function OptionChainPanel({
     }
 
     setLoading(true);
+    // Startup logged this account in already; this only covers an account added
+    // since, or a token that has expired.
     if (!client.session?.jwtToken) {
-      setStatus('Logging in...');
+      setStatus('Signing in...');
       try {
-        const result = await liveLogin(client, '/api/angel/auto-login');
-        const session = result.session || null;
+        const session = await ensureSession(client.configId);
         if (!session?.jwtToken) throw new Error('no session returned');
         onClientSession(index, session);
         client = { ...client, loggedIn: true, session };
       } catch (error) {
         setLoading(false);
         autoLoadRef.current = '';
-        setStatus(`Login failed: ${error.message || 'auto-login'}`);
+        const issue = classifyLoginError(error);
+        setStatus(`${issue.title}. ${issue.hint}`);
         return;
       }
     }
@@ -721,9 +733,8 @@ const OptionChainPanel = React.memo(function OptionChainPanel({
     if (masterClient) {
       let masterSession = masterClient.session;
       if (!masterSession?.jwtToken || !masterSession?.feedToken) {
-        setStatus('Logging in Feedmaster for live feed...');
-        const login = await loginAngelClient(masterClient);
-        masterSession = login.session || null;
+        setStatus('Refreshing Feedmaster session for live feed...');
+        masterSession = await ensureSession(masterClient.configId, { force: true }).catch(() => null);
         if (masterSession?.jwtToken) onFeedMasterSession?.(masterSession);
       }
 
@@ -1204,29 +1215,6 @@ function PillSelect({ title, value, onChange, options, searchable = false, searc
 /* ══════════════════════════════════════════════════════════════════════
    Helpers (ported from main.jsx).
    ══════════════════════════════════════════════════════════════════════ */
-async function liveLogin(client, backendUrl) {
-  const response = await fetch(backendUrl || '/api/angel/auto-login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client }),
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok || body.status === false) throw new Error(body.message || `HTTP ${response.status}`);
-
-  return {
-    availableMargin: pickMargin(body),
-    availableCash: body.data?.availablecash ?? 0,
-    collateral: body.data?.collateral ?? 0,
-    utilisedPayout: body.data?.utilisedpayout ?? 0,
-    sessionSource: body.sessionSource,
-    session: body.session || null,
-  };
-}
-
-function pickMargin(body) {
-  return body.availableMargin ?? body.data?.net ?? body.data?.availablecash ?? body.data?.availablelimitmargin ?? body.data?.collateral ?? 0;
-}
-
 const MCX_SYMBOLS = new Set([
   'GOLD', 'GOLDM', 'SILVER', 'SILVERM', 'CRUDEOIL', 'CRUDEOILM',
   'NATURALGAS', 'NATGASMINI', 'COPPER', 'ZINC', 'MCXBULLDEX',

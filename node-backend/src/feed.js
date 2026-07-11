@@ -1,6 +1,12 @@
 // Live feed: one upstream Angel SmartWebSocket V2 connection, an additive token
-// union (on-screen chain + every basket leg), incremental subscribe/unsubscribe
-// frames, and a fan-out to connected SSE clients. Port of the Go feed.go.
+// union (on-screen chain + every subscriber's legs), incremental
+// subscribe/unsubscribe frames, and a fan-out to connected SSE clients.
+//
+// Several pages are alive at once (Trade Panel keeps all its tabs mounted), and
+// each syncs the tokens IT needs. So token sets are held per named subscriber
+// ("client-dashboard", "get-positions", "basket", ...) and the feed subscribes
+// to their union: one page reconciling its own tokens can never unsubscribe
+// another page's, which used to silently freeze the other page's LTPs.
 import WebSocket from 'ws';
 import { SMART_STREAM_URL, config } from './config.js';
 
@@ -26,7 +32,7 @@ export class Feed {
     this.creds = {};
     this.tokens = new Map(); // exType -> Set(token) — the union
     this.chainKeys = new Set(); // "type|token" for the current on-screen chain
-    this.basketKeys = new Set(); // "type|token" the basket currently holds
+    this.groups = new Map(); // subscriber id -> Set("type|token") that page needs
     this.sseClients = new Set(); // Set of { write } handles
     this.pingTimer = null;
     this.idleCloseTimer = null;
@@ -89,23 +95,27 @@ export class Feed {
 
     const removed = [];
     for (const key of this.chainKeys) {
-      if (newKeys.has(key) || this.basketKeys.has(key)) continue;
+      if (newKeys.has(key) || this.#anySubscriberNeeds(key)) continue;
       const [exType, token] = splitKey(key);
       this.tokens.get(exType)?.delete(token);
       removed.push({ exType, token });
     }
     this.chainKeys = newKeys;
     this.creds = creds;
-    const { added } = this.#merge(entries);
+    this.#merge(entries);
 
     this.#unsubscribe(groupEntries(removed));
-    this.#startOrResubscribe(creds, added);
+    // The FULL chain, not just the tokens new to the union: re-opening the same
+    // chain must re-subscribe it, since Angel pushes a snapshot only at
+    // subscribe time (same reason as setBasketTokensItems below).
+    this.#startOrResubscribe(creds, groupEntries(entries));
     return tokens.length;
   }
 
-  // SetBasketTokensItems reconciles the feed to EXACTLY the basket's current leg
-  // tokens (plus whatever the on-screen chain needs). Releases dropped tokens.
-  setBasketTokensItems(creds, items) {
+  // Reconciles ONE subscriber (a page) to exactly the tokens it asks for. A
+  // token is released only when no other subscriber - and not the on-screen
+  // chain - still needs it.
+  setBasketTokensItems(creds, items, subscriber = 'basket') {
     const entries = [];
     for (const it of items || []) {
       if (!it.token) continue;
@@ -119,19 +129,19 @@ export class Feed {
     }
     this.creds = use;
 
-    const newBasket = new Set(entries.map((e) => keyOf(e.exType, e.token)));
+    const previous = this.groups.get(subscriber) || new Set();
+    const current = new Set(entries.map((e) => keyOf(e.exType, e.token)));
+    this.groups.set(subscriber, current);
 
     const removed = [];
-    for (const key of this.basketKeys) {
-      if (newBasket.has(key) || this.chainKeys.has(key)) continue;
+    for (const key of previous) {
+      if (current.has(key) || this.chainKeys.has(key) || this.#anySubscriberNeeds(key)) continue;
       const [exType, token] = splitKey(key);
       this.tokens.get(exType)?.delete(token);
       removed.push({ exType, token });
     }
 
     const { added, dropped } = this.#merge(entries);
-    this.basketKeys = newBasket;
-    const haveConn = this.conn != null;
     const total = this.#totalTokens();
 
     if (dropped > 0) {
@@ -139,14 +149,31 @@ export class Feed {
     }
 
     this.#unsubscribe(groupEntries(removed));
-    const addedCount = countGroups(added);
-    if (addedCount > 0) {
-      this.#startOrResubscribe(use, added);
-    } else if (!haveConn) {
+
+    // Re-send this subscriber's FULL token set, not just the tokens that are new
+    // to the union. Angel pushes a snapshot only when a token is subscribed, so a
+    // page that unmounts and comes back with the same tokens (they are still in
+    // the union, nothing was "added") would otherwise sit with no LTP until the
+    // next price change. Re-subscribing an already-subscribed token is a no-op
+    // upstream apart from that fresh snapshot, which is exactly what we want.
+    const mine = groupEntries(entries);
+    if (this.conn) {
+      this.#sendSubscribe(this.conn, mine);
+    } else if (total > 0) {
       this.#startOrResubscribe(use, this.#snapshot());
     }
 
-    return { added: addedCount, removed: removed.length, dropped, total };
+    return { added: countGroups(added), removed: removed.length, dropped, total };
+  }
+
+  // Is this token still wanted by any page other than the one being reconciled?
+  // (`this.groups` already holds the caller's NEW set when this runs, so a token
+  // it still wants is found here too.)
+  #anySubscriberNeeds(key) {
+    for (const keys of this.groups.values()) {
+      if (keys.has(key)) return true;
+    }
+    return false;
   }
 
   #totalTokens() {
@@ -295,7 +322,7 @@ export class Feed {
     if (reset) {
       this.tokens = new Map();
       this.chainKeys = new Set();
-      this.basketKeys = new Set();
+      this.groups = new Map();
       this.creds = {};
     }
     if (conn) {

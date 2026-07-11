@@ -15,6 +15,7 @@ import { apiGet } from './config/api'
 import NetPositionsReport from './pages/NetPositionsReport'
 import TradePanelTabs from './tradepanel/TradePanelTabs'
 import TradePanelStandalone from './tradepanel/TradePanelStandalone'
+import StartupGate from './startup/StartupGate'
 
 
 function App() {
@@ -48,7 +49,10 @@ function App() {
     }} />
   }
 
+  // Nothing renders until every Angel account has been logged in (tokens saved)
+  // and the Feedmaster is set - see StartupGate.
   return (
+    <StartupGate>
     <BrowserRouter>
       <Snackbar
         open={toast.open}
@@ -90,6 +94,7 @@ function App() {
             <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>
     </BrowserRouter>
+    </StartupGate>
   )
 }
 

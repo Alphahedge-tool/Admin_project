@@ -46,12 +46,12 @@ export default function AngelAccountBar({
 
       <Snackbar
         open={!!loginNotice?.open}
-        autoHideDuration={3200}
+        autoHideDuration={loginNotice?.severity === 'error' ? 8000 : 3200}
         onClose={clearLoginNotice}
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
         <Alert
-          severity="success"
+          severity={loginNotice?.severity || 'success'}
           variant="filled"
           onClose={clearLoginNotice}
           sx={{ borderRadius: 1, fontWeight: 700 }}

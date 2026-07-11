@@ -247,9 +247,11 @@ app.post('/api/angel/subscribe', h(async (req) => {
   return { status: true, subscribed: n, exchange: b.exchange || 'NFO' };
 }));
 
+// Each page syncs its own token set under its own subscriber name, so pages that
+// are alive at the same time don't unsubscribe each other's tokens.
 const basketSync = h(async (req) => {
   const b = req.body || {};
-  const res = feed.setBasketTokensItems(b.credentials || null, b.items || []);
+  const res = feed.setBasketTokensItems(b.credentials || null, b.items || [], b.subscriber || 'basket');
   return { status: true, ...res };
 });
 app.post('/api/angel/basket-tokens', basketSync);

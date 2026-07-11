@@ -2,10 +2,10 @@
 // margin.go, charges.go, and orders.go.
 import { mapData, strOr, toFloat, round2 } from './util.js';
 import { withoutSession } from './auth.js';
+import { isAuthFailure } from './httpClient.js';
 
 const maxFloat = (a, b) => (a > b ? a : b);
 const orDefault = (v, def) => (v ? v : def);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function tradeType(v) {
   return String(v || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
@@ -86,6 +86,8 @@ export async function getMargin(client, auth, req) {
   try {
     result = await client.doJSON('POST', '/rest/secure/angelbroking/margin/v1/batch', client.authHeaders(headers, session.jwtToken), body);
   } catch (err) {
+    // Only a dead token earns a fresh login - a throttle (403) does not.
+    if (!isAuthFailure(err)) throw err;
     const relogin = await auth.autoLogin(withoutSession(req.client)).catch(() => null);
     if (!relogin) throw err;
     session = relogin.session;
@@ -135,6 +137,7 @@ export async function getCharges(client, auth, req) {
   try {
     result = await client.doJSON('POST', '/rest/secure/angelbroking/brokerage/v1/estimateCharges', client.authHeaders(headers, session.jwtToken), body);
   } catch (err) {
+    if (!isAuthFailure(err)) throw err;
     const relogin = await auth.autoLogin(withoutSession(req.client)).catch(() => null);
     if (!relogin) throw err;
     session = relogin.session;
@@ -290,7 +293,10 @@ export async function placeBasket(client, auth, req) {
     } catch (e) {
       err = e;
     }
-    if (err && !relogged) {
+    // Retry ONLY a dead token. A throttle/transient 403 must never be answered by
+    // re-sending the order: the first attempt may well have reached the exchange,
+    // and a replay would place it twice.
+    if (err && !relogged && isAuthFailure(err)) {
       const relogin = await auth.autoLogin(withoutSession(req.client)).catch(() => null);
       if (relogin && relogin.session) {
         session = relogin.session;
@@ -322,42 +328,35 @@ function normalizeBookRows(v) {
   return [];
 }
 
+// Order book / trade book / positions. Concurrent identical reads collapse into
+// ONE upstream call (Client Dashboard and Get Position are mounted at the same
+// time and both read positions for the same account - two calls a second at an
+// endpoint Angel caps at one).
 export async function book(client, auth, cc, pathName, key) {
-  let session = await auth.sessionOrLogin(cc).catch(() => {
-    throw new Error(`Angel session unavailable for ${key}`);
-  });
-  const headers = client.smartHeaders(cc.apiKey);
-  let result;
-  try {
-    result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
-  } catch (err) {
-    if (isSmartApiStatus(err, 503)) {
-      await sleep(700);
-      try {
-        result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
-      } catch (retryErr) {
-        err = retryErr;
-      }
-    }
-    if (result) return { status: true, [key]: normalizeBookRows(result.data), raw: result, session };
+  return client.cache.do(`book|${pathName}|${cc.clientCode}`, async () => {
+    let session = await auth.sessionOrLogin(cc).catch(() => {
+      throw new Error(`Angel session unavailable for ${key}`);
+    });
+    const headers = client.smartHeaders(cc.apiKey);
+    const read = (s) => client.doJSON('GET', pathName, client.authHeaders(headers, s.jwtToken), null);
 
-    const relogin = await auth.autoLogin(withoutSession(cc)).catch(() => null);
-    if (!relogin) throw err;
-    session = relogin.session;
+    let result;
     try {
-      result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
-    } catch (freshErr) {
-      if (!isSmartApiStatus(freshErr, 503)) throw freshErr;
-      await sleep(900);
-      result = await client.doJSON('GET', pathName, client.authHeaders(headers, session.jwtToken), null);
+      result = await read(session);
+    } catch (err) {
+      // Only a dead token is worth a fresh login. Angel's throttle answer is a
+      // bare 403, and re-logging in on THAT burns the 1/sec login limit and
+      // rotates the JWT out from under every other page - which is what turned a
+      // moment of rate-limiting into "Login failed. SmartAPI HTTP 403".
+      // doJSON has already backed off and retried the transient cases.
+      if (!isAuthFailure(err)) throw err;
+      const relogin = await auth.autoLogin(withoutSession(cc)).catch(() => null);
+      if (!relogin) throw err;
+      session = relogin.session;
+      result = await read(session);
     }
-  }
-  return { status: true, [key]: normalizeBookRows(result.data), raw: result, session };
-}
-
-function isSmartApiStatus(err, status) {
-  const msg = String(err?.message || '');
-  return msg.includes(`SmartAPI HTTP ${status}`);
+    return { status: true, [key]: normalizeBookRows(result.data), raw: result, session };
+  });
 }
 
 export { round2 };

@@ -2,6 +2,7 @@
 // + sessionOrLogin. Port of the Go auth.go.
 import crypto from 'node:crypto';
 import { mapData, strOr, toFloat } from './util.js';
+import { isThrottled } from './httpClient.js';
 
 // resolveSession returns the client's usable session (with API key filled in)
 // or null when there's no JWT.
@@ -74,8 +75,15 @@ export class Auth {
       try {
         const res = await this.#trySessionRMS(cc, headers, existing);
         if (res) return res;
-      } catch {
-        // fall through to fresh login
+      } catch (err) {
+        // Being throttled is not a dead session. Falling through to a fresh TOTP
+        // login here would burn Angel's 1/sec login limit and rotate the token
+        // out from under every page still using it - keep the saved session and
+        // report its last known margin instead.
+        if (isThrottled(err)) {
+          return buildRMSResponse(cc.clientCode, existing.lastRms || {}, 'session', existing);
+        }
+        // anything else (dead/invalid token): fall through to a fresh login
       }
     }
 

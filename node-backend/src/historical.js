@@ -2,6 +2,7 @@
 // instead of a live feed tick. Port of the same session/re-login pattern as
 // orders.js's book()/getMargin().
 import { withoutSession } from './auth.js';
+import { isAuthFailure } from './httpClient.js';
 
 const CANDLE_PATH = '/rest/secure/angelbroking/historical/v1/getCandleData';
 
@@ -26,6 +27,8 @@ export async function getHistoricalCandle(client, auth, cc, req) {
   try {
     result = await client.doJSON('POST', CANDLE_PATH, client.authHeaders(headers, session.jwtToken), body);
   } catch (err) {
+    // Only a dead token earns a fresh login - a throttle (403) does not.
+    if (!isAuthFailure(err)) throw err;
     const relogin = await auth.autoLogin(withoutSession(cc)).catch(() => null);
     if (!relogin) throw err;
     session = relogin.session;

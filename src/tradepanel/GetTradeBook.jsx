@@ -4,7 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import { Check, Filter, Info, ReceiptText, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet } from '../config/api';
-import { getSavedSession, isAngelBroker, saveSession } from '../feedmaster/feedMasterStore';
+import {
+  classifyLoginError, ensureSession, isAngelBroker, isAuthError, isRateLimited, saveSession,
+  useAngelClient,
+} from '../feedmaster/angelSessionStore';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { compactProductTag, parseTradingSymbol } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
@@ -37,7 +40,8 @@ export default function GetTradeBook() {
   const [userId, setUserId] = useState('');
   const [configs, setConfigs] = useState([]);
   const [configId, setConfigId] = useState('');
-  const [client, setClient] = useState(null);
+  // Logged in once at app start (StartupGate), so this client already has a token.
+  const client = useAngelClient(configId);
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('Select a user and account');
   // Starts true: until the user/config/credential setup below settles one way
@@ -129,14 +133,12 @@ export default function GetTradeBook() {
       if (!userId) {
         setConfigs([]);
         setConfigId('');
-        setClient(null);
         return;
       }
 
       setLoading(true);
       setConfigLoading(true);
       setRows([]);
-      setClient(null);
       try {
         const res = await apiGet(`/users/broker-config/list.php?user_id=${userId}`);
         if (cancelled) return;
@@ -170,65 +172,16 @@ export default function GetTradeBook() {
   }, [userId]);
 
   useEffect(() => {
-    let cancelled = false;
+    setRows([]);
+    if (!configId) return;
 
-    async function hydrateConfig() {
-      setRows([]);
-      setClient(null);
-      if (!configId) return;
-
-      setLoading(true);
-
-      if (!selectedIsAngel) {
-        setStatus(`${selectedBrokerName || 'Selected broker'} trade book is not wired yet`);
-        setLoading(false);
-        return;
-      }
-
-      setStatus('Loading account credentials...');
-      try {
-        const res = await apiGet(`/users/broker-config/get.php?id=${configId}`);
-        if (cancelled) return;
-
-        const c = res.data || {};
-        if (!c.account_id || !c.app_key || !c.pin || !c.totp_secret) {
-          setStatus('This Angel account is missing Client Code / PIN / TOTP / API Key');
-          setLoading(false);
-          return;
-        }
-
-        const session = getSavedSession(configId);
-        setClient({
-          enabled: true,
-          alias: `${selectedBrokerName} - ${c.account_id}`,
-          clientCode: c.account_id,
-          apiKey: c.app_key,
-          pin: c.pin,
-          totpSecret: c.totp_secret,
-          loggedIn: !!session?.jwtToken,
-          session,
-        });
-        // A valid session hands off to the auto-load effect next, which
-        // manages `loading` itself from here - only flip it off here when
-        // there's no session, since nothing further will auto-load then.
-        if (session?.jwtToken) {
-          setStatus('');
-        } else {
-          setStatus('This account is not logged in. Login from Broker Configuration first.');
-          setLoading(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setStatus('Failed to load account credentials');
-          setLoading(false);
-        }
-      }
+    if (!selectedIsAngel) {
+      setStatus(`${selectedBrokerName || 'Selected broker'} trade book is not wired yet`);
+      setLoading(false);
+      return;
     }
-
-    hydrateConfig();
-    return () => {
-      cancelled = true;
-    };
+    setLoading(true);
+    setStatus('');
   }, [configId, selectedBrokerName, selectedIsAngel]);
 
   useEffect(() => {
@@ -248,25 +201,29 @@ export default function GetTradeBook() {
       setStatus('Angel account credentials are not ready');
       return;
     }
-    if (!client.session?.jwtToken) {
-      setStatus('This account is not logged in. Login from Broker Configuration first.');
-      return;
-    }
 
     setLoading(true);
     setStatus('Loading trade book...');
     try {
-      const res = await fetch('/api/angel/trade-book', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || body.status === false) throw new Error(body.message || `HTTP ${res.status}`);
-      if (body.session?.jwtToken) {
-        saveSession(configId, body.session);
-        setClient((current) => (current ? { ...current, session: body.session, loggedIn: true } : current));
+      // Startup already logged this account in; only a missing or expired token
+      // goes back to the shared (deduped) login.
+      let active = client;
+      if (!active.session?.jwtToken) {
+        setStatus('Signing in this account...');
+        active = { ...active, session: await ensureSession(configId), loggedIn: true };
       }
+
+      let body;
+      try {
+        body = await fetchTradeBook(active);
+      } catch (error) {
+        if (!isAuthError(error)) throw error;
+        setStatus('Angel token expired - signing in again...');
+        active = { ...active, session: await ensureSession(configId, { force: true }), loggedIn: true };
+        body = await fetchTradeBook(active);
+      }
+
+      if (body.session?.jwtToken) saveSession(configId, body.session);
       const trades = body.trades || [];
       setRows(trades);
       setStatus(trades.length ? `${trades.length} trades for today` : 'No trades in trade book');
@@ -279,7 +236,7 @@ export default function GetTradeBook() {
 
   useEffect(() => {
     const accountKey = String(configId || '');
-    if (!accountKey || !selectedConfig || !selectedIsAngel || !client?.session?.jwtToken) return;
+    if (!accountKey || !selectedConfig || !selectedIsAngel || !client) return;
     // `loading` is deliberately NOT part of this guard: it's now also true
     // while hydrateConfig is still preparing the account (see above), and
     // gating on it here would mean this effect never fires. autoLoadedAccountRef
@@ -901,10 +858,22 @@ function emptyTradeLabel(rowCount, loading) {
   return 'No trades';
 }
 
+async function fetchTradeBook(client) {
+  const res = await fetch('/api/angel/trade-book', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.status === false) throw new Error(body.message || `HTTP ${res.status}`);
+  return body;
+}
+
 function toTradeError(error) {
   const message = String(error?.message || '');
-  if (/session|login|auth|token|jwt|unauthor/i.test(message)) {
-    return 'This account is not logged in. Login from Broker Configuration first.';
+  if (isAuthError(error) || isRateLimited(error)) {
+    const issue = classifyLoginError(error);
+    return `${issue.title}. ${issue.hint}`;
   }
   return message || 'Failed to load trade book';
 }

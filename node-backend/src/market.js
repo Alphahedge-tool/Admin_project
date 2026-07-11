@@ -8,6 +8,7 @@ import {
   chunkTokens,
 } from './util.js';
 import { resolveSession, withoutSession } from './auth.js';
+import { isAuthFailure } from './httpClient.js';
 
 // scripOptionsWithSpot builds the master-only chain skeleton and, when a session
 // is available, adds one cheap spot LTP quote so the response carries spot+atm
@@ -275,7 +276,10 @@ export async function getOptionChain(client, auth, master, req) {
     }).catch(() => {}),
   ]);
 
-  // If any quote chunk failed (commonly a dead JWT), re-login once and refetch.
+  // A dead JWT: re-login once and refetch. A throttle (403) is NOT that - Angel
+  // has already been backed off and retried in doJSON, and logging in again would
+  // only burn the 1/sec login limit and rotate every other page's token.
+  if (liveErr && !isAuthFailure(liveErr)) throw liveErr;
   if (liveErr) {
     const relogin = await auth.autoLogin(withoutSession(cc));
     session = relogin.session;

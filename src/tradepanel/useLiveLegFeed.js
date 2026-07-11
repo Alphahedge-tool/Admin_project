@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { loginAngelClient, useFeedMasterAccount } from '../feedmaster/feedMasterStore'
+import { useFeedMasterAccount } from '../feedmaster/feedMasterStore'
+import { ensureSession } from '../feedmaster/angelSessionStore'
+import { releaseFeedTokens } from './feedTokens'
 
 // Streams live LTP ticks over the shared Feedmaster SSE connection for a set of
 // feed tokens (a comma-joined list of "exchange|token" pairs). Returns the
@@ -7,7 +9,12 @@ import { loginAngelClient, useFeedMasterAccount } from '../feedmaster/feedMaster
 // Sync Net Positions uses, packaged so any Trade Panel page can mark its open
 // legs to market. Ticks are batched through requestAnimationFrame so a busy
 // feed never floods React with renders.
-export function useLiveLegFeed(feedKey, enabled = true) {
+//
+// `subscriber` names this page in the backend feed. Trade Panel keeps several
+// pages mounted at once and each syncs the tokens it needs; without distinct
+// names they reconcile the same token set and unsubscribe each other's tokens,
+// which freezes the other page's LTPs at their last REST snapshot.
+export function useLiveLegFeed(feedKey, { enabled = true, subscriber = 'live-legs' } = {}) {
   const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount()
   const [liveTicks, setLiveTicks] = useState({})
   const [feedStatus, setFeedStatus] = useState('offline') // 'offline' | 'connecting' | 'live'
@@ -50,10 +57,11 @@ export function useLiveLegFeed(feedKey, enabled = true) {
 
       let session = client.session
       if (!session?.jwtToken || !session?.feedToken) {
+        // Startup logged the Feedmaster in; this only covers an expired token,
+        // and it is deduped across every page that wants the feed.
         setFeedStatus('connecting')
         try {
-          const login = await loginAngelClient(client)
-          session = login.session || null
+          session = await ensureSession(client.configId, { force: true })
           if (session?.jwtToken) onFeedMasterSession?.(session)
         } catch {
           setFeedStatus('offline')
@@ -88,6 +96,7 @@ export function useLiveLegFeed(feedKey, enabled = true) {
               clientCode: client.clientCode,
             },
             items,
+            subscriber,
           }),
         })
       } catch {
@@ -131,11 +140,12 @@ export function useLiveLegFeed(feedKey, enabled = true) {
     return () => {
       cancelled = true
     }
-  }, [feedKey, feedMasterClient, onFeedMasterSession, enabled])
+  }, [feedKey, feedMasterClient, onFeedMasterSession, enabled, subscriber])
 
   useEffect(() => () => {
     esRef.current?.close()
-  }, [])
+    releaseFeedTokens(subscriber)
+  }, [subscriber])
 
   return { liveTicks, feedStatus }
 }
