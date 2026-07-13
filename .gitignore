@@ -15,6 +15,7 @@ dist-ssr
 # Angel Node backend: generated scrip master (downloaded/rebuilt at runtime)
 node-backend/scrip_master.json
 node-backend/scrip_index.json
+node-backend/instrument_cache/
 .env
 .env.*
 

@@ -5,9 +5,12 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ClipboardList, Filter, Info, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet } from '../config/api';
 import {
-  classifyLoginError, ensureSession, isAngelBroker, isAuthError, isRateLimited, saveSession,
-  useAngelClient,
+  classifyLoginError, isAuthError, isRateLimited,
 } from '../feedmaster/angelSessionStore';
+import {
+  ensureBookSession, fetchBrokerBook, hasBookSession, isBookBroker, isKotakBroker,
+  saveBookSession, useBrokerBookClient,
+} from './brokerBookClient';
 import { useOrderUpdates } from './orderUpdates';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { parseTradingSymbol, compactProductTag } from './symbolParse';
@@ -57,9 +60,6 @@ export default function GetOrderBook() {
   const [userId, setUserId] = useState('');
   const [configs, setConfigs] = useState([]);
   const [configId, setConfigId] = useState('');
-  // The account's client comes from the shared session store - it was logged in
-  // at app start (StartupGate), so it already carries a token.
-  const client = useAngelClient(configId);
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('Select a user and account');
   // Starts true: until the user/config/credential setup below settles one way
@@ -80,7 +80,9 @@ export default function GetOrderBook() {
 
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedBrokerName = selectedConfig?.broker_name || '';
-  const selectedIsAngel = isAngelBroker(selectedBrokerName);
+  const selectedIsKotak = isKotakBroker(selectedBrokerName);
+  const selectedIsSupported = isBookBroker(selectedBrokerName);
+  const { client, clientError } = useBrokerBookClient(configId, selectedBrokerName);
 
   // Manual picks here should also become the shared Trade Panel selection.
   // setLoading(true) here (not just inside the effects below) closes the gap
@@ -199,7 +201,7 @@ export default function GetOrderBook() {
     setRows([]);
     if (!configId) return;
 
-    if (!selectedIsAngel) {
+    if (!selectedIsSupported) {
       setStatus(`${selectedBrokerName || 'Selected broker'} order book is not wired yet`);
       setLoading(false);
       return;
@@ -209,7 +211,13 @@ export default function GetOrderBook() {
     // still tries a fresh login, so a fixed credential works on retry.
     setLoading(true);
     setStatus('');
-  }, [configId, selectedBrokerName, selectedIsAngel]);
+  }, [configId, selectedBrokerName, selectedIsSupported]);
+
+  useEffect(() => {
+    if (!clientError) return;
+    setStatus(clientError);
+    setLoading(false);
+  }, [clientError]);
 
   useEffect(() => {
     autoLoadedAccountRef.current = '';
@@ -224,12 +232,12 @@ export default function GetOrderBook() {
       setStatus('Select an account first');
       return;
     }
-    if (!selectedIsAngel) {
+    if (!selectedIsSupported) {
       setStatus(`${selectedBrokerName || 'Selected broker'} order book is not wired yet`);
       return;
     }
     if (!client) {
-      setStatus('Angel account credentials are not ready');
+      setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} account credentials are not ready`);
       return;
     }
 
@@ -249,24 +257,24 @@ export default function GetOrderBook() {
       // The startup login already saved this account's token; only a missing or
       // expired one goes back to the shared login (deduped across pages).
       let active = client;
-      if (!active.session?.jwtToken) {
+      if (!hasBookSession(selectedBrokerName, active)) {
         if (!silent) setStatus('Signing in this account...');
-        active = { ...active, session: await ensureSession(configId), loggedIn: true };
+        active = await ensureBookSession(configId, selectedBrokerName, active);
       }
 
       let body;
       try {
-        body = await fetchOrderBook(active);
+        body = await fetchBrokerBook('order', selectedBrokerName, active);
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        if (!silent) setStatus('Angel token expired - signing in again...');
-        active = { ...active, session: await ensureSession(configId, { force: true }), loggedIn: true };
-        body = await fetchOrderBook(active);
+        if (!silent) setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} token expired - signing in again...`);
+        active = await ensureBookSession(configId, selectedBrokerName, active, { force: true });
+        body = await fetchBrokerBook('order', selectedBrokerName, active);
       }
 
       // Worth saving even if this response is superseded - the token is good
       // regardless of whether its order book is still the one on screen.
-      if (body.session?.jwtToken) saveSession(configId, body.session);
+      if (body.session) saveBookSession(configId, selectedBrokerName, body.session);
       if (!isLatest()) return;
 
       const orders = body.orders || [];
@@ -278,7 +286,7 @@ export default function GetOrderBook() {
       // Whoever turned the spinner on turns it off, superseded or not.
       if (!silent) setLoading(false);
     }
-  }, [client, configId, selectedBrokerName, selectedConfig, selectedIsAngel]);
+  }, [client, configId, selectedBrokerName, selectedConfig, selectedIsKotak, selectedIsSupported]);
 
   useEffect(() => {
     loadRef.current = load;
@@ -292,7 +300,8 @@ export default function GetOrderBook() {
   const liveStatus = useOrderUpdates({
     configId,
     client,
-    enabled: selectedIsAngel,
+    brokerName: selectedBrokerName,
+    enabled: selectedIsSupported,
     // Reconnected after a drop. Every update pushed while it was down is gone -
     // merging only ever patches in what actually arrives - so the book has to be
     // re-read rather than left with rows frozen at their pre-drop state.
@@ -310,7 +319,7 @@ export default function GetOrderBook() {
   // reconnected into existence. Skipped while the tab is hidden - nobody is
   // reading it, and coming back re-reads anyway.
   useEffect(() => {
-    if (!configId || !selectedIsAngel) return undefined;
+    if (!configId || !selectedIsSupported) return undefined;
 
     const timer = window.setInterval(() => {
       if (document.hidden) return;
@@ -326,11 +335,11 @@ export default function GetOrderBook() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [configId, selectedIsAngel]);
+  }, [configId, selectedIsSupported]);
 
   useEffect(() => {
     const accountKey = String(configId || '');
-    if (!accountKey || !selectedConfig || !selectedIsAngel || !client) return;
+    if (!accountKey || !selectedConfig || !selectedIsSupported || !client) return;
     // `loading` is deliberately NOT part of this guard: it's now also true
     // while hydrateConfig is still preparing the account (see above), and
     // gating on it here would mean this effect never fires. autoLoadedAccountRef
@@ -339,7 +348,7 @@ export default function GetOrderBook() {
 
     autoLoadedAccountRef.current = accountKey;
     load();
-  }, [client, configId, load, selectedConfig, selectedIsAngel]);
+  }, [client, configId, load, selectedConfig, selectedIsSupported]);
 
   const summary = useMemo(() => buildOrderSummary(rows), [rows]);
   const filterOptions = useMemo(() => buildOrderFilterOptions(rows), [rows]);
@@ -376,7 +385,7 @@ export default function GetOrderBook() {
             }))}
           />
 
-          <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsAngel && !client)} type="button">
+          <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsSupported && !client)} type="button">
             {loading ? 'Loading' : 'Get OrderBook'}
           </button>
 
@@ -507,7 +516,7 @@ export default function GetOrderBook() {
                         className="positions-empty-action"
                         type="button"
                         onClick={load}
-                        disabled={loading || !selectedConfig || (selectedIsAngel && !client)}
+                        disabled={loading || !selectedConfig || (selectedIsSupported && !client)}
                       >
                         {rows.length ? <Search size={18} /> : <Info size={18} />}
                       </button>
@@ -1171,17 +1180,6 @@ function emptyLabel(rowCount, loading) {
   if (loading) return 'Loading order book';
   if (rowCount) return 'No matching orders';
   return 'No orders';
-}
-
-async function fetchOrderBook(client) {
-  const res = await fetch('/api/angel/order-book', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.status === false) throw new Error(body.message || `HTTP ${res.status}`);
-  return body;
 }
 
 // A login that could not be recovered says what is actually wrong with the

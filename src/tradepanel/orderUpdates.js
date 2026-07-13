@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { saveSession } from '../feedmaster/angelSessionStore';
+import { isKotakBroker, saveBookSession } from './brokerBookClient';
 
 // The one order-status stream, shared by Get Position, Get OrderBook and Get
 // TradeBook. Brokers never push "your position/book changed" - they only push
@@ -93,6 +93,7 @@ function handleStreamChunk(chunk, handlers) {
 
   if (event === 'session') handlers.onSession?.(payload?.session);
   else if (event === 'order') handlers.onOrder?.(payload);
+  else if (event === 'position') handlers.onPosition?.(payload);
   else if (event === 'status') handlers.onStatus?.(payload);
   else if (event === 'error') handlers.onError?.(payload);
 }
@@ -130,7 +131,135 @@ async function readOrderStream(body, handlers) {
  *
  * Returns 'offline' | 'connecting' | 'live'.
  */
-export function useOrderUpdates({ configId, client, enabled = true, onOrder, onResync }) {
+const sharedOrderHubs = new Map();
+
+function hasStreamToken(brokerName, client) {
+  return isKotakBroker(brokerName)
+    ? !!(client?.session?.tradeToken && client.session.sid && client.session.baseUrl)
+    : !!client?.session?.jwtToken;
+}
+
+function directKotakOrder(payload) {
+  const order = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+  if (!order || typeof order !== 'object') return null;
+  if (!order.orderid && !order.nOrdNo && !order.tradingsymbol && !order.sym) return null;
+  return order;
+}
+
+function createOrderHub(key, configId, brokerName) {
+  const hub = {
+    key,
+    configId,
+    brokerName,
+    listeners: new Set(),
+    status: 'offline',
+    controller: null,
+    retryTimer: 0,
+    retries: 0,
+    stopped: false,
+    connectedOnce: false,
+    connecting: false,
+  };
+
+  hub.notifyStatus = (status) => {
+    hub.status = status;
+    hub.listeners.forEach((listener) => listener.setStatus(status));
+  };
+  hub.currentClient = () => {
+    for (const listener of hub.listeners) {
+      const candidate = listener.clientRef.current;
+      if (hasStreamToken(hub.brokerName, candidate)) return candidate;
+    }
+    return null;
+  };
+  hub.schedule = () => {
+    if (hub.stopped || !hub.listeners.size || hub.retryTimer) return;
+    const delay = Math.min(RETRY_BASE_MS * (2 ** hub.retries), RETRY_MAX_MS);
+    hub.retries += 1;
+    hub.retryTimer = window.setTimeout(() => {
+      hub.retryTimer = 0;
+      hub.connect();
+    }, delay);
+  };
+  hub.markConnected = () => {
+    if (hub.status === 'live') return;
+    hub.retries = 0;
+    hub.notifyStatus('live');
+    if (hub.connectedOnce) hub.listeners.forEach((listener) => listener.onResyncRef.current?.());
+    hub.connectedOnce = true;
+  };
+  hub.connect = async () => {
+    if (hub.stopped || hub.connecting || !hub.listeners.size) return;
+    const streamClient = hub.currentClient();
+    if (!streamClient) {
+      hub.notifyStatus('offline');
+      hub.schedule();
+      return;
+    }
+    hub.connecting = true;
+    hub.controller = new AbortController();
+    hub.notifyStatus('connecting');
+    const broker = isKotakBroker(hub.brokerName) ? 'kotak' : 'angel';
+    try {
+      const response = await fetch(`/api/${broker}/order-updates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client: streamClient }),
+        signal: hub.controller.signal,
+      });
+      if (!response.ok || !response.body) throw new Error(`Order stream HTTP ${response.status}`);
+      await readOrderStream(response.body, {
+        onSession: (session) => {
+          if (!session) return;
+          const token = isKotakBroker(hub.brokerName) ? session.tradeToken : session.jwtToken;
+          const currentToken = isKotakBroker(hub.brokerName)
+            ? hub.currentClient()?.session?.tradeToken
+            : hub.currentClient()?.session?.jwtToken;
+          if (token && token !== currentToken) saveBookSession(hub.configId, hub.brokerName, session);
+        },
+        onOrder: (payload) => {
+          const order = isKotakBroker(hub.brokerName) ? directKotakOrder(payload) : normalizeSocketOrder(payload);
+          if (!order) {
+            if (payload?.['order-status'] === 'AB00') hub.markConnected();
+            return;
+          }
+          if (hub.status !== 'live') hub.markConnected();
+          hub.listeners.forEach((listener) => listener.onOrderRef.current?.(order));
+        },
+        onPosition: (payload) => {
+          if (hub.status !== 'live') hub.markConnected();
+          hub.listeners.forEach((listener) => listener.onPositionRef.current?.(payload));
+        },
+        onStatus: (payload) => {
+          if (payload?.status === false || payload?.connected === false) hub.notifyStatus('offline');
+          else hub.markConnected();
+        },
+        onError: () => hub.notifyStatus('offline'),
+      });
+      if (hub.stopped) return;
+      hub.notifyStatus('offline');
+      hub.schedule();
+    } catch {
+      if (!hub.stopped && !hub.controller?.signal.aborted) {
+        hub.notifyStatus('offline');
+        hub.schedule();
+      }
+    } finally {
+      hub.connecting = false;
+    }
+  };
+  hub.stop = () => {
+    hub.stopped = true;
+    clearTimeout(hub.retryTimer);
+    hub.controller?.abort();
+    hub.listeners.clear();
+  };
+  return hub;
+}
+
+export function useOrderUpdates({
+  configId, client, brokerName = 'angel', enabled = true, onOrder, onPosition, onResync,
+}) {
   const [status, setStatus] = useState('offline');
 
   // The stream outlives individual renders, so it reaches the current client and
@@ -138,117 +267,47 @@ export function useOrderUpdates({ configId, client, enabled = true, onOrder, onR
   // it - reconnecting is exactly the bug this hook exists to end.
   const clientRef = useRef(null);
   const onOrderRef = useRef(null);
+  const onPositionRef = useRef(null);
   const onResyncRef = useRef(null);
 
   useEffect(() => { clientRef.current = client; }, [client]);
   useEffect(() => { onOrderRef.current = onOrder; }, [onOrder]);
+  useEffect(() => { onPositionRef.current = onPosition; }, [onPosition]);
   useEffect(() => { onResyncRef.current = onResync; }, [onResync]);
 
   // A token has to exist to connect at all, but its VALUE is deliberately not a
   // dependency: connect() re-reads the client, so a mid-session token refresh is
   // picked up without restarting the stream (and without looping, since the
   // stream itself is what hands the refreshed token back).
-  const hasToken = Boolean(client?.session?.jwtToken);
+  const hasToken = hasStreamToken(brokerName, client);
   const active = Boolean(configId) && enabled && hasToken;
+  const brokerKey = isKotakBroker(brokerName) ? 'kotak' : 'angel';
 
   useEffect(() => {
     if (!active) {
-      setStatus('offline');
       return undefined;
     }
-
-    let cancelled = false;
-    let retries = 0;
-    let retryTimer = 0;
-    let controller = null;
-    // The first connection is a fresh subscription; every one after it follows a
-    // gap in which updates were missed and the tables have to be re-fetched.
-    let connectedOnce = false;
-
-    function scheduleReconnect() {
-      if (cancelled) return;
-      const delay = Math.min(RETRY_BASE_MS * (2 ** retries), RETRY_MAX_MS);
-      retries += 1;
-      retryTimer = window.setTimeout(connect, delay);
+    const key = `${brokerKey}:${configId}`;
+    let hub = sharedOrderHubs.get(key);
+    if (!hub) {
+      hub = createOrderHub(key, configId, brokerName);
+      sharedOrderHubs.set(key, hub);
     }
-
-    async function connect() {
-      if (cancelled) return;
-
-      const streamClient = clientRef.current;
-      if (!streamClient?.session?.jwtToken) {
-        setStatus('offline');
-        scheduleReconnect();
-        return;
-      }
-
-      controller = new AbortController();
-      setStatus('connecting');
-
-      try {
-        const res = await fetch('/api/angel/order-updates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ client: streamClient }),
-          signal: controller.signal,
-        });
-        if (!res.ok || !res.body) throw new Error(`Order stream HTTP ${res.status}`);
-        if (cancelled) return;
-
-        retries = 0;
-        setStatus('live');
-        if (connectedOnce) onResyncRef.current?.();
-        connectedOnce = true;
-
-        await readOrderStream(res.body, {
-          onSession: (session) => {
-            // Only a genuinely new token is worth writing back - re-saving the
-            // same one churns every consumer of the session store.
-            if (!session?.jwtToken) return;
-            if (session.jwtToken === clientRef.current?.session?.jwtToken) return;
-            saveSession(configId, session);
-          },
-          onOrder: (payload) => {
-            const order = normalizeSocketOrder(payload);
-            // AB00 is Angel's "subscribed, nothing to report" heartbeat: not an
-            // order, but proof the stream is alive.
-            if (!order) {
-              if (payload?.['order-status'] === 'AB00') setStatus('live');
-              return;
-            }
-            onOrderRef.current?.(order);
-          },
-          onStatus: (payload) => {
-            setStatus(payload?.status === false ? 'offline' : 'live');
-          },
-          onError: () => {
-            setStatus('offline');
-          },
-        });
-
-        // The server ended the stream. Reconnect - this is the case that used to
-        // leave the page reporting "live" while nothing was listening.
-        if (cancelled) return;
-        setStatus('offline');
-        scheduleReconnect();
-      } catch {
-        if (cancelled || controller?.signal.aborted) return;
-        setStatus('offline');
-        scheduleReconnect();
-      }
-    }
-
-    connect();
+    const listener = { clientRef, onOrderRef, onPositionRef, onResyncRef, setStatus };
+    hub.listeners.add(listener);
+    hub.connect();
 
     return () => {
-      cancelled = true;
-      clearTimeout(retryTimer);
-      controller?.abort();
+      hub.listeners.delete(listener);
       setStatus('offline');
+      if (!hub.listeners.size) {
+        hub.stop();
+        sharedOrderHubs.delete(key);
+      }
     };
-  }, [active, configId]);
+  }, [active, brokerKey, brokerName, configId]);
 
-  return status;
+  return active ? status : 'offline';
 }
 
 /**

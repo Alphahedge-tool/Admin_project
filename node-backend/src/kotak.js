@@ -20,6 +20,7 @@ const VALIDATE_URL = 'https://mis.kotaksecurities.com/login/1.0/tradeApiValidate
 const NEO_FIN_KEY = 'neotradeapi';
 
 const LOGIN_TIMEOUT_MS = 20_000;
+const REPORT_TIMEOUT_MS = 20_000;
 
 async function postJSON(url, headers, body) {
   const res = await fetch(url, {
@@ -118,6 +119,8 @@ export async function autoLogin(input) {
     tradeToken,
     sid: validated.sid || viewSID,
     rid: validated.rid || '',
+    serverId: validated.hsServerId || validated.serverId || '',
+    dataCenter: validated.dataCenter || '',
     // Kotak hands back the data-centre host to use for subsequent calls; it is
     // not the same for every account, so it has to be carried in the session.
     baseUrl: validated.baseUrl || '',
@@ -138,6 +141,303 @@ export async function autoLogin(input) {
     marginSource: 'n/a',
     sessionSource: 'totp-login',
     session,
-    data: { baseUrl: session.baseUrl, greetingName: session.greeting },
+    data: {
+      baseUrl: session.baseUrl,
+      greetingName: session.greeting,
+      hsServerId: session.serverId,
+      dataCenter: session.dataCenter,
+    },
+  };
+}
+
+function sessionOf(input = {}) {
+  const client = input.client && typeof input.client === 'object' ? input.client : input;
+  const session = client.session && typeof client.session === 'object' ? client.session : client;
+  const normalized = {
+    ...session,
+    tradeToken: String(session.tradeToken || session.token || '').trim(),
+    sid: String(session.sid || '').trim(),
+    baseUrl: String(session.baseUrl || '').trim().replace(/\/+$/, ''),
+  };
+  const missing = [];
+  if (!normalized.tradeToken) missing.push('trade token');
+  if (!normalized.sid) missing.push('SID');
+  if (!normalized.baseUrl) missing.push('base URL');
+  if (missing.length) throw new Error(`Kotak session needs ${missing.join(', ')}`);
+  return normalized;
+}
+
+export function sessionFromClient(input = {}) {
+  return sessionOf(input);
+}
+
+async function requestReport(input, path, { method = 'GET', jData } = {}) {
+  const session = sessionOf(input);
+  const body = jData == null ? undefined : new URLSearchParams({
+    jData: JSON.stringify(jData),
+  }).toString();
+  const res = await fetch(`${session.baseUrl}${path}`, {
+    method,
+    headers: {
+      Accept: 'application/json',
+      Sid: session.sid,
+      Auth: session.tradeToken,
+      'neo-fin-key': NEO_FIN_KEY,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+    signal: AbortSignal.timeout(REPORT_TIMEOUT_MS),
+  });
+
+  const text = await res.text();
+  let out = {};
+  if (text) {
+    try {
+      out = JSON.parse(text);
+    } catch {
+      throw new Error(`Kotak returned an invalid response (HTTP ${res.status})`);
+    }
+  }
+
+  if (!res.ok || String(out?.stat || '').toLowerCase() === 'not_ok') {
+    throw new Error(out?.emsg || out?.message || `Kotak HTTP ${res.status}`);
+  }
+  if (out?.stat && String(out.stat).toLowerCase() !== 'ok') {
+    throw new Error(out?.emsg || out?.message || `Kotak request failed (${out.stat})`);
+  }
+  return { raw: out, session: { ...session, lastUsedAt: new Date().toISOString() } };
+}
+
+function numberOf(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function sideOf(value) {
+  return String(value || '').trim().toUpperCase().startsWith('S') ? 'SELL' : 'BUY';
+}
+
+function exchangeOf(value) {
+  const exchange = String(value || '').trim();
+  const key = exchange.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return ({
+    nsecm: 'NSE', nsefo: 'NFO', bsecm: 'BSE', bsefo: 'BFO',
+    cdefo: 'CDS', nsecd: 'CDS', mcxfo: 'MCX',
+  })[key] || exchange.toUpperCase();
+}
+
+function orderTypeOf(value) {
+  const type = String(value || '').trim().toUpperCase().replace(/[_\s]/g, '-');
+  if (type === 'L' || type === 'LIMIT') return 'LIMIT';
+  if (type === 'M' || type === 'MKT' || type === 'MARKET') return 'MARKET';
+  if (type === 'SL' || type === 'STOP-LOSS') return 'STOPLOSS_LIMIT';
+  if (type === 'SL-M' || type === 'SLM') return 'STOPLOSS_MARKET';
+  return type;
+}
+
+export function normalizeKotakOrder(row = {}) {
+  const quantity = numberOf(row.qty);
+  const filled = numberOf(row.fldQty ?? row.filledQty ?? row.filledshares);
+  return {
+    ...row,
+    orderid: String(row.nOrdNo || row.orderid || ''),
+    uniqueorderid: String(row.exOrdId || row.uniqueorderid || ''),
+    exchangeorderid: String(row.exOrdId || row.exchangeorderid || ''),
+    tradingsymbol: String(row.trdSym || row.sym || row.tradingsymbol || ''),
+    symbolname: String(row.sym || row.trdSym || row.symbolname || ''),
+    exchange: exchangeOf(row.exSeg || row.exchange),
+    transactiontype: sideOf(row.trnsTp || row.transactiontype),
+    ordertype: orderTypeOf(row.prcTp || row.ordertype),
+    producttype: String(row.prod || row.product || row.producttype || ''),
+    variety: String(row.ordGenTp || row.variety || 'NORMAL'),
+    quantity,
+    filledshares: filled,
+    unfilledshares: numberOf(row.unFldSz ?? row.pendingQty ?? Math.max(quantity - filled, 0)),
+    price: numberOf(row.prc ?? row.price),
+    averageprice: numberOf(row.avgPrc ?? row.averageprice),
+    triggerprice: numberOf(row.trgPrc ?? row.trigPrc ?? row.triggerprice),
+    status: String(row.ordSt || row.status || ''),
+    orderstatus: String(row.ordSt || row.orderstatus || row.status || ''),
+    updatetime: String(row.ordDtTm || row.flDtTm || row.exTm || row.updatetime || ''),
+    text: String(row.rejRsn || row.text || ''),
+  };
+}
+
+export function normalizeKotakTrade(row = {}, index = 0) {
+  const quantity = numberOf(row.fldQty ?? row.qty ?? row.quantity);
+  const price = numberOf(row.flPrc ?? row.avgPrc ?? row.prc ?? row.price);
+  const fillTime = String(row.flDtTm || row.exTm || row.flDt || row.filltime || '');
+  const orderId = String(row.nOrdNo || row.orderid || '');
+  return {
+    ...row,
+    orderid: orderId,
+    fillid: String(row.flId || row.tradeId || row.exTradeId || `${orderId}-${index + 1}`),
+    tradingsymbol: String(row.trdSym || row.tradingsymbol || ''),
+    symbolname: String(row.trdSym || row.symbolname || ''),
+    exchange: exchangeOf(row.exSeg || row.exchange),
+    transactiontype: sideOf(row.trnsTp || row.transactiontype),
+    ordertype: orderTypeOf(row.prcTp || row.ordertype),
+    producttype: String(row.prod || row.product || row.producttype || ''),
+    fillsize: quantity,
+    quantity,
+    fillprice: price,
+    price,
+    tradevalue: price * quantity,
+    filltime: fillTime,
+    updatetime: fillTime,
+  };
+}
+
+export async function orderBook(input) {
+  const result = await requestReport(input, '/quick/user/orders');
+  const rows = Array.isArray(result.raw?.data) ? result.raw.data : [];
+  return {
+    status: true,
+    broker: 'kotak',
+    orders: rows.map(normalizeKotakOrder),
+    raw: result.raw,
+    session: result.session,
+  };
+}
+
+export async function tradeBook(input) {
+  const result = await requestReport(input, '/quick/user/trades');
+  const rows = Array.isArray(result.raw?.data) ? result.raw.data : [];
+  return {
+    status: true,
+    broker: 'kotak',
+    trades: rows.map(normalizeKotakTrade),
+    raw: result.raw,
+    session: result.session,
+  };
+}
+
+export function normalizeKotakPosition(row = {}) {
+  const dayBuyQty = numberOf(row.flBuyQty);
+  const daySellQty = numberOf(row.flSellQty);
+  const carryBuyQty = numberOf(row.cfBuyQty);
+  const carrySellQty = numberOf(row.cfSellQty);
+  const buyQty = dayBuyQty + carryBuyQty;
+  const sellQty = daySellQty + carrySellQty;
+  const buyAmount = numberOf(row.buyAmt) + numberOf(row.cfBuyAmt);
+  const sellAmount = numberOf(row.sellAmt) + numberOf(row.cfSellAmt);
+  const buyAvg = buyQty ? buyAmount / buyQty : 0;
+  const sellAvg = sellQty ? sellAmount / sellQty : 0;
+  const closedQty = Math.min(buyQty, sellQty);
+  return {
+    ...row,
+    tradingsymbol: String(row.trdSym || row.tradingsymbol || ''),
+    symbolname: String(row.sym || row.trdSym || row.symbolname || ''),
+    exchange: exchangeOf(row.exSeg || row.exchange),
+    producttype: String(row.prod || row.producttype || ''),
+    netqty: numberOf(row.qty ?? row.netqty ?? (buyQty - sellQty)),
+    buyqty: buyQty,
+    sellqty: sellQty,
+    totalbuyqty: buyQty,
+    totalsellqty: sellQty,
+    totalbuyvalue: buyAmount,
+    totalsellvalue: sellAmount,
+    buyavgprice: buyAvg,
+    sellavgprice: sellAvg,
+    totalbuyavgprice: buyAvg,
+    totalsellavgprice: sellAvg,
+    lotsize: numberOf(row.lotSz ?? row.brdLtQty ?? row.lotsize) || 1,
+    strikeprice: numberOf(row.stkPrc ?? row.strikeprice),
+    expirydate: String(row.expDt || row.expirydate || ''),
+    optiontype: String(row.optTp || row.optiontype || ''),
+    realised: (sellAvg - buyAvg) * closedQty,
+    unrealised: 0,
+    updatetime: String(row.hsUpTm || row.updatetime || ''),
+  };
+}
+
+export async function positions(input) {
+  const result = await requestReport(input, '/quick/user/positions');
+  const rows = Array.isArray(result.raw?.data) ? result.raw.data : [];
+  return {
+    status: true,
+    broker: 'kotak',
+    positions: rows.map(normalizeKotakPosition),
+    raw: result.raw,
+    session: result.session,
+  };
+}
+
+export async function limits(input, filters = {}) {
+  const jData = {
+    seg: String(filters.seg || 'ALL').toUpperCase(),
+    exch: String(filters.exch || 'ALL').toUpperCase(),
+    prod: String(filters.prod || 'ALL').toUpperCase(),
+  };
+  const result = await requestReport(input, '/quick/user/limits', { method: 'POST', jData });
+  const data = result.raw || {};
+  return {
+    status: true,
+    broker: 'kotak',
+    filters: jData,
+    limits: {
+      availableCash: numberOf(data.Net),
+      net: numberOf(data.Net),
+      marginUsed: numberOf(data.MarginUsed),
+      collateralValue: numberOf(data.CollateralValue),
+      adhocMargin: numberOf(data.AdhocMargin),
+      unrealizedMtm: numberOf(data.UnrealizedMtomPrsnt),
+      realizedMtm: numberOf(data.RealizedMtomPrsnt),
+    },
+    raw: data,
+    session: result.session,
+  };
+}
+
+function marginRequest(order = {}) {
+  const transactionType = order.trnsTp || order.transactionType || order.side;
+  const required = {
+    brkName: 'KOTAK',
+    brnchId: 'ONLINE',
+    exSeg: order.exSeg || order.exchangeSegment || ({
+      NSE: 'nse_cm', NFO: 'nse_fo', BSE: 'bse_cm', BFO: 'bse_fo',
+      CDS: 'cde_fo', MCX: 'mcx_fo',
+    })[String(order.exchange || '').toUpperCase()],
+    prc: order.prc ?? order.price,
+    prcTp: order.prcTp || order.orderType,
+    prod: order.prod || order.productType,
+    qty: order.qty ?? order.quantity,
+    tok: order.tok || order.token || order.symboltoken,
+    trnsTp: transactionType,
+  };
+  required.prcTp = orderTypeOf(required.prcTp);
+  required.prcTp = ({ LIMIT: 'L', MARKET: 'MKT', STOPLOSS_LIMIT: 'SL', STOPLOSS_MARKET: 'SL-M' })[required.prcTp] || required.prcTp;
+  for (const key of ['exSeg', 'prc', 'prcTp', 'prod', 'qty', 'tok']) {
+    if (required[key] == null || String(required[key]).trim() === '') throw new Error(`Kotak margin check needs ${key}`);
+    required[key] = String(required[key]);
+  }
+  if (transactionType == null || String(transactionType).trim() === '') throw new Error('Kotak margin check needs trnsTp');
+  required.trnsTp = sideOf(transactionType) === 'SELL' ? 'S' : 'B';
+  for (const key of ['slAbsOrTks', 'slVal', 'sqrOffAbsOrTks', 'sqrOffVal', 'trailSL', 'trgPrc', 'tSLTks']) {
+    if (order[key] != null && String(order[key]) !== '') required[key] = String(order[key]);
+  }
+  return required;
+}
+
+export async function checkMargin(input, order = {}) {
+  const jData = marginRequest(order);
+  const result = await requestReport(input, '/quick/user/check-margin', { method: 'POST', jData });
+  const data = result.raw || {};
+  return {
+    status: true,
+    broker: 'kotak',
+    margin: {
+      availableCash: numberOf(data.avlCash),
+      availableMargin: numberOf(data.avlMrgn),
+      insufficientFunds: numberOf(data.insufFund),
+      marginUsed: numberOf(data.mrgnUsd),
+      orderMargin: numberOf(data.ordMrgn),
+      requiredMargin: numberOf(data.reqdMrgn),
+      totalMarginUsed: numberOf(data.totMrgnUsd),
+      rmsValidated: String(data.rmsVldtd || ''),
+    },
+    request: jData,
+    raw: data,
+    session: result.session,
   };
 }

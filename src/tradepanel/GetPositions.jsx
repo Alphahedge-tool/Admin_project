@@ -1,19 +1,23 @@
 // Get Position: pill selectors for user/account + the selected account's positions.
-// Angel One is wired today; other brokers can be selected and added later.
+// Angel One and Kotak Neo positions share one normalized table shape.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowUpDown, Check, Filter, Info, Layers, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet, apiPost } from '../config/api';
 import { useFeedMasterAccount } from '../feedmaster/feedMasterStore';
 import {
-  classifyLoginError, ensureSession, isAngelBroker, isAuthError, isRateLimited, saveSession,
-  useAngelClient,
+  classifyLoginError, ensureSession, isAngelBroker, isAuthError, isRateLimited,
 } from '../feedmaster/angelSessionStore';
+import {
+  ensureBookSession, fetchBrokerPositions, hasBookSession, isBookBroker, isKotakBroker,
+  saveBookSession, useBrokerBookClient,
+} from './brokerBookClient';
 import { releaseFeedTokens } from './feedTokens';
 import { orderIsFill, useFillRefresh, useOrderUpdates } from './orderUpdates';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { compactProductTag, parseTradingSymbol } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
+import { useKotakMarketFeed } from './useKotakMarketFeed';
 import './tradepanel.css';
 
 const POSITION_COLUMNS = ['stock', 'product', 'netQty', 'buyAvg', 'sellAvg', 'ltp', 'pnl'];
@@ -51,17 +55,42 @@ function pnlOf(row) {
 // Marks an open position to market from a live feed tick: recomputes ltp/pnl
 // from the tick instead of the last REST snapshot. A flat (netqty 0) position
 // has nothing to mark - its pnl is already fully realised.
-function withLivePositionTick(row, liveTicks) {
+function angelMasterReference(row, selectedIsAngel) {
+  const explicitBroker = String(row.masterFeedBroker || '').toLowerCase();
+  if (explicitBroker && explicitBroker !== 'angel' && explicitBroker !== 'angelone') return null;
+
+  const explicitToken = row.masterFeedToken ?? row.feedMasterToken;
+  const token = explicitToken ?? (selectedIsAngel && !row.brokerToken ? row.symboltoken : '');
+  if (token == null || token === '') return null;
+  return {
+    token: String(token),
+    exchange: String(
+      row.masterFeedExchange
+      || row.feedMasterExchange
+      || (selectedIsAngel ? row.exchange : ''),
+    ).toUpperCase(),
+  };
+}
+
+function withLivePositionTick(row, liveTicks, selectedIsAngel) {
   const qty = Number(row.netqty || 0);
   if (qty === 0) return row;
 
-  const token = row.symboltoken != null ? String(row.symboltoken) : '';
-  const tick = token ? liveTicks[token] : null;
+  const master = angelMasterReference(row, selectedIsAngel);
+  const brokerToken = row.brokerToken ?? row.symboltoken;
+  const token = brokerToken != null ? String(brokerToken) : '';
+  const segment = String(row.brokerExchange || row.feedExchange || row.exchange || '').toLowerCase();
+  const tick = (master && (
+    liveTicks[`${master.exchange.toLowerCase()}|${master.token}`]
+    || liveTicks[master.token]
+  )) || (token ? liveTicks[`${segment}|${token}`] : null)
+    || (!row.brokerToken && token ? liveTicks[token] : null);
   if (!tick || !(tick.ltp > 0)) return row;
 
   const buy = positionBuyAvg(row);
   const sell = positionSellAvg(row);
-  const pnl = qty > 0 ? (tick.ltp - buy) * qty : (sell - tick.ltp) * Math.abs(qty);
+  const unrealised = qty > 0 ? (tick.ltp - buy) * qty : (sell - tick.ltp) * Math.abs(qty);
+  const pnl = Number(row.realised || 0) + unrealised;
 
   return { ...row, ltp: tick.ltp, pnl, liveDir: tick.dir };
 }
@@ -71,8 +100,6 @@ export default function GetPositions() {
   const [userId, setUserId] = useState('');
   const [configs, setConfigs] = useState([]);
   const [configId, setConfigId] = useState('');
-  // Logged in once at app start (StartupGate), so this client already has a token.
-  const client = useAngelClient(configId);
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState('Select a user and account');
   // Starts true: until the user/config/credential setup below settles one way
@@ -99,7 +126,24 @@ export default function GetPositions() {
   const loadRef = useRef(null);
   const loadSeqRef = useRef(0);
 
-  const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount();
+  const selectedConfig = configs.find((config) => String(config.id) === String(configId));
+  const selectedUser = users.find((user) => String(user.id) === String(userId));
+  const selectedUserLabel = selectedUser
+    ? (selectedUser.username || `${selectedUser.first_name || ''} ${selectedUser.last_name || ''}`.trim() || `User ${selectedUser.id}`)
+    : '';
+  const selectedBrokerName = selectedConfig?.broker_name || '';
+  const selectedIsAngel = isAngelBroker(selectedBrokerName);
+  const selectedIsKotak = isKotakBroker(selectedBrokerName);
+  const selectedIsSupported = isBookBroker(selectedBrokerName);
+  const { client, clientError } = useBrokerBookClient(configId, selectedBrokerName);
+
+  const {
+    setting: feedMasterSetting,
+    client: feedMasterClient,
+    handleSession: onFeedMasterSession,
+  } = useFeedMasterAccount();
+  const angelMasterSelected = String(feedMasterSetting?.broker || feedMasterClient?.broker || '').toLowerCase() === 'angelone'
+    && Boolean(feedMasterSetting?.configId);
   const [liveTicks, setLiveTicks] = useState({});
   const [feedStatus, setFeedStatus] = useState('offline'); // 'offline' | 'connecting' | 'live'
   const feedMasterClientRef = useRef(null);
@@ -126,15 +170,36 @@ export default function GetPositions() {
   // Every currently open (non-flat) position's exchange|token - a flat
   // position has nothing left to mark to market.
   const legFeedKey = useMemo(() => {
+    if (!angelMasterSelected) return '';
     const seen = new Set();
     positionRows.forEach((row) => {
       if (Number(row.netqty || 0) === 0) return;
-      const token = row.symboltoken;
-      if (token == null || token === '') return;
-      seen.add(`${row.exchange || 'NFO'}|${token}`);
+      const master = angelMasterReference(row, selectedIsAngel);
+      if (!master) return;
+      seen.add(`${master.exchange || 'NFO'}|${master.token}`);
     });
     return [...seen].sort().join(',');
-  }, [positionRows]);
+  }, [angelMasterSelected, positionRows, selectedIsAngel]);
+
+  const kotakFeedItems = useMemo(() => {
+    // The selected Feedmaster owns LTP routing. Never mix Kotak HSM ticks into
+    // an Angel-master position set: numeric tokens are broker-specific and can
+    // collide while referring to completely different contracts.
+    if (!selectedIsKotak || angelMasterSelected) return [];
+    return positionRows
+      .filter((row) => Number(row.netqty || 0) !== 0 && row.symboltoken)
+      .map((row) => ({
+        segment: row.feedExchange || row.brokerExchange,
+        token: String(row.symboltoken),
+      }));
+  }, [angelMasterSelected, positionRows, selectedIsKotak]);
+  const { status: kotakFeedStatus, ticks: kotakTicks } = useKotakMarketFeed({
+    configId,
+    client,
+    enabled: selectedIsKotak && !angelMasterSelected,
+    items: kotakFeedItems,
+    subscriber: 'get-positions',
+  });
 
   // Keep the feed reconciled to exactly this position set, streaming ticks
   // over the same Feedmaster SSE connection the rest of Trade Panel uses.
@@ -154,7 +219,11 @@ export default function GetPositions() {
 
     async function syncFeedTokens() {
       const feedClient = feedMasterClientRef.current;
-      if (!feedClient) return;
+      if (!feedClient) {
+        feedTokenSetRef.current = new Set();
+        setFeedStatus('offline');
+        return;
+      }
 
       let session = feedClient.session;
       if (!session?.jwtToken || !session?.feedToken) {
@@ -181,6 +250,22 @@ export default function GetPositions() {
       feedTokenSetRef.current = new Set(items.map((item) => String(item.token)));
 
       if (!items.length) {
+        // Account/broker switches do not unmount this page, so explicitly hand
+        // the previous Angel token group back instead of leaking it forever.
+        await fetch('/api/angel/basket-tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            credentials: {
+              jwtToken: session.jwtToken,
+              feedToken: session.feedToken,
+              apiKey: feedClient.apiKey,
+              clientCode: feedClient.clientCode,
+            },
+            items: [],
+            subscriber: 'get-positions',
+          }),
+        }).catch(() => {});
         setFeedStatus('offline');
         return;
       }
@@ -251,18 +336,31 @@ export default function GetPositions() {
     releaseFeedTokens('get-positions');
   }, []);
 
+  const activeTicks = useMemo(
+    () => (angelMasterSelected ? liveTicks : { ...kotakTicks, ...liveTicks }),
+    [angelMasterSelected, kotakTicks, liveTicks],
+  );
   const liveRows = useMemo(
-    () => positionRows.map((row) => withLivePositionTick(row, liveTicks)),
-    [positionRows, liveTicks],
+    () => positionRows.map((row) => withLivePositionTick(row, activeTicks, selectedIsAngel)),
+    [activeTicks, positionRows, selectedIsAngel],
   );
 
-  const selectedConfig = configs.find((config) => String(config.id) === String(configId));
-  const selectedUser = users.find((user) => String(user.id) === String(userId));
-  const selectedUserLabel = selectedUser
-    ? (selectedUser.username || `${selectedUser.first_name || ''} ${selectedUser.last_name || ''}`.trim() || `User ${selectedUser.id}`)
-    : '';
-  const selectedBrokerName = selectedConfig?.broker_name || '';
-  const selectedIsAngel = isAngelBroker(selectedBrokerName);
+  const openPositionCount = useMemo(
+    () => positionRows.filter((row) => Number(row.netqty || 0) !== 0).length,
+    [positionRows],
+  );
+  const angelMappedPositionCount = useMemo(
+    () => positionRows.filter((row) => (
+      Number(row.netqty || 0) !== 0 && angelMasterReference(row, selectedIsAngel)
+    )).length,
+    [positionRows, selectedIsAngel],
+  );
+  const positionFeedStatus = angelMasterSelected
+    ? feedStatus
+    : selectedIsKotak ? kotakFeedStatus : feedStatus;
+  const positionFeedTitle = angelMasterSelected
+    ? `Angel Feedmaster: ${angelMappedPositionCount} of ${openPositionCount} open contracts mapped`
+    : selectedIsKotak ? 'Live Kotak HSM market feed' : 'Live LTP feed (Feedmaster)';
 
   // Manual picks here should also become the shared Trade Panel selection.
   // setLoading(true) here (not just inside the effects below) closes the gap
@@ -382,14 +480,20 @@ export default function GetPositions() {
     setRows([]);
     if (!configId) return;
 
-    if (!selectedIsAngel) {
+    if (!selectedIsSupported) {
       setStatus(`${selectedBrokerName || 'Selected broker'} positions are not wired yet`);
       setLoading(false);
       return;
     }
     setLoading(true);
     setStatus('');
-  }, [configId, selectedBrokerName, selectedIsAngel]);
+  }, [configId, selectedBrokerName, selectedIsSupported]);
+
+  useEffect(() => {
+    if (!clientError) return;
+    setStatus(clientError);
+    setLoading(false);
+  }, [clientError]);
 
   useEffect(() => {
     autoLoadedAccountRef.current = '';
@@ -404,12 +508,12 @@ export default function GetPositions() {
       setStatus('Select an account first');
       return;
     }
-    if (!selectedIsAngel) {
+    if (!selectedIsSupported) {
       setStatus(`${selectedBrokerName || 'Selected broker'} positions are not wired yet`);
       return;
     }
     if (!client) {
-      setStatus('Angel account credentials are not ready');
+      setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} account credentials are not ready`);
       return;
     }
 
@@ -429,24 +533,24 @@ export default function GetPositions() {
       // Startup already logged this account in; only a missing or expired token
       // goes back to the shared (deduped) login.
       let active = client;
-      if (!active.session?.jwtToken) {
+      if (!hasBookSession(selectedBrokerName, active)) {
         if (!silent) setStatus('Signing in this account...');
-        active = { ...active, session: await ensureSession(configId), loggedIn: true };
+        active = await ensureBookSession(configId, selectedBrokerName, active);
       }
 
       let body;
       try {
-        body = await fetchPositions(active);
+        body = await fetchBrokerPositions(selectedBrokerName, active);
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        if (!silent) setStatus('Angel token expired - signing in again...');
-        active = { ...active, session: await ensureSession(configId, { force: true }), loggedIn: true };
-        body = await fetchPositions(active);
+        if (!silent) setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} token expired - signing in again...`);
+        active = await ensureBookSession(configId, selectedBrokerName, active, { force: true });
+        body = await fetchBrokerPositions(selectedBrokerName, active);
       }
 
       // Save the refreshed session even for a superseded refresh - the token is
       // good regardless of whether this response is still the one on screen.
-      if (body.session?.jwtToken) saveSession(configId, body.session);
+      if (body.session) saveBookSession(configId, selectedBrokerName, body.session);
       if (!isLatest()) return;
 
       const positions = body.positions || [];
@@ -458,7 +562,7 @@ export default function GetPositions() {
       // Whoever turned the spinner on turns it off, superseded or not.
       if (!silent) setLoading(false);
     }
-  }, [client, configId, selectedBrokerName, selectedConfig, selectedIsAngel]);
+  }, [client, configId, selectedBrokerName, selectedConfig, selectedIsKotak, selectedIsSupported]);
 
   useEffect(() => {
     loadRef.current = load;
@@ -466,7 +570,7 @@ export default function GetPositions() {
 
   useEffect(() => {
     const accountKey = String(configId || '');
-    if (!accountKey || !selectedConfig || !selectedIsAngel || !client) return;
+    if (!accountKey || !selectedConfig || !selectedIsSupported || !client) return;
     // `loading` is deliberately NOT part of this guard: it's now also true
     // while the account is still being prepared (see above), and
     // gating on it here would mean this effect never fires. autoLoadedAccountRef
@@ -475,7 +579,7 @@ export default function GetPositions() {
 
     autoLoadedAccountRef.current = accountKey;
     load();
-  }, [client, configId, load, selectedConfig, selectedIsAngel]);
+  }, [client, configId, load, selectedConfig, selectedIsSupported]);
 
   const refreshPositions = useCallback(() => loadRef.current?.({ silent: true }), []);
   const scheduleFillRefresh = useFillRefresh(refreshPositions);
@@ -488,11 +592,16 @@ export default function GetPositions() {
   const fillSyncStatus = useOrderUpdates({
     configId,
     client,
-    enabled: selectedIsAngel,
+    brokerName: selectedBrokerName,
+    enabled: selectedIsSupported,
     onResync: refreshPositions,
     onOrder: useCallback((order) => {
       if (!orderIsFill(order)) return;
       setStatus(`Order filled${order.tradingsymbol ? ` (${order.tradingsymbol})` : ''} - refreshing positions...`);
+      scheduleFillRefresh();
+    }, [scheduleFillRefresh]),
+    onPosition: useCallback(() => {
+      setStatus('Kotak live position update - refreshing positions...');
       scheduleFillRefresh();
     }, [scheduleFillRefresh]),
   });
@@ -502,7 +611,7 @@ export default function GetPositions() {
   // announced. Skipped while the tab is in the background - nobody is looking,
   // and switching back re-checks anyway.
   useEffect(() => {
-    if (!configId || !selectedIsAngel) return undefined;
+    if (!configId || !selectedIsSupported) return undefined;
 
     const timer = window.setInterval(() => {
       if (document.hidden) return;
@@ -518,7 +627,7 @@ export default function GetPositions() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [configId, selectedIsAngel]);
+  }, [configId, selectedIsSupported]);
 
   const totalPnl = liveRows.reduce((sum, r) => sum + pnlOf(r), 0);
   const longCount = liveRows.filter((row) => Number(row.netqty || 0) > 0).length;
@@ -713,7 +822,7 @@ export default function GetPositions() {
             }))}
           />
 
-          <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsAngel && !client)} type="button">
+          <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsSupported && !client)} type="button">
             {loading ? 'Loading' : 'Get Positions'}
           </button>
           {positionRows.length > 0 && (
@@ -722,9 +831,9 @@ export default function GetPositions() {
             </span>
           )}
 
-          <span className={`orderbook-live-pill ${feedStatus}`} title="Live LTP feed (Feedmaster)">
+          <span className={`orderbook-live-pill ${positionFeedStatus}`} title={positionFeedTitle}>
             <Radio size={13} />
-            {feedStatus === 'live' ? 'Live' : feedStatus === 'connecting' ? 'Connecting' : 'Offline'}
+            {positionFeedStatus === 'live' ? 'Live' : positionFeedStatus === 'connecting' ? 'Connecting' : 'Offline'}
           </span>
 
           <span className={`orderbook-live-pill ${fillSyncStatus}`} title="Auto re-syncs positions when an order fills">
@@ -866,7 +975,7 @@ export default function GetPositions() {
                         className="positions-empty-action"
                         type="button"
                         onClick={load}
-                        disabled={loading || !selectedConfig || (selectedIsAngel && !client)}
+                        disabled={loading || !selectedConfig || (selectedIsSupported && !client)}
                       >
                         <Info size={18} />
                       </button>
@@ -1604,17 +1713,6 @@ function expirySortValue(label) {
   if (month < 0) return Number.MAX_SAFE_INTEGER;
   const fullYear = Number(year.length === 2 ? `20${year}` : year);
   return new Date(fullYear, month, Number(day)).getTime();
-}
-
-async function fetchPositions(client) {
-  const res = await fetch('/api/angel/positions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client }),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok || body.status === false) throw new Error(body.message || `HTTP ${res.status}`);
-  return body;
 }
 
 function toPositionError(error) {
