@@ -2689,6 +2689,15 @@ select { min-width: 96px; }
   overflow: hidden;
 }
 
+.trade-panel-tabs,
+.trade-panel-tab {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .trade-panel-standalone {
   width: 100%;
   height: 100vh;
@@ -2699,16 +2708,17 @@ select { min-width: 96px; }
   background: var(--ao-bg);
 }
 .client-dashboard-view {
+  width: 100%;
+  max-width: 100%;
   height: 100%;
   min-height: 0;
-  /* Pull up into the app-main padding a touch so the header sits higher. */
-  margin-top: -8px;
-  padding: 0 8px 14px 2px;
-  /* Scroll vertically only - the view-toggle's tooltip sits flush to the right
-     edge and would otherwise force a horizontal scrollbar. Inner tables keep
-     their own horizontal scroll wrappers. */
-  overflow-x: hidden;
-  overflow-y: auto;
+  margin: 0;
+  padding: 0 8px 14px 0;
+  /* This is the dashboard's only page-level scroll area. Keeping overflow
+     available here prevents the toolbar/cards from being silently clipped. */
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   background: var(--ao-bg);
 }
 .client-dashboard-toolbar {
@@ -2757,27 +2767,9 @@ select { min-width: 96px; }
   font-size: 1.05rem;
   font-weight: 850;
 }
-.client-dashboard-account {
-  display: grid;
-  justify-items: end;
-  gap: 2px;
-  padding: 4px 10px;
-  border: 1px solid var(--ao-border-soft);
-  border-radius: 8px;
-  background: var(--ao-surface);
-}
-.client-dashboard-account span {
-  color: var(--ao-caption);
-  font-size: var(--fs-xs);
-  font-weight: 800;
-  text-transform: uppercase;
-}
-.client-dashboard-account strong {
-  color: var(--ao-bold);
-  font-size: var(--fs-sm);
-  font-weight: 850;
-}
 .client-strategy-strip {
+  width: 100%;
+  min-width: 0;
   margin-top: 6px;
   padding: 10px;
   border: 1px solid var(--ao-border);
@@ -2981,6 +2973,14 @@ select { min-width: 96px; }
   font-size: var(--fs-sm);
   text-align: center;
 }
+.client-no-strategy-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.client-no-strategy-content .client-open-positions-panel {
+  width: 100%;
+}
 .client-leg-details {
   display: grid;
   border-top: 1px solid var(--ao-border-soft);
@@ -3000,7 +3000,8 @@ select { min-width: 96px; }
 }
 .client-detail-panel {
   min-width: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid var(--ao-border);
   border-radius: 8px;
   background: var(--ao-surface);
@@ -3590,8 +3591,42 @@ select { min-width: 96px; }
    instead of jamming to the right with a big empty gap after the symbol. The
    rows are subgrid, so re-templating the container cascades to every row. */
 .client-detail-panel .compact-legs {
-  grid-template-columns: 20px minmax(238px, 1.6fr) repeat(5, minmax(62px, 1fr));
+  /* The contract line needs the room, so give it a wide floor and the lion's
+     share of the slack; the numeric columns only need enough for their values. */
+  grid-template-columns: 20px minmax(300px, 3fr) repeat(4, minmax(50px, 0.8fr)) minmax(78px, 1fr);
+  column-gap: 8px;
   padding: 0 12px;
+}
+.client-detail-panel .compact-leg-symbol {
+  /* Stock + expiry + strike + option type + entry date + status all stay on one
+     line - the column above is sized to hold them at readable text sizes. */
+  flex-wrap: nowrap;
+  gap: 5px;
+}
+/* The stock name is the only part allowed to shrink, so a long root ellipsises
+   instead of pushing the OPEN/CLOSED badge out of the row. */
+.client-detail-panel .compact-leg-symbol strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+.client-detail-panel .compact-leg-symbol .position-strike {
+  flex: none;
+  font-size: 14px;
+}
+.client-detail-panel .compact-leg-symbol .position-expiry {
+  padding: 1px 6px;
+  font-size: 13px;
+}
+.client-detail-panel .compact-leg-symbol .book-tag.option,
+.client-detail-panel .compact-leg-symbol .leg-entry-tag,
+.client-detail-panel .compact-leg-symbol .strategy-open-tag,
+.client-detail-panel .compact-leg-symbol .strategy-closed-tag {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 0.66rem;
 }
 /* Tighter leg rows inside the dashboard panels (Normal / Buy-Sell tables) -
    scoped so Get Position / OrderBook tables keep their taller rows. */
@@ -5315,6 +5350,314 @@ select { min-width: 96px; }
 .sync-log-wrap {
   flex: 0 0 auto;
   max-height: 260px;
+}
+
+/* ── Sync / Unsync progress ───────────────────────────────────────────────
+   The run is shown the way it is selected: the user's name, their broker
+   accounts listed under it (Angel, then Zerodha, ...), each with its own
+   0-100% bar. Bulk mode ("All users") lists every user up front and walks the
+   accounts one at a time, so the whole run is visible before it starts. */
+.sync-progress {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 20%, var(--ao-border));
+  border-radius: 12px;
+  background: var(--ao-surface);
+  box-shadow: 0 8px 24px rgba(30, 41, 59, .08);
+}
+.sync-progress::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 2;
+  width: 4px;
+  background: var(--ao-blue);
+}
+.sync-progress.is-done::before { background: var(--ao-green); }
+.sync-progress.mode-unsync::before { background: #8b5cf6; }
+.sync-progress.mode-unsync.is-done::before { background: var(--ao-green); }
+.sync-progress.is-done {
+  border-color: color-mix(in srgb, var(--ao-green) 28%, var(--ao-border));
+}
+.sync-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 11px 16px 11px 18px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ao-blue) 9%, var(--ao-surface)) 0%, var(--ao-surface) 68%);
+}
+.sync-progress.is-done .sync-progress-head {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ao-green) 9%, var(--ao-surface)) 0%, var(--ao-surface) 68%);
+}
+.sync-progress-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sync-progress-heading > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.sync-progress-heading-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 28%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ao-blue) 11%, var(--ao-surface));
+  color: var(--ao-blue);
+}
+.sync-progress.is-running .sync-progress-heading-icon svg {
+  animation: sync-heading-spin 1.35s linear infinite;
+}
+.sync-progress.is-done .sync-progress-heading-icon {
+  border-color: color-mix(in srgb, var(--ao-green) 30%, transparent);
+  background: color-mix(in srgb, var(--ao-green) 11%, var(--ao-surface));
+  color: var(--ao-green);
+}
+@keyframes sync-heading-spin { to { transform: rotate(360deg); } }
+.sync-progress-eyebrow {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  letter-spacing: .06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+.sync-progress-title {
+  color: var(--ao-bold);
+  font-size: var(--fs-base);
+  font-weight: 850;
+}
+.sync-progress-head-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sync-progress-count {
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 999px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.sync-progress-pct {
+  min-width: 54px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 9px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ao-blue) 11%, transparent);
+  color: var(--ao-blue);
+  font-size: var(--fs-base);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Shared bar: the overall one across the top, and the small one per account. */
+.sync-progress-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ao-surface-2);
+  overflow: hidden;
+}
+.sync-progress > .sync-progress-bar {
+  margin: 12px 18px 0;
+}
+.sync-progress-bar.small {
+  height: 5px;
+}
+.sync-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ao-blue);
+  transition: width .35s cubic-bezier(.4, 0, .2, 1);
+}
+.sync-progress-bar.done .sync-progress-fill {
+  background: var(--ao-green);
+}
+/* The filled part is work that finished. The account in flight has no
+   sub-progress to report between its steps, so the track shows a moving stripe
+   rather than inventing a number for it. */
+.sync-progress-bar.active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(
+    100deg,
+    transparent 0%,
+    transparent 40%,
+    rgba(63, 91, 217, .16) 50%,
+    transparent 60%,
+    transparent 100%
+  );
+  background-size: 240% 100%;
+  animation: sync-progress-sweep 1.15s linear infinite;
+}
+@keyframes sync-progress-sweep {
+  from { background-position: 140% 0; }
+  to { background-position: -60% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sync-progress-bar.active::after { animation: none; }
+  .sync-progress-fill { transition: none; }
+  .sync-progress.is-running .sync-progress-heading-icon svg { animation: none; }
+}
+
+.sync-progress-users {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  max-height: 280px;
+  margin-top: 12px;
+  padding: 12px 14px 14px 18px;
+  overflow-y: auto;
+  border-top: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface-2);
+}
+.sync-progress-user-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 9px;
+  background: var(--ao-surface);
+}
+.sync-progress-user {
+  color: var(--ao-bold);
+  font-size: var(--fs-base);
+  font-weight: 800;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px 2px;
+}
+
+/* One broker account under the user it belongs to. */
+.sync-progress-account {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-left: 0;
+  padding: 8px 9px;
+  border-left: 2px solid var(--ao-border);
+  border-radius: 0 7px 7px 0;
+  background: var(--ao-surface-2);
+}
+.sync-progress-account.running { border-left-color: var(--ao-blue); }
+.sync-progress-account.ok { border-left-color: var(--ao-green); }
+.sync-progress-account.failed { border-left-color: var(--ao-red); }
+.sync-progress-account.skipped { border-left-color: var(--ao-muted); }
+.sync-progress-account.queued { opacity: .62; }
+
+/* A finished account fills its bar - green done, red failed, grey nothing to
+   do - so "full" always reads as "this account is no longer being worked on". */
+.sync-progress-account.ok .sync-progress-fill { background: var(--ao-green); }
+.sync-progress-account.failed .sync-progress-fill { background: var(--ao-red); }
+.sync-progress-account.skipped .sync-progress-fill { background: var(--ao-muted); }
+
+.sync-progress-account-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sync-progress-account-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--ao-bold);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Fixed slot, empty while queued/running - otherwise the label would jump
+   sideways the moment the account's tick or cross appears. */
+.sync-progress-account-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 12px;
+}
+.sync-progress-account.ok .sync-progress-account-icon { color: var(--ao-green); }
+.sync-progress-account.failed .sync-progress-account-icon { color: var(--ao-red); }
+.sync-progress-account.skipped .sync-progress-account-icon { color: var(--ao-muted); }
+.sync-progress-account-pct {
+  flex: none;
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.sync-progress-account.running .sync-progress-account-pct { color: var(--ao-blue); }
+.sync-progress-account.ok .sync-progress-account-pct { color: var(--ao-green); }
+.sync-progress-account.failed .sync-progress-account-pct { color: var(--ao-red); }
+
+.sync-progress-account-detail {
+  color: var(--ao-base);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.sync-progress-account.failed .sync-progress-account-detail { color: var(--ao-red); }
+.sync-progress-account.skipped .sync-progress-account-detail,
+.sync-progress-account.queued .sync-progress-account-detail { color: var(--ao-caption); }
+
+@media (max-width: 620px) {
+  .sync-progress-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .sync-progress-head-meta { justify-content: flex-start; }
+  .sync-progress-users { grid-template-columns: 1fr; }
+}
+
+/* Unsync is the destructive-ish twin of Sync, so it reads as the quieter
+   option next to it rather than a second primary call to action. */
+.positions-load-btn.ghost {
+  gap: 6px;
+  min-width: 96px;
+  border: 1px solid var(--ao-border);
+  background: var(--ao-surface);
+  color: var(--ao-base) !important;
+  box-shadow: none;
+}
+.positions-load-btn.ghost:hover:not(:disabled) {
+  border-color: var(--ao-blue);
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue) !important;
+  box-shadow: none;
 }
 
 @media (max-width: 860px) {

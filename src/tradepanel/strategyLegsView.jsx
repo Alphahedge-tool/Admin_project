@@ -68,12 +68,43 @@ function LegCheckbox({ leg, selection }) {
   )
 }
 
+function legContractMeta(leg) {
+  const parsed = parseTradingSymbol(leg.trading_symbol)
+  const explicitStock = String(leg.stock_name || leg.symbol_name || '').trim()
+  const explicitExpiry = formatExpiry(leg.expiry || leg.expiry_date || leg.expirydate || leg.expiration_date)
+
+  return {
+    ...parsed,
+    root: explicitStock || parsed.root,
+    expiry: parsed.expiry || explicitExpiry,
+  }
+}
+
+function formatExpiry(value) {
+  const text = String(value || '').trim()
+  const compact = text.match(/^(\d{2})([A-Za-z]{3})(\d{4})$/)
+  if (compact) {
+    const [, day, month, year] = compact
+    return `${day} ${month[0].toUpperCase()}${month.slice(1).toLowerCase()} ${year}`
+  }
+
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) {
+    const [, year, month, day] = iso
+    const monthName = new Date(Number(year), Number(month) - 1, Number(day))
+      .toLocaleDateString('en-IN', { month: 'short' })
+    return `${day} ${monthName} ${year}`
+  }
+
+  return text
+}
+
 export function CompactLegs({ legs, selection }) {
   return (
     <div className="compact-legs">
       <div className="compact-leg-row compact-leg-head">
         <span />
-        <span>Symbol</span>
+        <span>Stock / Expiry</span>
         <span>Qty</span>
         <span>Buy Avg</span>
         <span>Sell Avg</span>
@@ -81,7 +112,7 @@ export function CompactLegs({ legs, selection }) {
         <span>P&amp;L</span>
       </div>
       {legs.map((leg) => {
-        const parsed = parseTradingSymbol(leg.trading_symbol)
+        const parsed = legContractMeta(leg)
         const qty = Number(leg.net_qty || 0)
         const pnl = Number(leg.pnl || 0)
         const closed = legIsClosed(leg)
@@ -91,6 +122,7 @@ export function CompactLegs({ legs, selection }) {
             <span className="compact-leg-symbol">
               <LegCheckbox leg={leg} selection={selection} />
               <strong>{parsed.root}</strong>
+              {parsed.expiry && <span className="position-expiry">{parsed.expiry}</span>}
               {parsed.strike && <span className="position-strike">{parsed.strike}</span>}
               {parsed.optionType && <span className={`book-tag option ${parsed.optionType.toLowerCase()}`}>{parsed.optionType}</span>}
               <EntryDateTag leg={leg} />
@@ -139,7 +171,7 @@ export function LegsTable({ legs, title, selection }) {
             </tr>
           ) : (
             legs.map((leg) => {
-              const parsed = parseTradingSymbol(leg.trading_symbol)
+              const parsed = legContractMeta(leg)
               const qty = Number(leg.net_qty || 0)
               const pnl = Number(leg.pnl || 0)
               const closed = legIsClosed(leg)

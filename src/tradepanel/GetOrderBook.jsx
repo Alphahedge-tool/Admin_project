@@ -8,12 +8,18 @@ import {
   classifyLoginError, ensureSession, isAngelBroker, isAuthError, isRateLimited, saveSession,
   useAngelClient,
 } from '../feedmaster/angelSessionStore';
+import { useOrderUpdates } from './orderUpdates';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { parseTradingSymbol, compactProductTag } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
 import './tradepanel.css';
 
 const ORDER_COLUMNS = ['order', 'side', 'type', 'qty', 'price', 'status', 'updated'];
+
+// Behind the live stream: a pushed update can be missed outright, and a merged
+// row only reflects what was actually pushed. Re-reading the book on a slow
+// timer is what stops it from quietly drifting away from the broker's.
+const BACKGROUND_REFRESH_MS = 45000;
 
 const defaultOrderColumnFilters = {
   symbol: '',
@@ -63,11 +69,14 @@ export default function GetOrderBook() {
   const [configLoading, setConfigLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [query, setQuery] = useState('');
-  const [liveStatus, setLiveStatus] = useState('idle');
   const [columnFilters, setColumnFilters] = useState(defaultOrderColumnFilters);
   const [openFilter, setOpenFilter] = useState('');
   const autoLoadedAccountRef = useRef('');
-  const streamAbortRef = useRef(null);
+  // The stream and the background timer fire outside React's render cycle, so
+  // they reach the current load() through a ref instead of closing over
+  // whichever one existed when they started.
+  const loadRef = useRef(null);
+  const loadSeqRef = useRef(0);
 
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedBrokerName = selectedConfig?.broker_name || '';
@@ -206,11 +215,11 @@ export default function GetOrderBook() {
     autoLoadedAccountRef.current = '';
   }, [configId]);
 
-  useEffect(() => () => {
-    streamAbortRef.current?.abort();
-  }, []);
+  // `options` is only ever passed internally - this is also wired straight to
+  // onClick, where the first argument is a DOM event (which has no `.silent`).
+  const load = useCallback(async (options) => {
+    const silent = options?.silent === true;
 
-  const load = useCallback(async () => {
     if (!selectedConfig) {
       setStatus('Select an account first');
       return;
@@ -224,14 +233,24 @@ export default function GetOrderBook() {
       return;
     }
 
-    setLoading(true);
-    setStatus('Loading order book...');
+    // Refreshes overlap (a background re-read, a resync after a dropped stream,
+    // the user hitting Refresh) and do not necessarily come back in the order
+    // they were sent. Only the newest may write to the table - an older book
+    // landing last would put superseded order states back on screen.
+    const seq = loadSeqRef.current + 1;
+    loadSeqRef.current = seq;
+    const isLatest = () => seq === loadSeqRef.current;
+
+    if (!silent) {
+      setLoading(true);
+      setStatus('Loading order book...');
+    }
     try {
       // The startup login already saved this account's token; only a missing or
       // expired one goes back to the shared login (deduped across pages).
       let active = client;
       if (!active.session?.jwtToken) {
-        setStatus('Signing in this account...');
+        if (!silent) setStatus('Signing in this account...');
         active = { ...active, session: await ensureSession(configId), loggedIn: true };
       }
 
@@ -240,86 +259,74 @@ export default function GetOrderBook() {
         body = await fetchOrderBook(active);
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        setStatus('Angel token expired - signing in again...');
+        if (!silent) setStatus('Angel token expired - signing in again...');
         active = { ...active, session: await ensureSession(configId, { force: true }), loggedIn: true };
         body = await fetchOrderBook(active);
       }
 
-      // Use the just-refreshed session (not the stale `client` closure) to
-      // start the stream, so it doesn't redundantly log in again from
-      // scratch when this very request just did that login.
-      let freshClient = active;
-      if (body.session?.jwtToken) {
-        saveSession(configId, body.session);
-        freshClient = { ...active, session: body.session, loggedIn: true };
-      }
+      // Worth saving even if this response is superseded - the token is good
+      // regardless of whether its order book is still the one on screen.
+      if (body.session?.jwtToken) saveSession(configId, body.session);
+      if (!isLatest()) return;
+
       const orders = body.orders || [];
       setRows(orders);
       setStatus(orders.length ? `${orders.length} orders` : 'No orders in the order book');
-      startOrderStream(freshClient);
     } catch (error) {
-      setStatus(toOrderError(error));
+      if (isLatest()) setStatus(toOrderError(error));
     } finally {
-      setLoading(false);
+      // Whoever turned the spinner on turns it off, superseded or not.
+      if (!silent) setLoading(false);
     }
   }, [client, configId, selectedBrokerName, selectedConfig, selectedIsAngel]);
 
-  const startOrderStream = useCallback(async (streamClient = client) => {
-    streamAbortRef.current?.abort();
-    if (!streamClient?.session?.jwtToken) {
-      setLiveStatus('offline');
-      return;
-    }
-
-    const controller = new AbortController();
-    streamAbortRef.current = controller;
-    setLiveStatus('connecting');
-
-    try {
-      const res = await fetch('/api/angel/order-updates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client: streamClient }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok || !res.body) throw new Error(`Live stream HTTP ${res.status}`);
-      setLiveStatus('live');
-      setStatus((current) => current || 'OrderBook live updates connected');
-      await readOrderStream(res.body, {
-        onSession: (session) => {
-          if (!session?.jwtToken) return;
-          saveSession(configId, session);
-        },
-        onOrder: (payload) => {
-          const order = normalizeSocketOrder(payload);
-          if (!order) {
-            if (payload?.['order-status'] === 'AB00') setLiveStatus('live');
-            return;
-          }
-          setRows((current) => mergeOrderUpdate(current, order));
-          setStatus(order.orderstatus || order.status ? `Live update: ${order.tradingsymbol || 'order'} ${order.orderstatus || order.status}` : 'Live order update received');
-        },
-        onStatus: (payload) => {
-          setLiveStatus(payload?.status === false ? 'offline' : 'live');
-          if (payload?.message) setStatus(payload.message);
-        },
-        onError: (payload) => {
-          setLiveStatus('offline');
-          setStatus(payload?.message || 'Order status stream error');
-        },
-      });
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      setLiveStatus('offline');
-      setStatus(error.message || 'Order status stream disconnected');
-    }
-  }, [client, configId]);
-
   useEffect(() => {
-    streamAbortRef.current?.abort();
-    setLiveStatus('idle');
-  }, [configId]);
+    loadRef.current = load;
+  }, [load]);
+
+  // The live stream is no longer started from the tail of load(). It used to be,
+  // which meant an order book that failed to fetch even once - a rate limit is
+  // enough - never connected at all, and never retried: the page just sat there
+  // "Not live" until someone hit Refresh. The stream now stands on its own and
+  // keeps itself up, whatever the REST call did.
+  const liveStatus = useOrderUpdates({
+    configId,
+    client,
+    enabled: selectedIsAngel,
+    // Reconnected after a drop. Every update pushed while it was down is gone -
+    // merging only ever patches in what actually arrives - so the book has to be
+    // re-read rather than left with rows frozen at their pre-drop state.
+    onResync: useCallback(() => loadRef.current?.({ silent: true }), []),
+    onOrder: useCallback((order) => {
+      setRows((current) => mergeOrderUpdate(current, order));
+      const state = order.orderstatus || order.status;
+      setStatus(state
+        ? `Live update: ${order.tradingsymbol || 'order'} ${state}`
+        : 'Live order update received');
+    }, []),
+  });
+
+  // Last resort behind the stream: a push that never arrives cannot be
+  // reconnected into existence. Skipped while the tab is hidden - nobody is
+  // reading it, and coming back re-reads anyway.
+  useEffect(() => {
+    if (!configId || !selectedIsAngel) return undefined;
+
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      loadRef.current?.({ silent: true });
+    }, BACKGROUND_REFRESH_MS);
+
+    const onVisible = () => {
+      if (!document.hidden) loadRef.current?.({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [configId, selectedIsAngel]);
 
   useEffect(() => {
     const accountKey = String(configId || '');
@@ -1046,63 +1053,6 @@ function orderUpdateText(row) {
   return String(row.updatetime || row.exchorderupdatetime || row.exchtime || row.filltime || '');
 }
 
-async function readOrderStream(body, handlers) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary >= 0) {
-      const chunk = buffer.slice(0, boundary).trim();
-      buffer = buffer.slice(boundary + 2);
-      handleStreamChunk(chunk, handlers);
-      boundary = buffer.indexOf('\n\n');
-    }
-  }
-}
-
-function handleStreamChunk(chunk, handlers) {
-  if (!chunk) return;
-  let event = 'message';
-  let data = '';
-  for (const line of chunk.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice(6).trim();
-    if (line.startsWith('data:')) data += line.slice(5).trim();
-  }
-
-  let payload = null;
-  try {
-    payload = data ? JSON.parse(data) : null;
-  } catch {
-    payload = { raw: data };
-  }
-
-  if (event === 'session') handlers.onSession?.(payload?.session);
-  else if (event === 'order') handlers.onOrder?.(payload);
-  else if (event === 'status') handlers.onStatus?.(payload);
-  else if (event === 'error') handlers.onError?.(payload);
-}
-
-function normalizeSocketOrder(payload) {
-  if (!payload || typeof payload !== 'object') return null;
-  const data = payload.orderData;
-  if (!data || typeof data !== 'object') return null;
-  if (!data.orderid && !data.uniqueorderid && !data.tradingsymbol) return null;
-
-  return {
-    ...data,
-    orderstatus: data.orderstatus || data.status || orderStatusCodeLabel(payload['order-status']),
-    status: data.status || data.orderstatus || orderStatusCodeLabel(payload['order-status']),
-    websocketStatusCode: payload['order-status'] || '',
-    websocketStatusText: payload['error-message'] || '',
-  };
-}
-
 function mergeOrderUpdate(rows, incoming) {
   const key = orderIdentity(incoming);
   if (!key) return [incoming, ...rows];
@@ -1118,23 +1068,6 @@ function mergeOrderUpdate(rows, incoming) {
 
 function orderIdentity(row) {
   return String(row.uniqueorderid || row.orderid || row.exchangeorderid || '').trim();
-}
-
-function orderStatusCodeLabel(code) {
-  const labels = {
-    AB01: 'open',
-    AB02: 'cancelled',
-    AB03: 'rejected',
-    AB04: 'modified',
-    AB05: 'complete',
-    AB06: 'amo received',
-    AB07: 'amo cancelled',
-    AB08: 'amo modify received',
-    AB09: 'open pending',
-    AB10: 'trigger pending',
-    AB11: 'modify pending',
-  };
-  return labels[code] || '';
 }
 
 function liveStatusLabel(status) {

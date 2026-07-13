@@ -7,7 +7,7 @@ import {
 } from '../feedmaster/angelSessionStore'
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore'
 import { CompactSelect } from './PositionSelect'
-import { compactProductTag } from './symbolParse'
+import { compactProductTag, parseTradingSymbol } from './symbolParse'
 import { legIsClosed, money, withLiveTick } from './legFormat'
 import { CompactLegs, LegsTable } from './strategyLegsView'
 import { useLiveLegFeed } from './useLiveLegFeed'
@@ -85,6 +85,12 @@ function ClientDashboard() {
   const untrackedPositionRows = useMemo(
     () => positionRows.filter((row) => !strategyLegKeys.has(positionIdentityKey(row))),
     [positionRows, strategyLegKeys],
+  )
+  const livePositionLegs = useMemo(
+    () => untrackedPositionRows
+      .map(positionRowToLeg)
+      .map((leg) => withLiveTick(leg, liveTicks)),
+    [untrackedPositionRows, liveTicks],
   )
 
   const handleUserId = useCallback((value) => {
@@ -301,12 +307,6 @@ function ClientDashboard() {
           <div>
             <h2>Client Dashboard</h2>
           </div>
-          {selectedConfig && (
-            <div className="client-dashboard-account">
-              <span>{selectedConfig.broker_name || 'Broker'}</span>
-              <strong>{selectedConfig.account_id || `Account ${selectedConfig.id}`}</strong>
-            </div>
-          )}
         </div>
 
         <div className="client-dashboard-toolbar">
@@ -410,8 +410,16 @@ function ClientDashboard() {
           </div>
 
           {selectedConfig && !strategiesLoading && brokerStrategies.length === 0 && (
-            <div className="client-strategy-empty">
-              No strategies tagged to {selectedConfig.broker_name || 'this broker'} {selectedConfig.account_id || ''}.
+            <div className="client-no-strategy-content">
+              <div className="client-strategy-empty">
+                No strategies tagged to {selectedConfig.broker_name || 'this broker'} {selectedConfig.account_id || ''}.
+              </div>
+              <OpenPositionsPanel
+                view={view}
+                positionLegs={livePositionLegs}
+                positionsLoading={positionsLoading}
+                positionsStatus={positionsStatus}
+              />
             </div>
           )}
 
@@ -428,9 +436,6 @@ function ClientDashboard() {
                 const legs = rawLegs.map((leg) => withLiveTick(leg, liveTicks))
                 const openLegs = legs.filter((leg) => !legIsClosed(leg)).length
                 // Get Position open legs NOT already in a saved strategy.
-                const livePositionLegs = untrackedPositionRows
-                  .map(positionRowToLeg)
-                  .map((leg) => withLiveTick(leg, liveTicks))
                 // Header P&L combines the saved strategy legs and the live
                 // open Get Position legs.
                 const strategyPnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
@@ -518,8 +523,6 @@ function LegsByView({ view, legs }) {
 }
 
 function StrategyExpandedDetails({ view, strategyLegs, positionLegs, positionsLoading, positionsStatus, showPositions = true }) {
-  const posLegs = positionLegs
-
   return (
     <div className={`client-expanded-details view-${view}${showPositions ? '' : ' single'}`}>
       <div className="client-detail-panel">
@@ -537,22 +540,37 @@ function StrategyExpandedDetails({ view, strategyLegs, positionLegs, positionsLo
         )}
       </div>
       {showPositions && (
-        <div className="client-detail-panel">
-          <div className="client-detail-panel-head">
-            <strong>Get Position Open Legs</strong>
-            {positionsLoading
-              ? <span>Loading</span>
-              : <LegsHeadMeta legs={posLegs} countLabel={`${posLegs.length} open legs`} />}
-          </div>
-          {posLegs.length > 0 ? (
-            <>
-              <LegsByView view={view} legs={posLegs} />
-              <PanelTotal legs={posLegs} />
-            </>
-          ) : (
-            <div className="client-detail-empty">{positionsStatus || 'No open Get Position legs outside your strategies'}</div>
-          )}
-        </div>
+        <OpenPositionsPanel
+          view={view}
+          positionLegs={positionLegs}
+          positionsLoading={positionsLoading}
+          positionsStatus={positionsStatus}
+        />
+      )}
+    </div>
+  )
+}
+
+function OpenPositionsPanel({ view, positionLegs, positionsLoading, positionsStatus }) {
+  // Keep accounts with many contracts predictable: indexes first, then stocks,
+  // with contracts ordered consistently inside each group.
+  const posLegs = useMemo(() => [...positionLegs].sort(comparePositionLegs), [positionLegs])
+
+  return (
+    <div className="client-detail-panel client-open-positions-panel">
+      <div className="client-detail-panel-head">
+        <strong>Open Positions</strong>
+        {positionsLoading
+          ? <span>Loading</span>
+          : <LegsHeadMeta legs={posLegs} countLabel={`${posLegs.length} open legs`} />}
+      </div>
+      {posLegs.length > 0 ? (
+        <>
+          <LegsByView view={view} legs={posLegs} />
+          <PanelTotal legs={posLegs} />
+        </>
+      ) : (
+        <div className="client-detail-empty">{positionsStatus || 'No open positions outside your strategies'}</div>
       )}
     </div>
   )
@@ -619,6 +637,8 @@ function positionRowToLeg(row) {
   return {
     id: positionIdentityKey(row),
     trading_symbol: row.tradingsymbol || row.symbolname || row.symbol,
+    stock_name: row.symbolname || row.name || row.symbol,
+    expiry: row.expirydate || row.expiry_date || row.expiry || row.expirationdate,
     symbol_token: row.symboltoken,
     exchange: row.exchange,
     product_type: row.producttype || row.product_type,
@@ -628,6 +648,39 @@ function positionRowToLeg(row) {
     ltp: positionValue(row, ['ltp', 'LTP', 'lasttradedprice']),
     pnl: positionPnl(row),
   }
+}
+
+function comparePositionLegs(a, b) {
+  const stockA = positionStockName(a)
+  const stockB = positionStockName(b)
+  const categoryDiff = Number(!isIndexPosition(a)) - Number(!isIndexPosition(b))
+
+  return categoryDiff
+    || stockA.localeCompare(stockB, 'en', { numeric: true })
+    || String(a.expiry || a.trading_symbol || '').localeCompare(
+      String(b.expiry || b.trading_symbol || ''),
+      'en',
+      { numeric: true },
+    )
+}
+
+const INDEX_STOCK_NAMES = new Set([
+  'BANKEX',
+  'BANKNIFTY',
+  'FINNIFTY',
+  'MIDCPNIFTY',
+  'NIFTY',
+  'NIFTYNXT50',
+  'SENSEX',
+])
+
+function positionStockName(leg) {
+  const explicit = String(leg.stock_name || leg.symbol_name || '').trim().toUpperCase()
+  return explicit || parseTradingSymbol(leg.trading_symbol).root.toUpperCase()
+}
+
+function isIndexPosition(leg) {
+  return INDEX_STOCK_NAMES.has(positionStockName(leg).replace(/[\s_-]/g, ''))
 }
 
 function positionPnl(row) {

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlignJustify, Table, ArrowUpDown, Check, History, Pencil, Radio, Trash2, X } from 'lucide-react'
+import {
+  AlignJustify, ArrowUpDown, Check, History, Minus, Pencil, Radio, RefreshCw, RotateCcw, Table, Trash2, X,
+} from 'lucide-react'
 import { apiGet, apiPost } from '../config/api'
 import { useFeedMasterAccount } from '../feedmaster/feedMasterStore'
 import {
-  classifyLoginError, ensureSession, getAccount, isAngelBroker,
+  classifyLoginError, ensureSession, getAccount, isAngelBroker, useAngelSessions,
 } from '../feedmaster/angelSessionStore'
 import { releaseFeedTokens } from '../tradepanel/feedTokens'
 import { getSavedTradeAccount, saveTradeAccount } from '../tradepanel/tradeAccountStore'
@@ -34,6 +36,15 @@ function withHistoricalLtp(leg, dateFilter, historicalLtps) {
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Sentinel user id for the bulk mode: run every user's every broker account,
+// one account at a time. Never persisted to the shared trade-account store -
+// the other Trade Panel pages would read it back as a real user id.
+const ALL_USERS = 'all'
+
+// How far through one account the bar sits at the start of each step. The sync
+// really does await these in order, so the bar only moves on work that finished.
+const SIGN_IN_DONE = 0.35
 
 // Raw YYYY-MM-DD slice straight off the backend's created_at, no Date()
 // parsing/timezone shifting, so the filter matches exactly what was stored.
@@ -96,7 +107,8 @@ function SyncNetPositions() {
   const [configs, setConfigs] = useState([])
   const [configId, setConfigId] = useState('')
   const [status, setStatus] = useState('Select a user and account')
-  const [running, setRunning] = useState(false)
+  const [running, setRunning] = useState('') // '' | 'sync' | 'unsync'
+  const [progress, setProgress] = useState(null)
   const [configLoading, setConfigLoading] = useState(false)
   const [log, setLog] = useState([])
   const [summary, setSummary] = useState(null)
@@ -112,6 +124,25 @@ function SyncNetPositions() {
   const [savingStrategyName, setSavingStrategyName] = useState(false)
   const [savingBrokerTagCode, setSavingBrokerTagCode] = useState('')
   const [brokerTagDoneCode, setBrokerTagDoneCode] = useState('')
+  const [brokerConfigs, setBrokerConfigs] = useState([])
+
+  // Startup logged every Angel account in and kept its real client code. The
+  // broker-config list endpoint masks account_id as "****", so that store is
+  // the only place the actual account number can be read from.
+  const { accounts: angelAccounts } = useAngelSessions()
+  const angelAccountByConfigId = useMemo(() => {
+    const map = new Map()
+    angelAccounts.forEach((account) => map.set(String(account.configId), account))
+    return map
+  }, [angelAccounts])
+
+  // Every active broker account of every active user, across ALL brokers - not
+  // just Angel - so a user with an Angel and a Zerodha account shows both, and
+  // the unwired one is reported as such instead of silently vanishing.
+  const allAccounts = useMemo(() => brokerConfigs.map((config) => ({
+    ...config,
+    accountId: angelAccountByConfigId.get(config.configId)?.accountId || '',
+  })), [brokerConfigs, angelAccountByConfigId])
 
   const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount()
   const [liveTicks, setLiveTicks] = useState({})
@@ -379,23 +410,27 @@ function SyncNetPositions() {
     return Array.from(keys).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
   }, [strategies])
 
+  const allUsers = userId === ALL_USERS
+  const selectedUser = users.find((user) => String(user.id) === String(userId))
   const selectedConfig = configs.find((config) => String(config.id) === String(configId))
   const selectedBrokerName = selectedConfig?.broker_name || ''
   const selectedIsAngel = isAngelBroker(selectedBrokerName)
+  const canRun = allUsers ? allAccounts.length > 0 : Boolean(selectedConfig)
 
-  // Manual picks here should also become the shared Trade Panel selection.
+  // Manual picks here should also become the shared Trade Panel selection -
+  // except the bulk sentinel, which only means something on this page.
   const handleUserId = useCallback((value) => {
     setUserId(value)
-    saveTradeAccount({ userId: value, configId: '' })
+    if (value !== ALL_USERS) saveTradeAccount({ userId: value, configId: '' })
   }, [])
 
   const handleConfigId = useCallback((value) => {
     setConfigId(value)
-    saveTradeAccount({ userId, configId: value })
+    if (userId !== ALL_USERS) saveTradeAccount({ userId, configId: value })
   }, [userId])
 
   const loadStrategies = useCallback(async (nextUserId = userId, cancelled = false) => {
-    if (!nextUserId) {
+    if (!nextUserId || nextUserId === ALL_USERS) {
       setStrategies([])
       return
     }
@@ -593,19 +628,55 @@ function SyncNetPositions() {
     }
   }, [])
 
+  // The bulk queue. Mirrors the backend's own selection (active user, active
+  // broker config) so the accounts listed on screen are exactly the ones a sync
+  // will touch.
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadBrokerConfigs() {
+      const activeUsers = users.filter((user) => Number(user.is_active) === 1)
+      if (!activeUsers.length) {
+        setBrokerConfigs([])
+        return
+      }
+
+      const perUser = await Promise.all(activeUsers.map(async (user) => {
+        try {
+          const res = await apiGet(`/users/broker-config/list.php?user_id=${user.id}`)
+          return (res.data || [])
+            .filter((config) => config.is_active)
+            .map((config) => ({
+              configId: String(config.id),
+              userId: String(user.id),
+              username: userLabel(user),
+              brokerName: config.broker_name || 'Broker',
+            }))
+        } catch {
+          return []
+        }
+      }))
+
+      if (!cancelled) setBrokerConfigs(perUser.flat())
+    }
+
+    loadBrokerConfigs()
+    return () => {
+      cancelled = true
+    }
+  }, [users])
+
   useEffect(() => {
     let cancelled = false
 
     async function loadConfigs() {
-      if (!userId) {
+      if (!userId || userId === ALL_USERS) {
         setConfigs([])
         setConfigId('')
         return
       }
 
       setConfigLoading(true)
-      setLog([])
-      setSummary(null)
       try {
         const res = await apiGet(`/users/broker-config/list.php?user_id=${userId}`)
         if (cancelled) return
@@ -644,9 +715,22 @@ function SyncNetPositions() {
     }
   }, [loadStrategies, userId])
 
+  // A different user/account means a different run - drop the previous run's
+  // progress, summary and log rather than leaving them to be misread as this
+  // selection's result.
   useEffect(() => {
+    setProgress(null)
     setLog([])
     setSummary(null)
+  }, [userId, configId])
+
+  useEffect(() => {
+    if (allUsers) {
+      setStatus(allAccounts.length
+        ? `${allAccounts.length} broker account${allAccounts.length === 1 ? '' : 's'} queued`
+        : 'No broker accounts configured')
+      return
+    }
 
     if (!selectedConfig) return
     if (!selectedIsAngel) {
@@ -662,53 +746,178 @@ function SyncNetPositions() {
     } else {
       setStatus('')
     }
-  }, [configId, selectedBrokerName, selectedConfig, selectedIsAngel])
+  }, [allAccounts.length, allUsers, configId, selectedBrokerName, selectedConfig, selectedIsAngel])
 
-  const startSync = async () => {
-    if (!selectedConfig) {
-      setStatus('Select an account first')
+  // Every broker account the run will touch, grouped user-then-account so the
+  // bulk mode walks them in the order they are listed on screen.
+  const buildQueue = useCallback(() => {
+    if (allUsers) {
+      return [...allAccounts].sort((a, b) => (
+        Number(a.userId) - Number(b.userId) || Number(a.configId) - Number(b.configId)
+      ))
+    }
+
+    if (!selectedConfig) return []
+    return [{
+      configId: String(configId),
+      userId: String(userId),
+      username: userLabel(selectedUser) || `User ${userId}`,
+      brokerName: selectedBrokerName || 'Broker',
+      accountId: angelAccountByConfigId.get(String(configId))?.accountId || '',
+    }]
+  }, [allAccounts, allUsers, angelAccountByConfigId, configId, selectedBrokerName, selectedConfig, selectedUser, userId])
+
+  // Sync and unsync walk the same queue one account at a time; only the work
+  // done per account differs. Driving the loop here (rather than handing the
+  // whole selection to PHP and waiting on one long call) is what makes the
+  // progress real: every step the bar advances on is a step that has finished.
+  const runQueue = useCallback(async (mode) => {
+    const isSync = mode === 'sync'
+    const queue = buildQueue()
+
+    if (!queue.length) {
+      setStatus(allUsers ? 'No broker accounts to run' : 'Select an account first')
       return
     }
-    if (!selectedIsAngel) {
-      setStatus(`${selectedBrokerName || 'Selected broker'} sync is not wired yet`)
-      return
-    }
-    setRunning(true)
+
+    // An unwired broker is not turned away here - it goes through the queue like
+    // any other account and comes out as "skipped", so a single Zerodha account
+    // says the same thing it would say inside a bulk run.
+    setRunning(mode)
     setLog([])
     setSummary(null)
 
-    // Make sure this account has a live token before the sync runs - normally a
-    // no-op, since startup logged every account in.
-    try {
-      setStatus('Checking Angel login...')
-      await ensureSession(configId)
-    } catch (error) {
-      const issue = classifyLoginError(error)
-      setStatus(`${issue.title}. ${issue.hint}`)
-      setRunning(false)
-      return
-    }
+    const total = queue.length
+    const logLines = []
+    let success = 0
+    let failed = 0
+    let skipped = 0
+    let completed = 0
 
-    setStatus('Syncing net positions...')
+    // Every account is on screen from the start, so the whole run is visible up
+    // front and each one is watched through queued -> running -> done.
+    const live = new Map(queue.map((item) => [
+      item.configId,
+      { ...item, state: 'queued', percent: 0, detail: 'Queued' },
+    ]))
 
-    try {
-      const res = await apiPost('/transactions/sync-net-positions.php', {
-        live: true,
-        user_id: userId,
-        broker_config_id: configId,
+    const patch = (item, next) => live.set(item.configId, { ...live.get(item.configId), ...next })
+
+    // `fraction` is how far into the account currently running we are, so the
+    // overall bar keeps moving inside an account, not only between accounts.
+    const publish = (fraction = 0, done = false) => {
+      setProgress({
+        mode,
+        total,
+        done,
+        percent: done ? 100 : Math.min(100, Math.round(((completed + fraction) / total) * 100)),
+        groups: groupByUser([...live.values()]),
       })
-
-      setSummary(res.summary || null)
-      setLog(res.log || [])
-      setStatus('Sync completed')
-      await loadStrategies(userId)
-    } catch (error) {
-      setStatus(error.message || 'Sync failed')
-      setLog((prev) => [...prev, 'Sync failed'])
-    } finally {
-      setRunning(false)
     }
-  }
+
+    publish()
+
+    for (const item of queue) {
+      // Only Angel is wired end to end. Anything else is reported as such rather
+      // than posted to a backend that would just log "broker not supported".
+      if (!isAngelBroker(item.brokerName)) {
+        const detail = `${item.brokerName} is not wired yet`
+        skipped += 1
+        completed += 1
+        patch(item, { state: 'skipped', percent: 100, detail })
+        logLines.push(`${item.username} - ${detail}`)
+        publish()
+        continue
+      }
+
+      if (isSync) {
+        patch(item, { state: 'running', percent: 0, detail: 'Signing in to Angel…' })
+        publish(0)
+        try {
+          // Normally a no-op - startup logged every account in. Only an expired
+          // token actually re-logs in here.
+          await ensureSession(item.configId)
+        } catch (error) {
+          const issue = classifyLoginError(error)
+          const detail = `${issue.title}. ${issue.hint}`
+          failed += 1
+          completed += 1
+          patch(item, { state: 'failed', percent: 100, detail })
+          logLines.push(`${item.username} ${detail}`)
+          publish()
+          continue
+        }
+        patch(item, { percent: Math.round(SIGN_IN_DONE * 100), detail: 'Syncing net positions…' })
+        publish(SIGN_IN_DONE)
+      } else {
+        patch(item, { state: 'running', percent: 0, detail: 'Restoring pre-sync state…' })
+        publish(0)
+      }
+
+      try {
+        const res = await apiPost(
+          isSync
+            ? '/transactions/sync-net-positions.php'
+            : '/transactions/unsync-net-positions.php',
+          {
+            ...(isSync ? { live: true } : null),
+            user_id: item.userId,
+            broker_config_id: item.configId,
+          },
+        )
+
+        const lines = res.log || []
+        logLines.push(...lines)
+
+        // The endpoint ran for exactly this one account, so its own counters say
+        // what happened to it. "skipped" is unsync's "nothing left to undo", and
+        // zero accounts means the backend did not consider it active at all.
+        const accountSummary = res.summary || {}
+        const state = Number(accountSummary.total_accounts || 0) === 0
+          ? 'skipped'
+          : Number(accountSummary.failed || 0) > 0
+            ? 'failed'
+            : Number(accountSummary.skipped || 0) > 0
+              ? 'skipped'
+              : 'ok'
+
+        if (state === 'failed') failed += 1
+        else if (state === 'skipped') skipped += 1
+        else success += 1
+
+        completed += 1
+        patch(item, {
+          state,
+          percent: 100,
+          detail: stripName(lines[0], item.username) || (isSync ? 'Synced' : 'Unsynced'),
+        })
+        publish()
+      } catch (error) {
+        const detail = error.message || (isSync ? 'Sync failed' : 'Unsync failed')
+        failed += 1
+        completed += 1
+        patch(item, { state: 'failed', percent: 100, detail })
+        logLines.push(`${item.username} ${detail}`)
+        publish()
+      }
+    }
+
+    publish(0, true)
+
+    setSummary({ total_accounts: total, success, failed, skipped })
+    setLog(logLines)
+
+    const verb = isSync ? 'Sync' : 'Unsync'
+    setStatus(failed
+      ? `${verb} completed with ${failed} failure${failed === 1 ? '' : 's'}`
+      : `${verb} completed`)
+
+    // The legs the run closed (or reopened) are only visible once reloaded. The
+    // bulk mode has no single user's strategies on screen to refresh.
+    if (!allUsers) await loadStrategies(userId)
+
+    setRunning('')
+  }, [allUsers, buildQueue, loadStrategies, userId])
 
   return (
     <div className="trade-panel">
@@ -718,36 +927,59 @@ function SyncNetPositions() {
             title="User"
             value={userId}
             onChange={handleUserId}
-            options={users.map((user) => ({
-              value: String(user.id),
-              label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
-            }))}
+            disabled={Boolean(running)}
+            options={[
+              ...(allAccounts.length
+                ? [{
+                  value: ALL_USERS,
+                  label: 'All users',
+                  meta: `${allAccounts.length} account${allAccounts.length === 1 ? '' : 's'}`,
+                }]
+                : []),
+              ...users.map((user) => ({
+                value: String(user.id),
+                label: userLabel(user),
+              })),
+            ]}
           />
 
           <CompactSelect
             title="Account"
-            value={configId}
+            value={allUsers ? ALL_USERS : configId}
             onChange={handleConfigId}
-            disabled={configLoading || !configs.length}
-            options={configs.map((config) => ({
-              value: String(config.id),
-              label: config.account_id || `Account ${config.id}`,
-              meta: config.broker_name || 'Broker',
-            }))}
+            disabled={Boolean(running) || allUsers || configLoading || !configs.length}
+            options={allUsers
+              ? [{ value: ALL_USERS, label: 'All accounts', meta: 'Every user' }]
+              : configs.map((config) => ({
+                value: String(config.id),
+                label: config.account_id || `Account ${config.id}`,
+                meta: config.broker_name || 'Broker',
+              }))}
           />
 
           <button
             className="positions-load-btn"
-            onClick={startSync}
-            disabled={running || !selectedConfig}
+            onClick={() => runQueue('sync')}
+            disabled={Boolean(running) || !canRun}
             type="button"
           >
-            {running ? 'Syncing' : 'Sync Net Positions'}
+            {running === 'sync' ? 'Syncing…' : 'Sync'}
+          </button>
+
+          <button
+            className="positions-load-btn ghost"
+            onClick={() => runQueue('unsync')}
+            disabled={Boolean(running) || !canRun}
+            type="button"
+            title="Undo the last sync: puts the net positions and closed strategy legs back exactly as they were"
+          >
+            <RotateCcw size={14} />
+            {running === 'unsync' ? 'Unsyncing…' : 'Unsync'}
           </button>
 
           {summary && (
-            <span className="positions-total up">
-              Synced: {summary.success || 0} / {summary.total_accounts || 0}
+            <span className={`positions-total ${summary.failed ? 'down' : 'up'}`}>
+              {progress?.mode === 'unsync' ? 'Unsynced' : 'Synced'}: {summary.success || 0} / {summary.total_accounts || 0}
             </span>
           )}
           {status && <span className="positions-status">{status}</span>}
@@ -818,6 +1050,93 @@ function SyncNetPositions() {
           </div>
         </div>
 
+        {progress && (
+          <div
+            className={`sync-progress mode-${progress.mode} ${progress.done ? 'is-done' : 'is-running'}`}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="sync-progress-head">
+              <div className="sync-progress-heading">
+                <span className="sync-progress-heading-icon" aria-hidden="true">
+                  {progress.done ? <Check size={17} /> : <RefreshCw size={16} />}
+                </span>
+                <div>
+                  <span className="sync-progress-eyebrow">
+                    {progress.mode === 'sync' ? 'Position sync' : 'Position restore'}
+                  </span>
+                  <strong className="sync-progress-title">
+                    {progress.done
+                      ? (progress.mode === 'sync' ? 'Sync completed' : 'Unsync completed')
+                      : (progress.mode === 'sync' ? 'Syncing accounts' : 'Restoring accounts')}
+                  </strong>
+                </div>
+              </div>
+              <div className="sync-progress-head-meta">
+                <span className="sync-progress-count">
+                  {completedProgressAccounts(progress)} / {progress.total} accounts
+                </span>
+                {/* One account is its own overall progress - no point saying it twice. */}
+                {progress.total > 1 && (
+                  <span className="sync-progress-pct">{progress.percent}%</span>
+                )}
+              </div>
+            </div>
+
+            {progress.total > 1 && (
+              <div
+                className={`sync-progress-bar${progress.done ? ' done' : ' active'}`}
+                role="progressbar"
+                aria-valuenow={progress.percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <span className="sync-progress-fill" style={{ width: `${progress.percent}%` }} />
+              </div>
+            )}
+
+            <div className="sync-progress-users">
+              {progress.groups.map((group) => (
+                <div className="sync-progress-user-group" key={group.userId}>
+                  <div className="sync-progress-user">{group.username}</div>
+
+                  {group.accounts.map((account) => (
+                    <div
+                      className={`sync-progress-account ${account.state}`}
+                      key={account.configId}
+                    >
+                      <div className="sync-progress-account-head">
+                        <span className="sync-progress-account-name">
+                          <span className="sync-progress-account-icon">
+                            {account.state === 'ok' ? <Check size={11} />
+                              : account.state === 'failed' ? <X size={11} />
+                                : account.state === 'skipped' ? <Minus size={11} />
+                                  : null}
+                          </span>
+                          {accountLabel(account)}
+                        </span>
+                        <span className="sync-progress-account-pct">{account.percent}%</span>
+                      </div>
+
+                      <div
+                        className={`sync-progress-bar small${account.state === 'running' ? ' active' : ''}`}
+                        role="progressbar"
+                        aria-valuenow={account.percent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                      >
+                        <span className="sync-progress-fill" style={{ width: `${account.percent}%` }} />
+                      </div>
+
+                      <div className="sync-progress-account-detail">{account.detail}</div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="positions-table-wrap">
           <table className="positions-table">
             <thead>
@@ -825,20 +1144,26 @@ function SyncNetPositions() {
                 <th>Result</th>
                 <th className="num">Total Accounts</th>
                 <th className="num">Success</th>
+                <th className="num">Skipped</th>
                 <th className="num">Failed</th>
               </tr>
             </thead>
             <tbody>
               {summary ? (
                 <tr>
-                  <td>Net positions sync completed</td>
+                  <td>
+                    {progress?.mode === 'unsync'
+                      ? 'Net positions restored to their pre-sync state'
+                      : 'Net positions sync completed'}
+                  </td>
                   <td className="num">{summary.total_accounts || 0}</td>
                   <td className="num up">{summary.success || 0}</td>
+                  <td className="num">{summary.skipped || 0}</td>
                   <td className="num down">{summary.failed || 0}</td>
                 </tr>
               ) : (
                 <tr>
-                  <td className="positions-empty" colSpan={4}>No sync result to show</td>
+                  <td className="positions-empty" colSpan={5}>No sync result to show</td>
                 </tr>
               )}
             </tbody>
@@ -864,7 +1189,7 @@ function SyncNetPositions() {
           </div>
         )}
 
-        {userId && (
+        {userId && !allUsers && (
           <div className={`strategy-list strategy-list--${view}`}>
             <div className="strategy-list-head">
               <strong>Saved Strategies</strong>
@@ -1028,6 +1353,67 @@ function SyncNetPositions() {
       </div>
     </div>
   )
+}
+
+function completedProgressAccounts(progress) {
+  return (progress?.groups || []).reduce((total, group) => (
+    total + (group.accounts || []).filter((account) => (
+      account.state === 'ok' || account.state === 'failed' || account.state === 'skipped'
+    )).length
+  ), 0)
+}
+
+function userLabel(user) {
+  if (!user) return ''
+  return user.username
+    || `${user.first_name || ''} ${user.last_name || ''}`.trim()
+    || `User ${user.id}`
+}
+
+// "Angel · UBC 3 · A12345" - the broker account line under the user's name. The
+// UBC id is always there; the client code only for accounts the session store
+// logged in (the broker-config list endpoint masks it as "****").
+function accountLabel(item) {
+  if (!item) return ''
+
+  const parts = []
+  const broker = String(item.brokerName || '').trim()
+  if (broker) parts.push(broker)
+  if (item.configId) parts.push(`UBC ${item.configId}`)
+
+  const account = String(item.accountId || '').trim()
+  if (account && account !== '****') parts.push(account)
+
+  return parts.join(' · ') || 'Account'
+}
+
+// The run is displayed the way it is selected: a user, then the broker accounts
+// under them. Queue order is already user-then-account, so first-seen order is
+// the order they will be worked through.
+function groupByUser(accounts) {
+  const groups = []
+  const byUser = new Map()
+
+  accounts.forEach((account) => {
+    let group = byUser.get(account.userId)
+    if (!group) {
+      group = { userId: account.userId, username: account.username, accounts: [] }
+      byUser.set(account.userId, group)
+      groups.push(group)
+    }
+    group.accounts.push(account)
+  })
+
+  return groups
+}
+
+// The backend's log lines are already worded per account ("bberlia synced (3
+// open positions)"). The progress rows show the name in their own column, so
+// drop the duplicated prefix from the detail text.
+function stripName(line, username) {
+  const text = String(line || '')
+  const prefix = `${username} `
+  return text.startsWith(prefix) ? text.slice(prefix.length) : text
 }
 
 function strategyBrokerLabel(strategy) {

@@ -10,12 +10,18 @@ import {
   useAngelClient,
 } from '../feedmaster/angelSessionStore';
 import { releaseFeedTokens } from './feedTokens';
+import { orderIsFill, useFillRefresh, useOrderUpdates } from './orderUpdates';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { compactProductTag, parseTradingSymbol } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
 import './tradepanel.css';
 
 const POSITION_COLUMNS = ['stock', 'product', 'netQty', 'buyAvg', 'sellAvg', 'ltp', 'pnl'];
+
+// Last resort behind the order stream: a broker can simply fail to push an
+// update, and no amount of reconnecting will surface a fill that was never
+// announced.
+const BACKGROUND_REFRESH_MS = 45000;
 
 const defaultPositionFilters = {
   symbol: '',
@@ -87,8 +93,11 @@ export default function GetPositions() {
   const [strategyMode, setStrategyMode] = useState('new'); // 'new' | 'existing'
   const [selectedStrategyCode, setSelectedStrategyCode] = useState('');
   const autoLoadedAccountRef = useRef('');
-  const fillStreamAbortRef = useRef(null);
-  const [fillSyncStatus, setFillSyncStatus] = useState('offline'); // 'offline' | 'connecting' | 'live'
+  // The stream and the background timer both fire outside React's render cycle,
+  // so they reach the current load() through a ref rather than closing over
+  // whichever one existed when they started.
+  const loadRef = useRef(null);
+  const loadSeqRef = useRef(0);
 
   const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount();
   const [liveTicks, setLiveTicks] = useState({});
@@ -386,7 +395,11 @@ export default function GetPositions() {
     autoLoadedAccountRef.current = '';
   }, [configId]);
 
-  const load = useCallback(async () => {
+  // `options` is only ever passed internally - this is also wired straight to
+  // onClick, where the first argument is a DOM event (which has no `.silent`).
+  const load = useCallback(async (options) => {
+    const silent = options?.silent === true;
+
     if (!selectedConfig) {
       setStatus('Select an account first');
       return;
@@ -399,14 +412,25 @@ export default function GetPositions() {
       setStatus('Angel account credentials are not ready');
       return;
     }
-    setLoading(true);
-    setStatus('Loading positions...');
+
+    // Fills come in bursts, so several refreshes can be in flight at once and
+    // they do not necessarily come back in the order they were sent. Only the
+    // newest one may write to the table: an older snapshot landing last would
+    // put the pre-fill positions back on screen and leave them there.
+    const seq = loadSeqRef.current + 1;
+    loadSeqRef.current = seq;
+    const isLatest = () => seq === loadSeqRef.current;
+
+    if (!silent) {
+      setLoading(true);
+      setStatus('Loading positions...');
+    }
     try {
       // Startup already logged this account in; only a missing or expired token
       // goes back to the shared (deduped) login.
       let active = client;
       if (!active.session?.jwtToken) {
-        setStatus('Signing in this account...');
+        if (!silent) setStatus('Signing in this account...');
         active = { ...active, session: await ensureSession(configId), loggedIn: true };
       }
 
@@ -415,30 +439,30 @@ export default function GetPositions() {
         body = await fetchPositions(active);
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        setStatus('Angel token expired - signing in again...');
+        if (!silent) setStatus('Angel token expired - signing in again...');
         active = { ...active, session: await ensureSession(configId, { force: true }), loggedIn: true };
         body = await fetchPositions(active);
       }
 
-      // Use the just-refreshed session (not the stale `client` closure) to
-      // start the stream, so it doesn't redundantly log in again from
-      // scratch when this very request just did that login.
-      let freshClient = active;
-      if (body.session?.jwtToken) {
-        saveSession(configId, body.session);
-        freshClient = { ...active, session: body.session, loggedIn: true };
-      }
+      // Save the refreshed session even for a superseded refresh - the token is
+      // good regardless of whether this response is still the one on screen.
+      if (body.session?.jwtToken) saveSession(configId, body.session);
+      if (!isLatest()) return;
+
       const positions = body.positions || [];
       setRows(positions);
       setStatus(positions.length ? `${positions.length} positions` : 'No open positions');
-      startOrderFillStream(freshClient);
     } catch (e) {
-      setStatus(toPositionError(e));
+      if (isLatest()) setStatus(toPositionError(e));
     } finally {
-      setLoading(false);
+      // Whoever turned the spinner on turns it off, superseded or not.
+      if (!silent) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, configId, selectedBrokerName, selectedConfig, selectedIsAngel]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
     const accountKey = String(configId || '');
@@ -453,75 +477,48 @@ export default function GetPositions() {
     load();
   }, [client, configId, load, selectedConfig, selectedIsAngel]);
 
-  // Brokers never push "your position changed" - only order status changes
-  // (placed/complete/rejected/...). So to keep the position LIST (not just
-  // LTP) in sync with reality, listen on the same order-status stream Get
-  // OrderBook uses, and re-fetch positions the moment a fill completes.
-  //
-  // Started once from load() (like Get OrderBook's own live stream) rather
-  // than from an effect watching `client` - onSession below refreshes
-  // `client` on every reconnect, and a watching effect would treat that as
-  // "something changed, reconnect" and loop forever.
-  const startOrderFillStream = useCallback(async (streamClient = client) => {
-    fillStreamAbortRef.current?.abort();
-    if (!streamClient?.session?.jwtToken) {
-      setFillSyncStatus('offline');
-      return;
-    }
+  const refreshPositions = useCallback(() => loadRef.current?.({ silent: true }), []);
+  const scheduleFillRefresh = useFillRefresh(refreshPositions);
 
-    const controller = new AbortController();
-    fillStreamAbortRef.current = controller;
-    setFillSyncStatus('connecting');
+  // Brokers never push "your position changed" - only order status changes. So
+  // the position LIST (not just its LTP) is kept in step with reality by
+  // listening to the order-status stream and re-fetching whenever an order
+  // moves the book. onResync covers the gap after a dropped stream: those
+  // updates were pushed while nobody was listening and will not come again.
+  const fillSyncStatus = useOrderUpdates({
+    configId,
+    client,
+    enabled: selectedIsAngel,
+    onResync: refreshPositions,
+    onOrder: useCallback((order) => {
+      if (!orderIsFill(order)) return;
+      setStatus(`Order filled${order.tradingsymbol ? ` (${order.tradingsymbol})` : ''} - refreshing positions...`);
+      scheduleFillRefresh();
+    }, [scheduleFillRefresh]),
+  });
 
-    try {
-      const res = await fetch('/api/angel/order-updates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client: streamClient }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok || !res.body) throw new Error(`Fill stream HTTP ${res.status}`);
-      setFillSyncStatus('live');
-      await readOrderStream(res.body, {
-        onSession: (session) => {
-          if (!session?.jwtToken || session.jwtToken === streamClient.session?.jwtToken) return;
-          saveSession(configId, session);
-        },
-        onOrder: (payload) => {
-          const order = normalizeSocketOrder(payload);
-          if (!order) {
-            if (payload?.['order-status'] === 'AB00') setFillSyncStatus('live');
-            return;
-          }
-          const status = String(order.orderstatus || order.status || '').toLowerCase();
-          if (status.includes('complete') || status.includes('traded')) {
-            setStatus(`Order filled${order.tradingsymbol ? ` (${order.tradingsymbol})` : ''} - refreshing positions...`);
-            load();
-          }
-        },
-        onStatus: (payload) => {
-          setFillSyncStatus(payload?.status === false ? 'offline' : 'live');
-        },
-        onError: () => {
-          setFillSyncStatus('offline');
-        },
-      });
-    } catch {
-      if (controller.signal.aborted) return;
-      setFillSyncStatus('offline');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, configId]);
-
+  // Behind the stream, a slow re-check: a broker can simply fail to push an
+  // update, and no amount of reconnecting will surface a fill that was never
+  // announced. Skipped while the tab is in the background - nobody is looking,
+  // and switching back re-checks anyway.
   useEffect(() => {
-    fillStreamAbortRef.current?.abort();
-    setFillSyncStatus('offline');
-  }, [configId]);
+    if (!configId || !selectedIsAngel) return undefined;
 
-  useEffect(() => () => {
-    fillStreamAbortRef.current?.abort();
-  }, []);
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      loadRef.current?.({ silent: true });
+    }, BACKGROUND_REFRESH_MS);
+
+    const onVisible = () => {
+      if (!document.hidden) loadRef.current?.({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [configId, selectedIsAngel]);
 
   const totalPnl = liveRows.reduce((sum, r) => sum + pnlOf(r), 0);
   const longCount = liveRows.filter((row) => Number(row.netqty || 0) > 0).length;
@@ -565,12 +562,22 @@ export default function GetPositions() {
     });
   }, [visiblePositionSelections]);
 
+  // Which positions are actually on the books, ignoring the identity of the
+  // array they arrived in. Positions are now re-fetched on every fill and on a
+  // background timer, and each of those hands back a brand new `rows` array -
+  // keying the reset below on `rows` itself would throw away the user's ticked
+  // rows (and close the Add-to-Group dialog) on a refresh that changed nothing.
+  const rowsSignature = useMemo(
+    () => rows.map((row) => positionIdentityKey(row)).sort().join(','),
+    [rows],
+  );
+
   useEffect(() => {
     setSelectedPositionKeys(new Set());
     setStrategyDialogOpen(false);
     setStrategyName('');
     setStrategyError('');
-  }, [configId, rows]);
+  }, [configId, rowsSignature]);
 
   const selectedCount = selectedPositionKeys.size;
 
@@ -1617,82 +1624,6 @@ function toPositionError(error) {
     return `${issue.title}. ${issue.hint}`;
   }
   return message || 'Failed to load positions';
-}
-
-// Parses the same order-status SSE stream Get OrderBook reads, so this page
-// can hear "an order just filled" and re-fetch positions in response.
-async function readOrderStream(body, handlers) {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary >= 0) {
-      const chunk = buffer.slice(0, boundary).trim();
-      buffer = buffer.slice(boundary + 2);
-      handleStreamChunk(chunk, handlers);
-      boundary = buffer.indexOf('\n\n');
-    }
-  }
-}
-
-function handleStreamChunk(chunk, handlers) {
-  if (!chunk) return;
-  let event = 'message';
-  let data = '';
-  for (const line of chunk.split('\n')) {
-    if (line.startsWith('event:')) event = line.slice(6).trim();
-    if (line.startsWith('data:')) data += line.slice(5).trim();
-  }
-
-  let payload = null;
-  try {
-    payload = data ? JSON.parse(data) : null;
-  } catch {
-    payload = { raw: data };
-  }
-
-  if (event === 'session') handlers.onSession?.(payload?.session);
-  else if (event === 'order') handlers.onOrder?.(payload);
-  else if (event === 'status') handlers.onStatus?.(payload);
-  else if (event === 'error') handlers.onError?.(payload);
-}
-
-function normalizeSocketOrder(payload) {
-  if (!payload || typeof payload !== 'object') return null;
-  const data = payload.orderData;
-  if (!data || typeof data !== 'object') return null;
-  if (!data.orderid && !data.uniqueorderid && !data.tradingsymbol) return null;
-
-  return {
-    ...data,
-    orderstatus: data.orderstatus || data.status || orderStatusCodeLabel(payload['order-status']),
-    status: data.status || data.orderstatus || orderStatusCodeLabel(payload['order-status']),
-    websocketStatusCode: payload['order-status'] || '',
-    websocketStatusText: payload['error-message'] || '',
-  };
-}
-
-function orderStatusCodeLabel(code) {
-  const labels = {
-    AB01: 'open',
-    AB02: 'cancelled',
-    AB03: 'rejected',
-    AB04: 'modified',
-    AB05: 'complete',
-    AB06: 'amo received',
-    AB07: 'amo cancelled',
-    AB08: 'amo modify received',
-    AB09: 'open pending',
-    AB10: 'trigger pending',
-    AB11: 'modify pending',
-  };
-  return labels[code] || '';
 }
 
 function findLoggedInUser(users, principal = {}) {

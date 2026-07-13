@@ -39,23 +39,23 @@ export default function TradePanelTabs() {
   }
 
   return (
-    <>
-      <div hidden={activeTab !== 'enter-trade'}>
+    <div className="trade-panel-tabs">
+      <div className="trade-panel-tab" hidden={activeTab !== 'enter-trade'}>
         {/* Enter Trade isn't wired up in the admin yet (matches the
             previous element={null} route) */}
       </div>
-      <div hidden={activeTab !== 'client-dashboard'}>
+      <div className="trade-panel-tab" hidden={activeTab !== 'client-dashboard'}>
         <ClientDashboard />
       </div>
-      <div hidden={activeTab !== 'positions'}>
+      <div className="trade-panel-tab" hidden={activeTab !== 'positions'}>
         <GetPositions />
       </div>
-      <div hidden={activeTab !== 'order-book'}>
+      <div className="trade-panel-tab" hidden={activeTab !== 'order-book'}>
         <GetOrderBook />
       </div>
-      <div hidden={activeTab !== 'trade-book'}>
+      <div className="trade-panel-tab" hidden={activeTab !== 'trade-book'}>
         <GetTradeBook />
       </div>
-    </>
+    </div>
   )
 }

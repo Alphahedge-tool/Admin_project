@@ -2,18 +2,25 @@
 // language as OrderBook, but with trade/fill-specific columns and filters.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Filter, Info, ReceiptText, RefreshCw, Search, X } from 'lucide-react';
+import { Check, Filter, Info, Radio, ReceiptText, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet } from '../config/api';
 import {
   classifyLoginError, ensureSession, isAngelBroker, isAuthError, isRateLimited, saveSession,
   useAngelClient,
 } from '../feedmaster/angelSessionStore';
+import { orderIsFill, useFillRefresh, useOrderUpdates } from './orderUpdates';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { compactProductTag, parseTradingSymbol } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
 import './tradepanel.css';
 
 const TRADE_COLUMNS = ['trade', 'side', 'product', 'qty', 'price', 'value', 'time'];
+
+// A trade book only ever changes when something fills, and the fill arrives on
+// the order stream - so this page listens to the same stream the other two do.
+// Behind it, the same slow re-read as everywhere else, for a fill the broker
+// never got round to pushing.
+const BACKGROUND_REFRESH_MS = 45000;
 
 const defaultTradeFilters = {
   symbol: '',
@@ -53,6 +60,11 @@ export default function GetTradeBook() {
   const [filters, setFilters] = useState(defaultTradeFilters);
   const [openFilter, setOpenFilter] = useState('');
   const autoLoadedAccountRef = useRef('');
+  // The stream and the background timer fire outside React's render cycle, so
+  // they reach the current load() through a ref instead of closing over
+  // whichever one existed when they started.
+  const loadRef = useRef(null);
+  const loadSeqRef = useRef(0);
 
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedBrokerName = selectedConfig?.broker_name || '';
@@ -188,7 +200,11 @@ export default function GetTradeBook() {
     autoLoadedAccountRef.current = '';
   }, [configId]);
 
-  const load = useCallback(async () => {
+  // `options` is only ever passed internally - this is also wired straight to
+  // onClick, where the first argument is a DOM event (which has no `.silent`).
+  const load = useCallback(async (options) => {
+    const silent = options?.silent === true;
+
     if (!selectedConfig) {
       setStatus('Select an account first');
       return;
@@ -202,14 +218,24 @@ export default function GetTradeBook() {
       return;
     }
 
-    setLoading(true);
-    setStatus('Loading trade book...');
+    // Refreshes overlap (a fill, a background re-read, the user hitting Get
+    // TradeBook) and do not necessarily come back in the order they were sent.
+    // Only the newest may write to the table - an older book landing last would
+    // drop the fills that arrived after it.
+    const seq = loadSeqRef.current + 1;
+    loadSeqRef.current = seq;
+    const isLatest = () => seq === loadSeqRef.current;
+
+    if (!silent) {
+      setLoading(true);
+      setStatus('Loading trade book...');
+    }
     try {
       // Startup already logged this account in; only a missing or expired token
       // goes back to the shared (deduped) login.
       let active = client;
       if (!active.session?.jwtToken) {
-        setStatus('Signing in this account...');
+        if (!silent) setStatus('Signing in this account...');
         active = { ...active, session: await ensureSession(configId), loggedIn: true };
       }
 
@@ -218,21 +244,70 @@ export default function GetTradeBook() {
         body = await fetchTradeBook(active);
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        setStatus('Angel token expired - signing in again...');
+        if (!silent) setStatus('Angel token expired - signing in again...');
         active = { ...active, session: await ensureSession(configId, { force: true }), loggedIn: true };
         body = await fetchTradeBook(active);
       }
 
+      // Worth saving even if this response is superseded - the token is good
+      // regardless of whether its trade book is still the one on screen.
       if (body.session?.jwtToken) saveSession(configId, body.session);
+      if (!isLatest()) return;
+
       const trades = body.trades || [];
       setRows(trades);
       setStatus(trades.length ? `${trades.length} trades for today` : 'No trades in trade book');
     } catch (error) {
-      setStatus(toTradeError(error));
+      if (isLatest()) setStatus(toTradeError(error));
     } finally {
-      setLoading(false);
+      // Whoever turned the spinner on turns it off, superseded or not.
+      if (!silent) setLoading(false);
     }
   }, [client, configId, selectedBrokerName, selectedConfig, selectedIsAngel]);
+
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
+
+  const refreshTrades = useCallback(() => loadRef.current?.({ silent: true }), []);
+  const scheduleFillRefresh = useFillRefresh(refreshTrades);
+
+  // A fill is the only thing that ever adds a row here, and the broker announces
+  // it on the order stream - so without listening to it, this page showed the
+  // trade book as it stood when the account was selected and never moved again.
+  // Every fill after that had to be found by pressing Get TradeBook.
+  const liveStatus = useOrderUpdates({
+    configId,
+    client,
+    enabled: selectedIsAngel,
+    onResync: refreshTrades,
+    onOrder: useCallback((order) => {
+      if (!orderIsFill(order)) return;
+      setStatus(`Order filled${order.tradingsymbol ? ` (${order.tradingsymbol})` : ''} - refreshing trade book...`);
+      scheduleFillRefresh();
+    }, [scheduleFillRefresh]),
+  });
+
+  // Behind the stream: a fill the broker never pushed can only be found by
+  // asking. Skipped while the tab is hidden - coming back re-reads anyway.
+  useEffect(() => {
+    if (!configId || !selectedIsAngel) return undefined;
+
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      loadRef.current?.({ silent: true });
+    }, BACKGROUND_REFRESH_MS);
+
+    const onVisible = () => {
+      if (!document.hidden) loadRef.current?.({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [configId, selectedIsAngel]);
 
   useEffect(() => {
     const accountKey = String(configId || '');
@@ -282,6 +357,11 @@ export default function GetTradeBook() {
           <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsAngel && !client)} type="button">
             {loading ? 'Loading' : 'Get TradeBook'}
           </button>
+
+          <span className={`orderbook-live-pill ${liveStatus}`} title="Auto-refreshes the trade book as orders fill">
+            <Radio size={13} />
+            {liveStatus === 'live' ? 'Live' : liveStatus === 'connecting' ? 'Connecting' : 'Offline'}
+          </span>
 
           <label className="orderbook-search">
             <Search size={14} />
