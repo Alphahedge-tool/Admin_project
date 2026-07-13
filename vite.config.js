@@ -7,9 +7,14 @@ export default defineConfig({
   server: {
     proxy: {
       // Trade Panel's Angel Node backend (option chain + basket + live feed).
-      // Only /api/angel is proxied; the PHP admin API is called via its own
-      // absolute URL, so it is unaffected.
+      // Only /api/angel and /api/kotak are proxied; every other /api path is the
+      // PHP admin API on Apache, so it is unaffected.
       '/api/angel': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      // Kotak Neo's headless auto-login lives in the same Node backend.
+      '/api/kotak': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },

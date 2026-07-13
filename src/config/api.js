@@ -57,11 +57,18 @@ export async function apiPost(path, body = {}) {
   return data
 }
 
-// Angel One auto-login via the Go backend. Reuses a saved session when
-// possible, otherwise performs a fresh TOTP login (same flow as the
-// Angelone_frontend project). Returns the RMS response envelope.
-export async function angelAutoLogin(client) {
-  const res = await fetch(`${ANGEL_API_BASE_URL}/api/angel/auto-login`, {
+// Headless auto-login against the Node backend. Both brokers wired here log in
+// server-side from stored credentials and answer with the same envelope, so the
+// caller only has to say which one:
+//
+//   angel  clientCode + PIN + TOTP secret + API key   -> jwtToken/feedToken
+//   kotak  UCC + access token + MPIN + TOTP + mobile  -> tradeToken
+//
+// (Zerodha is deliberately absent: Kite Connect has no headless login. It needs
+// a human through the browser once a day, so it cannot use this path at all.)
+export async function brokerAutoLogin(broker, client) {
+  const path = broker === 'kotak' ? 'kotak' : 'angel'
+  const res = await fetch(`${ANGEL_API_BASE_URL}/api/${path}/auto-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ client })
@@ -71,7 +78,7 @@ export async function angelAutoLogin(client) {
   try {
     data = await res.json()
   } catch {
-    throw new Error('Angel backend not reachable (is it running on :3001?)')
+    throw new Error('Broker backend not reachable (is it running on :3001?)')
   }
 
   if (!data.status) {
@@ -79,6 +86,10 @@ export async function angelAutoLogin(client) {
   }
 
   return data
+}
+
+export function angelAutoLogin(client) {
+  return brokerAutoLogin('angel', client)
 }
 
 export { API_BASE_URL, ANGEL_API_BASE_URL }

@@ -19,7 +19,7 @@ import {
   CircularProgress
 } from '@mui/material'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { apiGet, apiPost, angelAutoLogin } from '../../config/api'
+import { apiGet, apiPost, brokerAutoLogin } from '../../config/api'
 
 /* ============ BROKER FIELD SCHEMAS ============
    Each broker only asks for the credentials its auto-login
@@ -31,7 +31,9 @@ const EMPTY_FORM = {
   pin: '',
   totp_secret: '',
   app_name: '',
-  app_key: ''
+  app_key: '',
+  app_secret: '',
+  phone: ''
 }
 
 const DEFAULT_SCHEMA = {
@@ -46,11 +48,16 @@ const DEFAULT_SCHEMA = {
   ]
 }
 
+/* Each broker names the SAME columns differently — Angel's "Client Code" is
+   Kotak's "UCC", Angel's "PIN" is Kotak's "MPIN" — so the schema carries the
+   label the broker's own portal uses. `broker` is the backend's auto-login
+   path. Order here is the order the fields appear in the form. */
 const BROKER_SCHEMAS = [
   {
     // Angel One SmartAPI auto-login: clientCode + pin + totpSecret + apiKey
     match: (name) => name.toLowerCase().replace(/\s/g, '').includes('angel'),
     autoLogin: true,
+    broker: 'angel',
     note: 'Angel One auto-login needs these 4 fields. The TOTP code is generated automatically from the secret at login time.',
     fields: [
       {
@@ -77,6 +84,49 @@ const BROKER_SCHEMAS = [
         label: 'API Key',
         required: true,
         helper: 'SmartAPI app API key (X-PrivateKey)'
+      }
+    ]
+  },
+  {
+    // Kotak Neo logs in headlessly like Angel, but in two steps: the mobile +
+    // UCC + TOTP get a view token, then the MPIN upgrades it to a trade token.
+    // All five fields are needed - the login fails without any one of them.
+    match: (name) => name.toLowerCase().replace(/\s/g, '').includes('kotak'),
+    autoLogin: true,
+    broker: 'kotak',
+    note: 'Kotak Neo auto-login needs all 5 fields. The TOTP code is generated from the secret at login time; the MPIN is what upgrades the login into a trading session.',
+    fields: [
+      {
+        name: 'account_id',
+        label: 'UCC (Client Code)',
+        required: true,
+        helper: 'Kotak Unique Client Code'
+      },
+      {
+        name: 'phone',
+        label: 'Mobile Number',
+        required: true,
+        helper: 'Registered mobile, with country code (e.g. +919876543210)'
+      },
+      {
+        name: 'app_secret',
+        label: 'Access Token',
+        required: true,
+        type: 'password',
+        helper: 'Long access token from the Kotak Neo API portal (napi.kotaksecurities.com)'
+      },
+      {
+        name: 'pin',
+        label: 'MPIN',
+        required: true,
+        type: 'password',
+        helper: '6-digit Neo MPIN'
+      },
+      {
+        name: 'totp_secret',
+        label: 'TOTP Secret',
+        required: true,
+        helper: 'Base32 secret from the Kotak Neo portal → Enable TOTP'
       }
     ]
   }
@@ -175,7 +225,9 @@ function BrokerConfigDialog({ user, open, onClose }) {
             pin: res.data.pin || '',
             totp_secret: res.data.totp_secret || '',
             app_name: res.data.app_name || '',
-            app_key: res.data.app_key || ''
+            app_key: res.data.app_key || '',
+            app_secret: res.data.app_secret || '',
+            phone: res.data.phone || ''
             })
 
             setFormOpen(true)
@@ -234,7 +286,11 @@ function BrokerConfigDialog({ user, open, onClose }) {
   }
 
   /* ================= AUTO LOGIN ================= */
-  const sessionKey = (cfgId) => `angel_session_${cfgId}`
+  // Angel's saved token lives under angel_session_<id> and is read back by the
+  // whole Trade Panel, so that key must not change. Kotak gets its own prefix:
+  // its session carries a tradeToken, not a jwtToken, and handing one to the
+  // Angel session store would simply be dropped.
+  const sessionKey = (cfgId, broker) => `${broker === 'kotak' ? 'kotak' : 'angel'}_session_${cfgId}`
 
   const setCfgLogin = (cfgId, state) => {
     setLoginState(prev => ({ ...prev, [cfgId]: state }))
@@ -242,41 +298,59 @@ function BrokerConfigDialog({ user, open, onClose }) {
 
   const handleLoginToggle = async (cfg) => {
     const current = loginState[cfg.id]
+    const cfgSchema = getBrokerSchema(cfg.broker_name)
+    const broker = cfgSchema.broker || 'angel'
+    const key = sessionKey(cfg.id, broker)
 
     // Turn OFF → drop the saved session
     if (current?.status === 'on') {
-      localStorage.removeItem(sessionKey(cfg.id))
+      localStorage.removeItem(key)
       setCfgLogin(cfg.id, { status: 'idle' })
       return
     }
 
-    // Turn ON → fetch credentials, then auto-login via the Angel Go backend
+    // Turn ON → fetch credentials, then auto-login via the Node backend
     setCfgLogin(cfg.id, { status: 'loading' })
     try {
       const res = await apiGet(`/users/broker-config/get.php?id=${cfg.id}`)
       const c = res.data
 
-      if (!c.account_id || !c.app_key || !c.pin || !c.totp_secret) {
-        throw new Error('Missing credentials — edit this config and fill Client Code, PIN, TOTP Secret and API Key')
+      // Ask the broker's own schema what it needs, and name what is missing in
+      // that broker's own words (Kotak has no "API Key"; Angel has no "MPIN").
+      const missing = cfgSchema.fields
+        .filter(f => f.required && !String(c[f.name] || '').trim())
+        .map(f => f.label)
+      if (missing.length) {
+        throw new Error(`Missing credentials — edit this config and fill ${missing.join(', ')}`)
       }
 
-      // Reuse a previously saved session if we have one (backend validates it
-      // with getRMS and falls back to a fresh TOTP login automatically).
+      // Reuse a previously saved session if there is one. Angel's backend
+      // validates it with getRMS and falls back to a fresh TOTP login by itself;
+      // Kotak always performs the two-step login.
       let session = null
       try {
-        session = JSON.parse(localStorage.getItem(sessionKey(cfg.id)))
+        session = JSON.parse(localStorage.getItem(key))
       } catch { /* ignore corrupt session */ }
 
-      const data = await angelAutoLogin({
-        clientCode: c.account_id,
-        apiKey: c.app_key,
-        pin: c.pin,
-        totpSecret: c.totp_secret,
-        session
-      })
+      const data = await brokerAutoLogin(broker, broker === 'kotak'
+        ? {
+          ucc: c.account_id,
+          accessToken: c.app_secret,
+          mobileNumber: c.phone,
+          mpin: c.pin,
+          totpSecret: c.totp_secret,
+          session
+        }
+        : {
+          clientCode: c.account_id,
+          apiKey: c.app_key,
+          pin: c.pin,
+          totpSecret: c.totp_secret,
+          session
+        })
 
       if (data.session) {
-        localStorage.setItem(sessionKey(cfg.id), JSON.stringify(data.session))
+        localStorage.setItem(key, JSON.stringify(data.session))
       }
 
       setCfgLogin(cfg.id, {

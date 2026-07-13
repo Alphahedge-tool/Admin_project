@@ -7,6 +7,7 @@ import WebSocket from 'ws';
 import { config } from './src/config.js';
 import { Client } from './src/httpClient.js';
 import { Auth } from './src/auth.js';
+import * as kotak from './src/kotak.js';
 import { MasterStore } from './src/master.js';
 import { allScripOptions } from './src/scripoptions.js';
 import {
@@ -44,6 +45,11 @@ app.post('/api/angel/auto-login', h(async (req) => {
 app.post('/api/angel/logout', (req, res) => {
   res.json({ status: true, message: 'Logged out' });
 });
+
+// Kotak Neo logs in headlessly (TOTP + MPIN), like Angel, so it gets the same
+// auto-login endpoint shape. The rest of Trade Panel - option chain, feed,
+// orders - is still Angel-only; this authenticates the account and nothing more.
+app.post('/api/kotak/auto-login', h(async (req) => kotak.autoLogin(req.body?.client || {})));
 
 // ── master / search ────────────────────────────────────────────────────────
 app.get('/api/angel/master-index', h(async () => master.getIndex()));
