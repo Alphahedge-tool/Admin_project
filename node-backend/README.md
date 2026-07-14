@@ -40,3 +40,17 @@ a user first (with the auto-login fields filled in).
 
 `PORT` (3001), `ANGEL_LOCAL_IP`, `ANGEL_PUBLIC_IP`, `ANGEL_MAC_ADDRESS`,
 `ANGEL_MASTER_FILE`, `ANGEL_INDEX_FILE`, `FEED_DEBUG=1`.
+Zerodha is also available as a broker config. Kite Connect still requires the
+browser login plus `request_token` exchange before the backend can mint an
+access token.
+
+## Zerodha portfolio proxy
+
+The backend now also proxies the core Kite portfolio APIs:
+
+- `GET /api/zerodha/portfolio/holdings`
+- `GET /api/zerodha/portfolio/positions`
+- `GET /api/zerodha/portfolio/holdings/auctions`
+- `PUT /api/zerodha/portfolio/positions`
+- `POST /api/zerodha/portfolio/holdings/authorise`
+- `GET /api/zerodha/login-url`

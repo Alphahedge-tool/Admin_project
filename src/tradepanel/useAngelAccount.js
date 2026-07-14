@@ -43,9 +43,11 @@ export function useAngelAccount() {
   const userId = users.some((user) => String(user.id) === userPick) ? userPick : defaultUserId;
 
   // The selected user's Angel accounts, in the shape the account bar renders.
+  // The store also carries Kotak accounts, but the option chain, basket and feed
+  // behind this hook are Angel-only, so they are not offered here.
   const configs = useMemo(
     () => accounts
-      .filter((account) => account.userId === String(userId))
+      .filter((account) => account.userId === String(userId) && account.broker === 'angelone')
       .map((account) => ({
         id: account.configId,
         broker_name: account.brokerName,

@@ -21,7 +21,12 @@ export function legIsClosed(leg) {
 export function withLiveTick(leg, liveTicks) {
   if (legIsClosed(leg)) return leg
 
-  const token = leg.symbol_token != null ? String(leg.symbol_token) : ''
+  // `feed_token` is the token this leg is actually SUBSCRIBED under, which is not
+  // always the token it trades under: a Kotak position is marked to market on the
+  // Angel feed using the Angel token the backend resolved for it, while
+  // symbol_token stays Kotak's (orders and margins need that one). A leg with no
+  // feed token of its own trades and feeds under the same token.
+  const token = String(leg.feed_token || leg.symbol_token || '')
   const tick = token ? liveTicks[token] : null
   if (!tick || !(tick.ltp > 0)) return leg
 

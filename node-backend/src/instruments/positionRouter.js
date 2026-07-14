@@ -84,13 +84,12 @@ function canonicalContract(position, brokerInstrument) {
   };
 }
 
-// Broker report tokens are only valid for that broker. Resolve the report row
-// into a canonical contract first, then find the independent Angel feed token.
-export function mapKotakPositionToAngelFeed(position, instruments) {
+function mapPositionToAngelFeed(position, instruments, broker) {
+  const brokerKey = String(broker || '').toLowerCase();
   const brokerInstrument = instruments.resolveBroker(
-    'kotak',
-    position.tradingsymbol || position.trdSym,
-    position.exSeg || position.exchange,
+    brokerKey,
+    position.tradingsymbol || position.trdSym || position.sym || position.symbol || position.stock_name,
+    position.exSeg || position.exchange || position.feedExchange || position.brokerExchange,
   );
   const contract = canonicalContract(position, brokerInstrument);
   const feedInstrument = contract.symbol && contract.exchange
@@ -100,6 +99,7 @@ export function mapKotakPositionToAngelFeed(position, instruments) {
   const brokerToken = brokerInstrument?.token
     || position.brokerToken
     || position.symboltoken
+    || position.instrument_token
     || '';
   const brokerExchange = brokerInstrument?.brexchange
     || brokerInstrument?.segment
@@ -133,5 +133,15 @@ export function mapKotakPositionToAngelFeed(position, instruments) {
     masterFeedSymbol: feedInstrument?.brsymbol || '',
     masterFeedMapped: Boolean(feedInstrument?.token),
   };
+}
+
+// Broker report tokens are only valid for that broker. Resolve the report row
+// into a canonical contract first, then find the independent Angel feed token.
+export function mapKotakPositionToAngelFeed(position, instruments) {
+  return mapPositionToAngelFeed(position, instruments, 'kotak');
+}
+
+export function mapZerodhaPositionToAngelFeed(position, instruments) {
+  return mapPositionToAngelFeed(position, instruments, 'zerodha');
 }
 

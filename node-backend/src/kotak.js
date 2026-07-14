@@ -199,13 +199,34 @@ async function requestReport(input, path, { method = 'GET', jData } = {}) {
     }
   }
 
+  // "No data" is an EMPTY BOOK, not a failure. Kotak answers an account with no
+  // positions (or no orders, or no trades) with HTTP 200 and
+  // {stCode:5203, errMsg:"No Data", stat:"Not_Ok"} - and treating that as an
+  // error meant a flat account could not read its own books at all: Get
+  // Positions, Order Book, Trade Book and the position sync all failed on it.
+  // An empty book reads back as an empty list, which is what it is.
+  if (res.ok && isNoDataResponse(out)) {
+    return { raw: { ...out, data: [] }, session: { ...session, lastUsedAt: new Date().toISOString() } };
+  }
+
+  // Kotak names its error message `errMsg`; reading `emsg` meant every real
+  // failure surfaced as the useless "Kotak HTTP 200".
+  const message = out?.errMsg || out?.emsg || out?.message || out?.desc;
+
   if (!res.ok || String(out?.stat || '').toLowerCase() === 'not_ok') {
-    throw new Error(out?.emsg || out?.message || `Kotak HTTP ${res.status}`);
+    throw new Error(message || `Kotak HTTP ${res.status}`);
   }
   if (out?.stat && String(out.stat).toLowerCase() !== 'ok') {
-    throw new Error(out?.emsg || out?.message || `Kotak request failed (${out.stat})`);
+    throw new Error(message || `Kotak request failed (${out.stat})`);
   }
   return { raw: out, session: { ...session, lastUsedAt: new Date().toISOString() } };
+}
+
+const NO_DATA_CODE = 5203;
+
+function isNoDataResponse(out) {
+  if (Number(out?.stCode) === NO_DATA_CODE) return true;
+  return /^\s*no\s*data\s*$/i.test(String(out?.errMsg || out?.emsg || ''));
 }
 
 function numberOf(value) {

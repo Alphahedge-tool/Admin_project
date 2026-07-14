@@ -21,6 +21,7 @@ import {
 } from '@mui/material'
 import DataTable from '../components/common/DataTable'
 import { apiGet, apiPost } from '../config/api'
+import { refreshBrokerAccounts } from '../feedmaster/angelSessionStore'
 import { Settings } from 'lucide-react'
 import Tooltip from '@mui/material/Tooltip'
 
@@ -179,8 +180,6 @@ function UsersPage() {
     if (!form.mobile.trim()) e.mobile = 'Mobile required'
     else if (!mobileRegex.test(form.mobile)) e.mobile = 'Mobile must be 10 digits'
 
-    if (!form.group_name) e.group_name = 'Select a group'
-
     if (!form.segments.mf && !form.segments.equity && !form.segments.fno) {
       e.segments = 'Select at least one segment'
     }
@@ -249,7 +248,7 @@ const handleDelete = (row) => {
         username: form.username,
         email: form.email,
         mobile: form.mobile,
-        group_name: form.group_name,
+        group_name: form.group_name || null,
         segment_mf: form.segments.mf,
         segment_equity: form.segments.equity,
         segment_fno: form.segments.fno,
@@ -267,6 +266,9 @@ const handleDelete = (row) => {
       setEditingUser(null)
       loadUsers()
       resetForm()
+      // Keep the session store's user list in step, so the new user is selectable
+      // on the Trade Panel and Feedmaster without a reload.
+      refreshBrokerAccounts().catch(() => {})
     } catch (err) {
       setApiError(err.message)
     } finally {
@@ -338,17 +340,18 @@ const handleDelete = (row) => {
             value={form.mobile} onChange={handleChange('mobile')}
             error={!!errors.mobile} helperText={errors.mobile}
           />
-          <FormControl fullWidth margin="normal" error={!!errors.group_name}>
-            <InputLabel>Group</InputLabel>
+          <FormControl fullWidth margin="normal">
+            <InputLabel shrink>Group (optional)</InputLabel>
             <Select
+              displayEmpty
               value={form.group_name}
-              label="Group"
+              label="Group (optional)"
               onChange={handleChange('group_name')}
               disabled={groupsLoading}
               renderValue={(selected) => (
                 selected
                   ? <GroupOptionChip label={selected} />
-                  : <Typography color="text.secondary">Select group</Typography>
+                  : <Typography color="text.secondary">No group</Typography>
               )}
               MenuProps={{
                 PaperProps: {
@@ -399,8 +402,10 @@ const handleDelete = (row) => {
                 }
               }}
             >
-              <MenuItem value="" disabled>
-                {groupsLoading ? 'Loading groups...' : 'Select group'}
+              <MenuItem value="">
+                <Typography color="text.secondary" sx={{ fontSize: '0.85rem', fontWeight: 600 }}>
+                  {groupsLoading ? 'Loading groups...' : 'No group'}
+                </Typography>
               </MenuItem>
               {groups.map((group) => (
                 <MenuItem key={group.id} value={group.name}>
@@ -410,11 +415,6 @@ const handleDelete = (row) => {
                 </MenuItem>
               ))}
             </Select>
-            {errors.group_name && (
-              <Typography color="error" variant="caption" sx={{ mt: 0.5, ml: 1.75 }}>
-                {errors.group_name}
-              </Typography>
-            )}
           </FormControl>
 
           <Typography mt={2} fontWeight={500}>Segments</Typography>
@@ -458,6 +458,7 @@ const handleDelete = (row) => {
             await apiPost('/users/delete.php', { id: deleteUser.id })
             setDeleteUser(null)
             loadUsers()
+            refreshBrokerAccounts().catch(() => {})
           }}>
             Delete
           </Button>

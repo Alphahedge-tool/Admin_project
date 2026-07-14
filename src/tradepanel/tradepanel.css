@@ -2647,31 +2647,70 @@ select { min-width: 96px; }
   color: #536179;
 }
 .strategy-exit-price {
-  min-height: 23px;
+  min-height: 22px;
+  max-width: 100%;
   border-radius: 999px;
-  padding: 0 9px 0 5px;
+  padding: 0 7px 0 4px;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
+  gap: 4px;
   border: 1px solid #cbd5e1;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   color: #334155;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .strategy-exit-price span {
-  min-height: 16px;
+  min-height: 15px;
+  flex: 0 0 auto;
   border-radius: 999px;
-  padding: 0 6px;
+  padding: 0 5px;
   display: inline-flex;
   align-items: center;
   background: #e2e8f0;
   color: #475569;
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   font-weight: 950;
+  letter-spacing: .02em;
   text-transform: uppercase;
+}
+
+/* ── Strategy legs table: give every column the room it actually needs ──────
+   The table is table-layout: fixed, so a column cannot grow to fit its content.
+   A CLOSED leg swaps the plain LTP number for an "Exit <price>" pill, which is
+   markedly wider - it did not fit the LTP column, spilled left over the Sell Avg
+   cell and clipped the number underneath it ("27.8(", "154.!"). Only closed rows
+   showed it, which is exactly what made it look like an overlap rather than a
+   sizing problem.
+
+   Widths are declared here instead of letting seven columns split the panel
+   evenly: the symbol column is the elastic one (it truncates, and carries a
+   title tooltip with the full symbol), while the money columns - LTP above all -
+   get enough width to hold what goes in them without wrapping. */
+.strategy-legs-table th:nth-child(1),
+.strategy-legs-table td:nth-child(1) { width: 33%; }
+.strategy-legs-table th:nth-child(2),
+.strategy-legs-table td:nth-child(2) { width: 12%; }
+.strategy-legs-table th:nth-child(3),
+.strategy-legs-table td:nth-child(3) { width: 9%; }
+.strategy-legs-table th:nth-child(4),
+.strategy-legs-table td:nth-child(4) { width: 10.5%; }
+.strategy-legs-table th:nth-child(5),
+.strategy-legs-table td:nth-child(5) { width: 10.5%; }
+.strategy-legs-table th:nth-child(6),
+.strategy-legs-table td:nth-child(6) { width: 13%; }
+.strategy-legs-table th:nth-child(7),
+.strategy-legs-table td:nth-child(7) { width: 12%; }
+
+/* The symbol line carries a lot of tags. It is the column that gives way when
+   the panel is narrow - truncated on one line, never wrapped onto a second. */
+.strategy-legs-table td:nth-child(1) .position-symbol-line {
+  min-width: 0;
+  overflow: hidden;
+  flex-wrap: nowrap;
 }
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Admin account bar (Trade Panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -3592,8 +3631,20 @@ select { min-width: 96px; }
    rows are subgrid, so re-templating the container cascades to every row. */
 .client-detail-panel .compact-legs {
   /* The contract line needs the room, so give it a wide floor and the lion's
-     share of the slack; the numeric columns only need enough for their values. */
-  grid-template-columns: 20px minmax(300px, 3fr) repeat(4, minmax(50px, 0.8fr)) minmax(78px, 1fr);
+     share of the slack; the numeric columns only need enough for their values.
+
+     LTP gets a track of its OWN rather than sharing the narrow one with Qty/Buy/
+     Sell. A closed leg shows an "Exit <price>" pill there instead of a bare
+     number, and a 50px floor could not hold it: the pill spilled left out of its
+     cell and painted over the Sell Avg value beside it, which is why only the
+     widest exits (154.54 against Exit 186.50) collided while the short ones fit.
+     The floor below holds the widest pill outright. */
+  grid-template-columns:
+    20px
+    minmax(220px, 3fr)
+    repeat(3, minmax(54px, 0.8fr))
+    minmax(96px, 1fr)
+    minmax(84px, 1fr);
   column-gap: 8px;
   padding: 0 12px;
 }
@@ -3675,6 +3726,13 @@ select { min-width: 96px; }
 /* Make the live LTP pop as a subtle chip so it's easy to read at a glance */
 .compact-leg-ltp {
   justify-self: end;
+  /* Whatever happens to the layout, this cell keeps its content to itself: a
+     grid item's default min-width is its content, so an over-wide exit pill
+     would otherwise push out of the cell and cover the Sell Avg value rather
+     than being contained. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 .compact-leg-ltp .position-price.ltp {
   width: auto;
@@ -5350,6 +5408,45 @@ select { min-width: 96px; }
 .sync-log-wrap {
   flex: 0 0 auto;
   max-height: 260px;
+}
+
+/* ── Sync Net Positions: the view scrolls, not just a table ────────────────
+   Every other Trade Panel screen is one table inside a fixed-height shell, so
+   .positions-table-wrap takes the leftover height (flex: 1) and scrolls inside
+   itself while the shell stays put. Sync is not that shape: it stacks four full
+   sections - progress, result, log, and the saved strategies - which together
+   run taller than the shell. With the shell clipping (overflow: hidden) and no
+   scroller of its own, everything past the fold was rendered but unreachable:
+   the Saved Strategies were simply not scrollable to.
+
+   So this view scrolls as a column, and its sections stop fighting over the
+   height: each takes the room it needs and the column scrolls past them. */
+.trade-panel .positions-view.sync-view {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Height is no longer scarce here, so the result table must not stretch to
+   swallow it - that is what pushed the strategies off screen. */
+.trade-panel .positions-view.sync-view .positions-table-wrap {
+  flex: 0 0 auto;
+}
+
+/* The controls stay reachable while reading the strategies below. */
+.trade-panel .positions-view.sync-view .positions-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  padding: 4px 0 8px;
+  background: var(--ao-bg);
+}
+
+/* A grid child in a scrolling column will not shrink below its content, which
+   would reintroduce the clipping this rule set exists to remove. */
+.trade-panel .positions-view.sync-view .strategy-list {
+  flex: 0 0 auto;
+  min-height: 0;
+  padding-bottom: 12px;
 }
 
 /* ── Sync / Unsync progress ───────────────────────────────────────────────

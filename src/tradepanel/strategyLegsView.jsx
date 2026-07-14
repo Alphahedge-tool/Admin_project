@@ -1,5 +1,5 @@
 import { Check } from 'lucide-react'
-import { compactProductTag, parseTradingSymbol } from './symbolParse'
+import { compactProductTag, contractMeta } from './symbolParse'
 import { legIsClosed, money } from './legFormat'
 
 // Shared strategy-leg rendering used by both Sync Net Positions and the Client
@@ -68,35 +68,11 @@ function LegCheckbox({ leg, selection }) {
   )
 }
 
+// The broker's own strike and expiry, falling back to the symbol only when it has
+// not told us. Parsing the symbol first was what put a strike of 100 on a Kotak
+// monthly leg (NIFTY26JUL24100PE) whose strike is 24100 - see contractMeta().
 function legContractMeta(leg) {
-  const parsed = parseTradingSymbol(leg.trading_symbol)
-  const explicitStock = String(leg.stock_name || leg.symbol_name || '').trim()
-  const explicitExpiry = formatExpiry(leg.expiry || leg.expiry_date || leg.expirydate || leg.expiration_date)
-
-  return {
-    ...parsed,
-    root: explicitStock || parsed.root,
-    expiry: parsed.expiry || explicitExpiry,
-  }
-}
-
-function formatExpiry(value) {
-  const text = String(value || '').trim()
-  const compact = text.match(/^(\d{2})([A-Za-z]{3})(\d{4})$/)
-  if (compact) {
-    const [, day, month, year] = compact
-    return `${day} ${month[0].toUpperCase()}${month.slice(1).toLowerCase()} ${year}`
-  }
-
-  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (iso) {
-    const [, year, month, day] = iso
-    const monthName = new Date(Number(year), Number(month) - 1, Number(day))
-      .toLocaleDateString('en-IN', { month: 'short' })
-    return `${day} ${monthName} ${year}`
-  }
-
-  return text
+  return contractMeta(leg)
 }
 
 export function CompactLegs({ legs, selection }) {

@@ -1,6 +1,7 @@
-// Single source of truth for every Angel One broker session in the admin app.
+// Single source of truth for every broker session in the admin app - Angel One
+// and Kotak Neo, the two brokers that can log in headlessly.
 //
-// The app boots by logging in EVERY configured Angel account once (see
+// The app boots by logging in EVERY configured account once (see
 // bootstrapAngelSessions, driven by StartupGate) and saving each token, so no
 // page ever has to log in on its own - a page just asks for the hydrated client
 // of a config id and gets one that already carries a live session.
@@ -12,46 +13,86 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { apiGet } from '../config/api'
 
+// Brokers that can log in headlessly, so the startup screen can sign them in.
 export const BROKERS = [
   { id: 'angelone', label: 'Angel One' },
+  { id: 'kotak', label: 'Kotak Neo' },
 ]
 
-const SESSION_PREFIX = 'angel_session_'
-const AUTO_LOGIN_URL = '/api/angel/auto-login'
+// The shared live feed runs on Angel's websocket, so a Kotak account - logged in
+// or not - cannot be the Feedmaster. Only these are offered as feed sources.
+export const FEED_BROKERS = BROKERS.filter((broker) => broker.id === 'angelone')
+
+const SESSION_PREFIX = { angelone: 'angel_session_', kotak: 'kotak_session_' }
+const AUTO_LOGIN_URL = { angelone: '/api/angel/auto-login', kotak: '/api/kotak/auto-login' }
 const LOGIN_CONCURRENCY = 3
 const CONFIG_FETCH_CONCURRENCY = 4
 
 // Account status: 'pending' | 'logging-in' | 'live' | 'failed'
 // Store phase:    'idle' | 'loading' | 'logging-in' | 'ready'
 
+// The Trade Panel's book pages hydrate Kotak credentials themselves and listen
+// for this, so a token saved by the startup login reaches them too.
+export const KOTAK_SESSION_EVENT = 'kotak-session-changed'
+
 export function isAngelBroker(name = '') {
   return String(name).toLowerCase().replace(/\s/g, '').includes('angel')
 }
 
-export function sessionKey(configId) {
-  return `${SESSION_PREFIX}${configId}`
+export function isKotakBroker(name = '') {
+  return String(name).toLowerCase().replace(/\s/g, '').includes('kotak')
+}
+
+// Which broker a config row belongs to. A broker with no headless login (a
+// Zerodha row, say) resolves to '' and is left out of the store entirely -
+// there is nothing the startup screen could do with it.
+export function brokerIdOf(brokerName = '') {
+  if (isKotakBroker(brokerName)) return 'kotak'
+  if (isAngelBroker(brokerName)) return 'angelone'
+  return ''
+}
+
+export function sessionKey(configId, broker = 'angelone') {
+  return `${SESSION_PREFIX[broker] || SESSION_PREFIX.angelone}${configId}`
+}
+
+// Angel hands back a jwtToken. Kotak hands back a tradeToken that is only usable
+// alongside the sid and baseUrl it came with, so "is there a session?" is a
+// different question per broker.
+export function hasToken(broker, session) {
+  if (broker === 'kotak') return !!(session?.tradeToken && session.sid && session.baseUrl)
+  return !!session?.jwtToken
 }
 
 /* ── saved tokens (localStorage) ──────────────────────────────────────────── */
 
-export function getSavedSession(configId) {
+export function getSavedSession(configId, broker = 'angelone') {
   if (!configId) return null
   try {
-    return JSON.parse(localStorage.getItem(sessionKey(configId))) || null
+    return JSON.parse(localStorage.getItem(sessionKey(configId, broker))) || null
   } catch {
     return null
   }
 }
 
-export function saveSession(configId, session) {
-  if (!configId || !session?.jwtToken) return
-  localStorage.setItem(sessionKey(configId), JSON.stringify(session))
+// `broker` is only needed for an account the store has not loaded yet; for one
+// it knows, its own broker wins.
+export function saveSession(configId, session, broker) {
+  const resolved = getAccount(configId)?.broker || broker || 'angelone'
+  if (!configId || !hasToken(resolved, session)) return
+  localStorage.setItem(sessionKey(configId, resolved), JSON.stringify(session))
   patchAccount(configId, { session, status: 'live', issue: null })
+  if (resolved === 'kotak') {
+    window.dispatchEvent(new CustomEvent(KOTAK_SESSION_EVENT, {
+      detail: { configId: String(configId), session },
+    }))
+  }
 }
 
-export function clearSession(configId) {
+export function clearSession(configId, broker) {
   if (!configId) return
-  localStorage.removeItem(sessionKey(configId))
+  const resolved = getAccount(configId)?.broker || broker || 'angelone'
+  localStorage.removeItem(sessionKey(configId, resolved))
   patchAccount(configId, { session: null, status: 'pending' })
 }
 
@@ -100,10 +141,33 @@ export function getAccount(configId) {
   return state.accounts.find((account) => account.configId === id) || null
 }
 
-// The client payload every /api/angel/* endpoint expects, carrying whatever
-// session this account currently holds.
+// The client payload the broker's own /api/<broker>/* endpoints expect, carrying
+// whatever session this account currently holds. The two brokers name the same
+// columns differently - Angel's client code is Kotak's UCC, Angel's PIN is
+// Kotak's MPIN - so each gets the shape its backend reads.
 export function clientFromAccount(account) {
   if (!account) return null
+  const broker = account.broker || 'angelone'
+  const session = account.session || null
+
+  if (broker === 'kotak') {
+    return {
+      enabled: true,
+      broker: 'kotak',
+      configId: account.configId,
+      userId: account.userId,
+      alias: account.alias,
+      clientCode: account.accountId,
+      ucc: account.accountId,
+      accessToken: account.accessToken,
+      mobileNumber: account.mobileNumber,
+      mpin: account.pin,
+      totpSecret: account.totpSecret,
+      loggedIn: hasToken('kotak', session),
+      session,
+    }
+  }
+
   return {
     enabled: true,
     broker: 'angelone',
@@ -114,8 +178,8 @@ export function clientFromAccount(account) {
     apiKey: account.apiKey,
     pin: account.pin,
     totpSecret: account.totpSecret,
-    loggedIn: !!account.session?.jwtToken,
-    session: account.session || null,
+    loggedIn: hasToken('angelone', session),
+    session,
   }
 }
 
@@ -151,9 +215,9 @@ const inflight = new Map() // configId -> Promise<session>
 export async function ensureSession(configId, { force = false } = {}) {
   const id = String(configId || '')
   const account = getAccount(id)
-  if (!account) throw new Error('This Angel account is not loaded yet')
+  if (!account) throw new Error('This broker account is not loaded yet')
 
-  if (!force && account.status === 'live' && account.session?.jwtToken) {
+  if (!force && account.status === 'live' && hasToken(account.broker, account.session)) {
     return account.session
   }
   const pending = inflight.get(id)
@@ -166,6 +230,7 @@ export async function ensureSession(configId, { force = false } = {}) {
 
 async function performLogin(configId, force) {
   const account = getAccount(configId)
+  const broker = account?.broker || 'angelone'
   const missing = missingCredentials(account)
   if (missing.length) {
     const issue = {
@@ -183,15 +248,15 @@ async function performLogin(configId, force) {
   // instead of re-validating a token we already know is dead.
   const client = clientFromAccount({
     ...account,
-    session: force ? null : (account.session || getSavedSession(configId)),
+    session: force ? null : (account.session || getSavedSession(configId, broker)),
   })
 
   try {
-    const body = await postAutoLogin(client)
+    const body = await postAutoLogin(broker, client)
     const session = body.session || null
-    if (!session?.jwtToken) throw new Error('Angel returned no token')
+    if (!hasToken(broker, session)) throw new Error(`${brokerLabel(broker)} returned no token`)
 
-    localStorage.setItem(sessionKey(configId), JSON.stringify(session))
+    localStorage.setItem(sessionKey(configId, broker), JSON.stringify(session))
     patchAccount(configId, {
       session,
       status: 'live',
@@ -201,6 +266,11 @@ async function performLogin(configId, force) {
         ? 'Saved token still valid'
         : 'Signed in - token saved',
     })
+    if (broker === 'kotak') {
+      window.dispatchEvent(new CustomEvent(KOTAK_SESSION_EVENT, {
+        detail: { configId: String(configId), session },
+      }))
+    }
     return session
   } catch (error) {
     const issue = classifyLoginError(error)
@@ -213,16 +283,20 @@ async function performLogin(configId, force) {
   }
 }
 
-async function postAutoLogin(client) {
+function brokerLabel(broker) {
+  return BROKERS.find((item) => item.id === broker)?.label || 'The broker'
+}
+
+async function postAutoLogin(broker, client) {
   let response
   try {
-    response = await fetch(AUTO_LOGIN_URL, {
+    response = await fetch(AUTO_LOGIN_URL[broker] || AUTO_LOGIN_URL.angelone, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ client }),
     })
   } catch {
-    throw new Error('Angel backend not reachable')
+    throw new Error('Broker backend not reachable')
   }
 
   const body = await response.json().catch(() => ({}))
@@ -236,16 +310,30 @@ async function postAutoLogin(client) {
 // config id. Anything with a configId is routed through the shared, deduped
 // login so it can't start a second TOTP login behind the store's back.
 export async function loginAngelClient(client) {
+  const broker = brokerIdOf(client?.broker) || 'angelone'
   if (client?.configId) {
-    const session = await ensureSession(client.configId, { force: !client.session?.jwtToken })
+    const session = await ensureSession(client.configId, {
+      force: !hasToken(broker, client.session),
+    })
     return { status: true, session, sessionSource: 'store' }
   }
-  return postAutoLogin(client)
+  return postAutoLogin(broker, client)
 }
 
+// Named in the broker's own words: Kotak has no "API Key", Angel has no "MPIN".
 export function missingCredentials(account) {
   if (!account) return ['Client Code', 'API Key', 'PIN', 'TOTP Secret']
+
   const missing = []
+  if (account.broker === 'kotak') {
+    if (!account.accountId) missing.push('UCC')
+    if (!account.accessToken) missing.push('Access Token')
+    if (!account.mobileNumber) missing.push('Mobile Number')
+    if (!account.pin) missing.push('MPIN')
+    if (!account.totpSecret) missing.push('TOTP Secret')
+    return missing
+  }
+
   if (!account.accountId) missing.push('Client Code')
   if (!account.apiKey) missing.push('API Key')
   if (!account.pin) missing.push('PIN')
@@ -262,15 +350,17 @@ export function classifyLoginError(error) {
   if (/not reachable|failed to fetch|networkerror|load failed|econnrefused/i.test(message)) {
     return {
       code: 'network',
-      title: 'Angel backend not reachable',
-      hint: 'The Node backend on :3001 is not running. Start it (npm start in node-backend) and retry.',
+      title: 'Broker backend not reachable',
+      hint: 'The broker backend is not running. Start it and retry.',
     }
   }
-  if (/required|missing/i.test(message)) {
+  // Kotak names what it wants as "Kotak login needs UCC, MPIN"; Angel says
+  // "required"/"missing". Both mean: a credential is not filled in.
+  if (/required|missing|needs/i.test(message)) {
     return {
       code: 'credentials',
       title: 'Credentials incomplete',
-      hint: 'Fill in Client Code, API Key, PIN and TOTP Secret in Users -> Broker Configuration.',
+      hint: 'Fill in the credentials this broker needs in Users -> Broker Configuration.',
     }
   }
   if (/totp|AB1050/i.test(message)) {
@@ -285,6 +375,14 @@ export function classifyLoginError(error) {
       code: 'pin',
       title: 'PIN rejected',
       hint: 'Angel refused the PIN for this client code. Re-enter the login PIN in Broker Configuration.',
+    }
+  }
+  // Kotak calls the access token a "consumer key" when it rejects one.
+  if (/consumer key|access token/i.test(message)) {
+    return {
+      code: 'accesstoken',
+      title: 'Access Token rejected',
+      hint: 'The Kotak access token is wrong or expired. Re-copy it from the Kotak Neo API portal into Broker Configuration.',
     }
   }
   if (/api ?key|smartapi key|AB1010|invalid key/i.test(message)) {
@@ -355,28 +453,75 @@ export function bootstrapAngelSessions({ force = false } = {}) {
 async function runBootstrap() {
   setState({ phase: 'loading', error: '' })
 
-  const users = (await apiGet('/users/list.php')).data || []
-  const accounts = await loadAngelAccounts(users)
-
+  const { users, accounts } = await loadBrokerAccounts()
   setState({ phase: 'logging-in', users, accounts })
 
-  await runPool(
-    accounts.map((account) => () => ensureSession(account.configId).catch(() => {})),
-    LOGIN_CONCURRENCY,
-  )
-
+  await loginPending(accounts)
   setState({ phase: 'ready' })
 }
 
-// Every Angel broker config of every user, hydrated with full credentials and
-// whatever token is already saved for it.
-async function loadAngelAccounts(users) {
+// Re-reads users and their broker configs, keeping every account already logged
+// in exactly as it is, and logs in whatever is new. This is what makes a user (or
+// a broker config) added inside the app show up without a page reload - the
+// account list is otherwise only ever read once, at boot.
+export async function refreshBrokerAccounts() {
+  const { users, accounts } = await loadBrokerAccounts()
+
+  // Carry the session/status of accounts we already know across, so a refresh
+  // never re-logs in an account that is already signed in. An account whose
+  // credentials changed is deliberately NOT carried across: it stays 'pending'
+  // and is signed in again below, which is what makes "fix the API key, save"
+  // recover a failed account on the spot.
+  const known = new Map(state.accounts.map((account) => [account.configId, account]))
+  const merged = accounts.map((account) => {
+    const existing = known.get(account.configId)
+    if (!existing || credentialsOf(existing) !== credentialsOf(account)) return account
+    return {
+      ...account,
+      session: existing.session,
+      status: existing.status,
+      message: existing.message,
+      issue: existing.issue,
+      margin: existing.margin,
+    }
+  })
+
+  setState({ users, accounts: merged, error: '' })
+  await loginPending(merged)
+  return merged
+}
+
+function credentialsOf(account) {
+  return [
+    account.broker,
+    account.accountId,
+    account.apiKey,
+    account.pin,
+    account.totpSecret,
+    account.accessToken,
+    account.mobileNumber,
+  ].join('|')
+}
+
+function loginPending(accounts) {
+  const pending = accounts.filter((account) => account.status === 'pending')
+  return runPool(
+    pending.map((account) => () => ensureSession(account.configId).catch(() => {})),
+    LOGIN_CONCURRENCY,
+  )
+}
+
+// Every auto-loginnable broker config of every user, hydrated with full
+// credentials and whatever token is already saved for it.
+async function loadBrokerAccounts() {
+  const users = (await apiGet('/users/list.php')).data || []
+
   const perUser = await Promise.all(users.map(async (user) => {
     try {
       const res = await apiGet(`/users/broker-config/list.php?user_id=${user.id}`)
       return (res.data || [])
-        .filter((config) => isAngelBroker(config.broker_name))
-        .map((config) => ({ config, user }))
+        .map((config) => ({ config, user, broker: brokerIdOf(config.broker_name) }))
+        .filter((row) => row.broker)
     } catch {
       return []
     }
@@ -384,13 +529,13 @@ async function loadAngelAccounts(users) {
 
   const rows = perUser.flat()
   const accounts = await runPool(
-    rows.map(({ config, user }) => () => hydrateAccount(config, user)),
+    rows.map(({ config, user, broker }) => () => hydrateAccount(config, user, broker)),
     CONFIG_FETCH_CONCURRENCY,
   )
-  return accounts.filter(Boolean)
+  return { users, accounts: accounts.filter(Boolean) }
 }
 
-async function hydrateAccount(config, user) {
+async function hydrateAccount(config, user, broker) {
   const configId = String(config.id)
   let full = config
   try {
@@ -404,18 +549,21 @@ async function hydrateAccount(config, user) {
   const username = user?.username
     || `${user?.first_name || ''} ${user?.last_name || ''}`.trim()
     || `User ${user?.id}`
-  const session = getSavedSession(configId)
+  const session = getSavedSession(configId, broker)
 
   return {
     configId,
+    broker,
     userId: String(user?.id || full.user_id || ''),
     username,
-    brokerName: full.broker_name || 'Angel One',
+    brokerName: full.broker_name || brokerLabel(broker),
     accountId: full.account_id || '',
     alias: `${username} - ${full.account_id || configId}`,
     apiKey: full.app_key || '',
     pin: full.pin || '',
     totpSecret: full.totp_secret || '',
+    accessToken: full.app_secret || '',
+    mobileNumber: full.phone || '',
     session,
     status: 'pending',
     message: '',

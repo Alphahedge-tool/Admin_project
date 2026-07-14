@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { BrokerInstrumentStore } from './store.js';
-import { mapKotakPositionToAngelFeed } from './positionRouter.js';
+import { mapKotakPositionToAngelFeed, mapZerodhaPositionToAngelFeed } from './positionRouter.js';
 
-function resolver(kotak = [], angel = []) {
+function resolver(kotak = [], angel = [], zerodha = []) {
   const store = new BrokerInstrumentStore('C:/tmp/admin-project-position-router-test-cache');
   store.set('kotak', kotak);
   store.set('angel', angel);
+  if (zerodha.length) store.set('zerodha', zerodha);
   return store;
 }
 
@@ -90,5 +91,30 @@ test('an unmatched Angel contract never replaces the Kotak token', () => {
   assert.equal(row.symboltoken, 'K-702');
   assert.equal(row.masterFeedToken, '');
   assert.equal(row.masterFeedMapped, false);
+});
+
+test('Zerodha positions resolve to Angel feed tokens for live LTP updates', () => {
+  const instruments = resolver(
+    [],
+    [{
+      symbol: 'NIFTY30JUL2625000CE', exchange: 'NFO', brsymbol: 'NIFTY30JUL2625000CE',
+      brexchange: 'NFO', token: 'A-900', name: 'NIFTY', expiry: '2026-07-30',
+      strike: 25000, optionType: 'CE', instrumentType: 'CE', lotsize: 75,
+    }],
+    [{
+      symbol: 'NIFTY30JUL2625000CE', exchange: 'NFO', brsymbol: 'NIFTY30JUL2625000CE',
+      brexchange: 'NFO', token: 'Z-700', name: 'NIFTY', expiry: '2026-07-30',
+      strike: 25000, optionType: 'CE', instrumentType: 'OPTIDX', lotsize: 75,
+    }],
+  );
+  const row = mapZerodhaPositionToAngelFeed({
+    tradingsymbol: 'NIFTY30JUL2625000CE', exchange: 'NFO', instrument_token: 'Z-700',
+  }, instruments);
+
+  assert.equal(row.symboltoken, 'Z-700');
+  assert.equal(row.brokerToken, 'Z-700');
+  assert.equal(row.masterFeedToken, 'A-900');
+  assert.equal(row.masterFeedBroker, 'angelone');
+  assert.equal(row.masterFeedMapped, true);
 });
 

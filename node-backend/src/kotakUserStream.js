@@ -107,6 +107,15 @@ export class KotakUserStream {
       // Kotak explicitly requires a raw JavaScript-object-like string here,
       // not JSON.stringify output.
       ws.send(`{type:cn,Authorization:${this.session.tradeToken},Sid:${this.session.sid},src:WEB}`);
+
+      // Announce the open socket, exactly as Angel's order stream does. Kotak
+      // sends NOTHING once connected - no greeting, and no acknowledgement of the
+      // frame above that ever actually arrives - so the page had no event to go
+      // live on and sat on "Connecting" for the whole session against a stream
+      // that was perfectly healthy. A socket that failed to authenticate is
+      // closed by Kotak, and #down() reports that below.
+      this.emit('status', { status: true, connected: true, message: 'Kotak order/position stream connected' });
+
       this.heartbeat = setInterval(() => {
         if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
         try {

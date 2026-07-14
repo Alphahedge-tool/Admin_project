@@ -6,18 +6,19 @@ import { ArrowUpDown, Check, Filter, Info, Layers, Radio, RefreshCw, Search, X }
 import { apiGet, apiPost } from '../config/api';
 import { useFeedMasterAccount } from '../feedmaster/feedMasterStore';
 import {
-  classifyLoginError, ensureSession, isAngelBroker, isAuthError, isRateLimited,
+  classifyLoginError, isAngelBroker, isAuthError, isRateLimited,
 } from '../feedmaster/angelSessionStore';
 import {
   ensureBookSession, fetchBrokerPositions, hasBookSession, isBookBroker, isKotakBroker,
   saveBookSession, useBrokerBookClient,
 } from './brokerBookClient';
-import { releaseFeedTokens } from './feedTokens';
 import { orderIsFill, useFillRefresh, useOrderUpdates } from './orderUpdates';
+import { useSharedTradeAccount, useSignedInAccounts } from './accountScope';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
-import { compactProductTag, parseTradingSymbol } from './symbolParse';
+import { compactProductTag, contractMeta } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
 import { useKotakMarketFeed } from './useKotakMarketFeed';
+import { useLiveLegFeed } from './useLiveLegFeed';
 import './tradepanel.css';
 
 const POSITION_COLUMNS = ['stock', 'product', 'netQty', 'buyAvg', 'sellAvg', 'ltp', 'pnl'];
@@ -55,12 +56,21 @@ function pnlOf(row) {
 // Marks an open position to market from a live feed tick: recomputes ltp/pnl
 // from the tick instead of the last REST snapshot. A flat (netqty 0) position
 // has nothing to mark - its pnl is already fully realised.
+// The token this row is marked to market with on the Angel Feedmaster feed. A
+// Kotak row carries the Angel token the backend's position router resolved for
+// it (masterFeedToken); an Angel row simply IS its own token.
+//
+// The router writes an empty STRING - not null - when it could not map a Kotak
+// contract to an Angel one. `??` only falls through on null/undefined, so it
+// handed that empty string straight back as the token and the row was dropped
+// from the feed entirely. `||` is what was meant.
 function angelMasterReference(row, selectedIsAngel) {
   const explicitBroker = String(row.masterFeedBroker || '').toLowerCase();
   if (explicitBroker && explicitBroker !== 'angel' && explicitBroker !== 'angelone') return null;
 
-  const explicitToken = row.masterFeedToken ?? row.feedMasterToken;
-  const token = explicitToken ?? (selectedIsAngel && !row.brokerToken ? row.symboltoken : '');
+  const token = row.masterFeedToken
+    || row.feedMasterToken
+    || (selectedIsAngel && !row.brokerToken ? row.symboltoken : '');
   if (token == null || token === '') return null;
   return {
     token: String(token),
@@ -73,9 +83,6 @@ function angelMasterReference(row, selectedIsAngel) {
 }
 
 function withLivePositionTick(row, liveTicks, selectedIsAngel) {
-  const qty = Number(row.netqty || 0);
-  if (qty === 0) return row;
-
   const master = angelMasterReference(row, selectedIsAngel);
   const brokerToken = row.brokerToken ?? row.symboltoken;
   const token = brokerToken != null ? String(brokerToken) : '';
@@ -86,6 +93,13 @@ function withLivePositionTick(row, liveTicks, selectedIsAngel) {
   )) || (token ? liveTicks[`${segment}|${token}`] : null)
     || (!row.brokerToken && token ? liveTicks[token] : null);
   if (!tick || !(tick.ltp > 0)) return row;
+
+  // A flat position (net qty 0) is squared off, so its P&L is already realised
+  // and no longer moves with the price - but its LTP does, and that is what the
+  // table shows. Bailing out on qty === 0 was what froze the price column for an
+  // account whose positions are all closed.
+  const qty = Number(row.netqty || 0);
+  if (qty === 0) return { ...row, ltp: tick.ltp, liveDir: tick.dir };
 
   const buy = positionBuyAvg(row);
   const sell = positionSellAvg(row);
@@ -126,6 +140,7 @@ export default function GetPositions() {
   const loadRef = useRef(null);
   const loadSeqRef = useRef(0);
 
+  const signedIn = useSignedInAccounts();
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedUser = users.find((user) => String(user.id) === String(userId));
   const selectedUserLabel = selectedUser
@@ -140,19 +155,15 @@ export default function GetPositions() {
   const {
     setting: feedMasterSetting,
     client: feedMasterClient,
-    handleSession: onFeedMasterSession,
   } = useFeedMasterAccount();
-  const angelMasterSelected = String(feedMasterSetting?.broker || feedMasterClient?.broker || '').toLowerCase() === 'angelone'
-    && Boolean(feedMasterSetting?.configId);
-  const [liveTicks, setLiveTicks] = useState({});
-  const [feedStatus, setFeedStatus] = useState('offline'); // 'offline' | 'connecting' | 'live'
-  const feedMasterClientRef = useRef(null);
-  const esRef = useRef(null);
-  const feedTokenSetRef = useRef(new Set());
-  const liveRef = useRef({});
-  const prevRef = useRef({});
-  const rafRef = useRef(0);
-  const dirtyRef = useRef(false);
+  // Is the Feedmaster an Angel account? This used to demand the saved setting's
+  // broker be the exact string 'angelone', so a Feedmaster saved as 'angel' (or
+  // by any older build) read as "not Angel", the feed key below collapsed to ''
+  // and Get Position subscribed NOTHING - frozen LTPs and an Offline pill, while
+  // Client Dashboard, which never made that check, fed the same account fine.
+  const angelMasterSelected = isAngelBroker(
+    feedMasterSetting?.broker || feedMasterClient?.broker || '',
+  ) && Boolean(feedMasterSetting?.configId || feedMasterClient?.configId);
 
   const strategyLegKeys = useMemo(
     () => buildStrategyLegKeySet(existingStrategies),
@@ -163,17 +174,16 @@ export default function GetPositions() {
     [rows, strategyLegKeys],
   );
 
-  useEffect(() => {
-    feedMasterClientRef.current = feedMasterClient;
-  }, [feedMasterClient]);
-
-  // Every currently open (non-flat) position's exchange|token - a flat
-  // position has nothing left to mark to market.
+  // Every position on the table, flat or not - the same rows Client Dashboard
+  // feeds. This used to skip flat (net qty 0) rows on the grounds that a squared
+  // off position has no P&L left to mark to market. True - but its PRICE still
+  // moves, and the table still shows it. On an account whose positions are all
+  // closed for the day that filter emptied the token list, so Get Position
+  // subscribed nothing at all and every LTP on screen sat frozen.
   const legFeedKey = useMemo(() => {
     if (!angelMasterSelected) return '';
     const seen = new Set();
     positionRows.forEach((row) => {
-      if (Number(row.netqty || 0) === 0) return;
       const master = angelMasterReference(row, selectedIsAngel);
       if (!master) return;
       seen.add(`${master.exchange || 'NFO'}|${master.token}`);
@@ -181,13 +191,22 @@ export default function GetPositions() {
     return [...seen].sort().join(',');
   }, [angelMasterSelected, positionRows, selectedIsAngel]);
 
+  // The same shared Feedmaster feed Client Dashboard runs on. Get Position used
+  // to carry its own copy of this plumbing - subscribe, SSE, tick batching - and
+  // that copy is what quietly stopped feeding. One hook, one code path, so the
+  // two pages can no longer disagree about whether the feed is up.
+  const { liveTicks, feedStatus } = useLiveLegFeed(legFeedKey, {
+    enabled: angelMasterSelected,
+    subscriber: 'get-positions',
+  });
+
   const kotakFeedItems = useMemo(() => {
     // The selected Feedmaster owns LTP routing. Never mix Kotak HSM ticks into
     // an Angel-master position set: numeric tokens are broker-specific and can
     // collide while referring to completely different contracts.
     if (!selectedIsKotak || angelMasterSelected) return [];
     return positionRows
-      .filter((row) => Number(row.netqty || 0) !== 0 && row.symboltoken)
+      .filter((row) => row.symboltoken)
       .map((row) => ({
         segment: row.feedExchange || row.brokerExchange,
         token: String(row.symboltoken),
@@ -201,141 +220,6 @@ export default function GetPositions() {
     subscriber: 'get-positions',
   });
 
-  // Keep the feed reconciled to exactly this position set, streaming ticks
-  // over the same Feedmaster SSE connection the rest of Trade Panel uses.
-  useEffect(() => {
-    let cancelled = false;
-
-    function scheduleFlush() {
-      dirtyRef.current = true;
-      if (rafRef.current) return;
-      rafRef.current = requestAnimationFrame(() => {
-        rafRef.current = 0;
-        if (!dirtyRef.current) return;
-        dirtyRef.current = false;
-        setLiveTicks({ ...liveRef.current });
-      });
-    }
-
-    async function syncFeedTokens() {
-      const feedClient = feedMasterClientRef.current;
-      if (!feedClient) {
-        feedTokenSetRef.current = new Set();
-        setFeedStatus('offline');
-        return;
-      }
-
-      let session = feedClient.session;
-      if (!session?.jwtToken || !session?.feedToken) {
-        // The Feedmaster was logged in at startup; this only covers a token
-        // that has since expired, and it is deduped across every page.
-        setFeedStatus('connecting');
-        try {
-          session = await ensureSession(feedClient.configId, { force: true });
-          if (session?.jwtToken) onFeedMasterSession?.(session);
-        } catch {
-          setFeedStatus('offline');
-          return;
-        }
-      }
-      if (cancelled || !session?.jwtToken || !session?.feedToken) {
-        setFeedStatus('offline');
-        return;
-      }
-
-      const items = (legFeedKey ? legFeedKey.split(',') : []).map((pair) => {
-        const [exchange, token] = pair.split('|');
-        return { exchange, token };
-      });
-      feedTokenSetRef.current = new Set(items.map((item) => String(item.token)));
-
-      if (!items.length) {
-        // Account/broker switches do not unmount this page, so explicitly hand
-        // the previous Angel token group back instead of leaking it forever.
-        await fetch('/api/angel/basket-tokens', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            credentials: {
-              jwtToken: session.jwtToken,
-              feedToken: session.feedToken,
-              apiKey: feedClient.apiKey,
-              clientCode: feedClient.clientCode,
-            },
-            items: [],
-            subscriber: 'get-positions',
-          }),
-        }).catch(() => {});
-        setFeedStatus('offline');
-        return;
-      }
-
-      try {
-        await fetch('/api/angel/basket-tokens', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            credentials: {
-              jwtToken: session.jwtToken,
-              feedToken: session.feedToken,
-              apiKey: feedClient.apiKey,
-              clientCode: feedClient.clientCode,
-            },
-            items,
-            subscriber: 'get-positions',
-          }),
-        });
-      } catch {
-        setFeedStatus('offline');
-        return;
-      }
-      if (cancelled) return;
-
-      let source = esRef.current;
-      if (!source || source.readyState === 2) {
-        setFeedStatus('connecting');
-        source = new EventSource('/api/angel/stream');
-        esRef.current = source;
-        source.addEventListener('status', (event) => {
-          try {
-            const info = JSON.parse(event.data);
-            setFeedStatus(info.connected ? 'live' : 'offline');
-          } catch {
-            // ignore malformed status payloads
-          }
-        });
-        source.onerror = () => setFeedStatus('offline');
-      } else {
-        setFeedStatus('live');
-      }
-
-      source.onmessage = (event) => {
-        let tick;
-        try { tick = JSON.parse(event.data); } catch { return; }
-        const token = String(tick.token);
-        if (!feedTokenSetRef.current.has(token)) return;
-        const prev = prevRef.current[token];
-        const dir = prev == null ? '' : tick.ltp > prev ? 'up' : tick.ltp < prev ? 'down' : '';
-        prevRef.current[token] = tick.ltp;
-        liveRef.current[token] = { ltp: tick.ltp, dir, at: event.timeStamp || performance.now() };
-        scheduleFlush();
-      };
-    }
-
-    syncFeedTokens();
-    return () => {
-      cancelled = true;
-    };
-  }, [legFeedKey, feedMasterClient, onFeedMasterSession]);
-
-  // Leaving Trade Panel hands this page's tokens back to the feed, so coming
-  // back re-syncs them as a fresh subscription (Angel only pushes a snapshot
-  // when a token is subscribed).
-  useEffect(() => () => {
-    esRef.current?.close();
-    releaseFeedTokens('get-positions');
-  }, []);
-
   const activeTicks = useMemo(
     () => (angelMasterSelected ? liveTicks : { ...kotakTicks, ...liveTicks }),
     [angelMasterSelected, kotakTicks, liveTicks],
@@ -345,21 +229,17 @@ export default function GetPositions() {
     [activeTicks, positionRows, selectedIsAngel],
   );
 
-  const openPositionCount = useMemo(
-    () => positionRows.filter((row) => Number(row.netqty || 0) !== 0).length,
-    [positionRows],
-  );
+  // What the pill's tooltip reports: how many of the rows on screen actually
+  // resolved to a feed token - which is exactly what got subscribed.
   const angelMappedPositionCount = useMemo(
-    () => positionRows.filter((row) => (
-      Number(row.netqty || 0) !== 0 && angelMasterReference(row, selectedIsAngel)
-    )).length,
+    () => positionRows.filter((row) => angelMasterReference(row, selectedIsAngel)).length,
     [positionRows, selectedIsAngel],
   );
   const positionFeedStatus = angelMasterSelected
     ? feedStatus
     : selectedIsKotak ? kotakFeedStatus : feedStatus;
   const positionFeedTitle = angelMasterSelected
-    ? `Angel Feedmaster: ${angelMappedPositionCount} of ${openPositionCount} open contracts mapped`
+    ? `Angel Feedmaster: ${angelMappedPositionCount} of ${positionRows.length} contracts mapped`
     : selectedIsKotak ? 'Live Kotak HSM market feed' : 'Live LTP feed (Feedmaster)';
 
   // Manual picks here should also become the shared Trade Panel selection.
@@ -377,6 +257,45 @@ export default function GetPositions() {
     setLoading(true);
     saveTradeAccount({ userId, configId: value });
   }, [userId]);
+
+  // Switching tabs keeps the same client: whatever account another Trade Panel
+  // page selected is adopted here too.
+  useSharedTradeAccount({
+    userId,
+    setUserId,
+    configId,
+    setConfigId,
+    configs,
+    onAdopt: () => setLoading(true),
+  });
+
+  // Only signed-in accounts are offered. One that never logged in has no book to
+  // read, and a user with no signed-in account has nothing to show at all.
+  const visibleUsers = useMemo(
+    () => (signedIn.ready ? users.filter((user) => signedIn.userIds.has(String(user.id))) : users),
+    [users, signedIn],
+  );
+  const visibleConfigs = useMemo(
+    () => (signedIn.ready
+      ? configs.filter((config) => signedIn.configIds.has(String(config.id)))
+      : configs),
+    [configs, signedIn],
+  );
+
+  // A selection that is not on screen cannot stay selected - move to one that is.
+  useEffect(() => {
+    if (!visibleUsers.length || !userId) return;
+    if (!visibleUsers.some((user) => String(user.id) === String(userId))) {
+      handleUserId(String(visibleUsers[0].id));
+    }
+  }, [visibleUsers, userId, handleUserId]);
+
+  useEffect(() => {
+    if (!visibleConfigs.length || !configId) return;
+    if (!visibleConfigs.some((config) => String(config.id) === String(configId))) {
+      handleConfigId(String(visibleConfigs[0].id));
+    }
+  }, [visibleConfigs, configId, handleConfigId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -513,7 +432,7 @@ export default function GetPositions() {
       return;
     }
     if (!client) {
-      setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} account credentials are not ready`);
+      setStatus(`${selectedBrokerName || 'Selected broker'} account credentials are not ready`);
       return;
     }
 
@@ -543,7 +462,7 @@ export default function GetPositions() {
         body = await fetchBrokerPositions(selectedBrokerName, active);
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        if (!silent) setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} token expired - signing in again...`);
+        if (!silent) setStatus(`${selectedBrokerName || 'Selected broker'} token expired - signing in again...`);
         active = await ensureBookSession(configId, selectedBrokerName, active, { force: true });
         body = await fetchBrokerPositions(selectedBrokerName, active);
       }
@@ -804,7 +723,7 @@ export default function GetPositions() {
             title="User"
             value={userId}
             onChange={handleUserId}
-            options={users.map((user) => ({
+            options={visibleUsers.map((user) => ({
               value: String(user.id),
               label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
             }))}
@@ -814,8 +733,8 @@ export default function GetPositions() {
             title="Account"
             value={configId}
             onChange={handleConfigId}
-            disabled={configLoading || !configs.length}
-            options={configs.map((config) => ({
+            disabled={configLoading || !visibleConfigs.length}
+            options={visibleConfigs.map((config) => ({
               value: String(config.id),
               label: config.account_id || `Account ${config.id}`,
               meta: config.broker_name || 'Broker',
@@ -1131,15 +1050,12 @@ function positionGroupMeta(row) {
 }
 
 function positionExpiryMeta(row) {
-  const symbol = String(row.tradingsymbol || row.symbolname || row.symbol || '-');
-  const parsed = parseTradingSymbol(symbol);
-  const label = parsed.expiry || 'No Expiry';
+  const label = contractMeta(row).expiry || 'No Expiry';
   return { label, sort: expirySortValue(label) };
 }
 
 function positionStrike(row) {
-  const symbol = String(row.tradingsymbol || row.symbolname || row.symbol || '-');
-  return Number(parseTradingSymbol(symbol).strike || 0);
+  return Number(contractMeta(row).strike || 0);
 }
 
 function positionRowKey(row, fallback = '') {
@@ -1440,7 +1356,7 @@ function buildFilterOptions(rows) {
 
 function filterPositionRows(rows, filters) {
   return rows.filter((row) => {
-    const parsed = parseTradingSymbol(String(row.tradingsymbol || row.symbolname || row.symbol || '-'));
+    const parsed = contractMeta(row);
     const symbolText = [
       row.tradingsymbol,
       row.symbolname,
@@ -1488,8 +1404,7 @@ function filterPositionSearchRows(rows, query) {
 }
 
 function positionSearchText(row) {
-  const symbol = String(row.tradingsymbol || row.symbolname || row.symbol || '-');
-  const parsed = parseTradingSymbol(symbol);
+  const parsed = contractMeta(row);
   return [
     row.tradingsymbol,
     row.symbolname,
@@ -1549,7 +1464,7 @@ function renderPositionCell(row, column, selection = {}) {
 
 function PositionStockCell({ row, selection }) {
   const symbol = String(row.tradingsymbol || row.symbolname || row.symbol || '-');
-  const parsed = parseTradingSymbol(symbol);
+  const parsed = contractMeta(row);
   return (
     <div className="position-symbol-line" title={symbol}>
       <button

@@ -15,13 +15,16 @@ export const FEED_MASTER_CHANGED = 'feedmaster:changed'
 // Re-exported so pages keep importing their session helpers from one place.
 export {
   BROKERS,
+  FEED_BROKERS,
   clearSession,
   clientFromAccount,
   ensureSession,
   getAngelClient,
   getSavedSession,
   isAngelBroker,
+  isKotakBroker,
   loginAngelClient,
+  refreshBrokerAccounts,
   saveSession,
   sessionKey,
   useAngelClient,

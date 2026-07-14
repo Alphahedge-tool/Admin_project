@@ -818,35 +818,35 @@ function SyncNetPositions() {
     publish()
 
     for (const item of queue) {
-      // Only Angel is wired end to end. Anything else is reported as such rather
-      // than posted to a backend that would just log "broker not supported".
-      if (!isAngelBroker(item.brokerName)) {
-        const detail = `${item.brokerName} is not wired yet`
-        skipped += 1
-        completed += 1
-        patch(item, { state: 'skipped', percent: 100, detail })
-        logLines.push(`${item.username} - ${detail}`)
-        publish()
-        continue
-      }
-
+      // Every broker goes to the backend now - it resolves the account's own
+      // adapter and answers with a real reason if it cannot read that broker,
+      // rather than the frontend deciding up front what is "wired".
       if (isSync) {
-        patch(item, { state: 'running', percent: 0, detail: 'Signing in to Angel…' })
+        patch(item, { state: 'running', percent: 0, detail: `Signing in to ${item.brokerName}…` })
         publish(0)
-        try {
-          // Normally a no-op - startup logged every account in. Only an expired
-          // token actually re-logs in here.
-          await ensureSession(item.configId)
-        } catch (error) {
-          const issue = classifyLoginError(error)
-          const detail = `${issue.title}. ${issue.hint}`
-          failed += 1
-          completed += 1
-          patch(item, { state: 'failed', percent: 100, detail })
-          logLines.push(`${item.username} ${detail}`)
-          publish()
-          continue
+
+        // Angel's session lives in the browser (the whole Trade Panel reads it),
+        // so a dead token is worth catching here, where the message can name the
+        // credential to fix. Every other broker is logged in server-side by the
+        // sync itself - signing in here as well would spend a second TOTP inside
+        // the same 30s window, which the broker then rejects.
+        if (isAngelBroker(item.brokerName)) {
+          try {
+            // Normally a no-op - startup logged every account in. Only an expired
+            // token actually re-logs in here.
+            await ensureSession(item.configId)
+          } catch (error) {
+            const issue = classifyLoginError(error)
+            const detail = `${issue.title}. ${issue.hint}`
+            failed += 1
+            completed += 1
+            patch(item, { state: 'failed', percent: 100, detail })
+            logLines.push(`${item.username} ${detail}`)
+            publish()
+            continue
+          }
         }
+
         patch(item, { percent: Math.round(SIGN_IN_DONE * 100), detail: 'Syncing net positions…' })
         publish(SIGN_IN_DONE)
       } else {
@@ -921,7 +921,7 @@ function SyncNetPositions() {
 
   return (
     <div className="trade-panel">
-      <div className="positions-view">
+      <div className="positions-view sync-view">
         <div className="positions-toolbar">
           <CompactSelect
             title="User"

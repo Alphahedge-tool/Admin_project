@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isKotakBroker, saveBookSession } from './brokerBookClient';
+import { ensureBookSession, isKotakBroker, isZerodhaBroker, saveBookSession } from './brokerBookClient';
 
 // The one order-status stream, shared by Get Position, Get OrderBook and Get
 // TradeBook. Brokers never push "your position/book changed" - they only push
@@ -23,6 +23,11 @@ import { isKotakBroker, saveBookSession } from './brokerBookClient';
 
 const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 15000;
+// An expired token is fixed by one fresh login. Credentials that are simply
+// wrong are not fixed by any number of them - so stop re-logging in after a few
+// and just keep retrying the stream, rather than hammering the broker's login
+// (which Angel rate-limits) for as long as the Trade Panel is left open.
+const MAX_RELOGINS = 3;
 
 // Angel's websocket order-status codes.
 const STATUS_LABELS = {
@@ -159,16 +164,35 @@ function createOrderHub(key, configId, brokerName) {
     stopped: false,
     connectedOnce: false,
     connecting: false,
+    needsRelogin: false,
+    reloginAttempts: 0,
   };
 
   hub.notifyStatus = (status) => {
     hub.status = status;
     hub.listeners.forEach((listener) => listener.setStatus(status));
   };
+  // A page that joins a hub whose stream is ALREADY running gets no status of its
+  // own: connect() is a no-op mid-stream, and markConnected() only fires on a
+  // change - the hub is already 'live'. So the page sat at its initial 'offline'
+  // while order updates were arriving in it. Hand a joiner the hub's status as it
+  // attaches, which is what the pill reads.
+  hub.attach = (listener) => {
+    hub.listeners.add(listener);
+    listener.setStatus(hub.status);
+  };
   hub.currentClient = () => {
     for (const listener of hub.listeners) {
       const candidate = listener.clientRef.current;
       if (hasStreamToken(hub.brokerName, candidate)) return candidate;
+    }
+    return null;
+  };
+  // Any client, token or not - what a re-login needs, since the whole point is
+  // that the token it carries is the thing that died.
+  hub.anyClient = () => {
+    for (const listener of hub.listeners) {
+      if (listener.clientRef.current) return listener.clientRef.current;
     }
     return null;
   };
@@ -181,26 +205,69 @@ function createOrderHub(key, configId, brokerName) {
       hub.connect();
     }, delay);
   };
+  // A retry that fails again is the tell that the saved token is the problem, not
+  // the connection. Nothing else re-logs this account in behind the stream, so
+  // without this the pill sat on 'Offline' forever against an account the app
+  // still believed was logged in.
+  hub.failed = () => {
+    if (hub.retries >= 1 && hub.reloginAttempts < MAX_RELOGINS) hub.needsRelogin = true;
+    hub.notifyStatus('offline');
+    hub.schedule();
+  };
+  // Hands back the re-logged-in client. It is used for THIS attempt directly:
+  // the listeners' refs only catch up on the next render, so reading them back
+  // here would reconnect with the very token that just died.
+  hub.relogin = async () => {
+    const client = hub.anyClient();
+    if (!client) return null;
+    // Both brokers' logins are deduped per account, so the three pages sharing
+    // this hub cannot turn one dead token into three logins.
+    return ensureBookSession(hub.configId, hub.brokerName, client, { force: true });
+  };
   hub.markConnected = () => {
     if (hub.status === 'live') return;
     hub.retries = 0;
+    hub.needsRelogin = false;
+    hub.reloginAttempts = 0;
     hub.notifyStatus('live');
     if (hub.connectedOnce) hub.listeners.forEach((listener) => listener.onResyncRef.current?.());
     hub.connectedOnce = true;
   };
   hub.connect = async () => {
     if (hub.stopped || hub.connecting || !hub.listeners.size) return;
-    const streamClient = hub.currentClient();
-    if (!streamClient) {
-      hub.notifyStatus('offline');
-      hub.schedule();
-      return;
+    // Joining/retrying early is fine, but do not leave a second attempt queued
+    // behind this one.
+    if (hub.retryTimer) {
+      clearTimeout(hub.retryTimer);
+      hub.retryTimer = 0;
     }
+
     hub.connecting = true;
-    hub.controller = new AbortController();
-    hub.notifyStatus('connecting');
     const broker = isKotakBroker(hub.brokerName) ? 'kotak' : 'angel';
     try {
+      let refreshed = null;
+      if (hub.needsRelogin) {
+        hub.needsRelogin = false;
+        hub.reloginAttempts += 1;
+        hub.notifyStatus('connecting');
+        try {
+          refreshed = await hub.relogin();
+        } catch {
+          // Still dead - fall through and let the attempt below fail and back off.
+        }
+        if (hub.stopped) return;
+      }
+
+      const streamClient = hasStreamToken(hub.brokerName, refreshed)
+        ? refreshed
+        : hub.currentClient();
+      if (!streamClient) {
+        hub.failed();
+        return;
+      }
+      hub.controller = new AbortController();
+      hub.notifyStatus('connecting');
+
       const response = await fetch(`/api/${broker}/order-updates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -234,15 +301,18 @@ function createOrderHub(key, configId, brokerName) {
           if (payload?.status === false || payload?.connected === false) hub.notifyStatus('offline');
           else hub.markConnected();
         },
-        onError: () => hub.notifyStatus('offline'),
+        // The backend could not open the stream at all - a Kotak trade token that
+        // has expired ends up here, and only a fresh login clears it.
+        onError: () => {
+          hub.needsRelogin = true;
+          hub.notifyStatus('offline');
+        },
       });
       if (hub.stopped) return;
-      hub.notifyStatus('offline');
-      hub.schedule();
+      hub.failed();
     } catch {
       if (!hub.stopped && !hub.controller?.signal.aborted) {
-        hub.notifyStatus('offline');
-        hub.schedule();
+        hub.failed();
       }
     } finally {
       hub.connecting = false;
@@ -280,7 +350,7 @@ export function useOrderUpdates({
   // picked up without restarting the stream (and without looping, since the
   // stream itself is what hands the refreshed token back).
   const hasToken = hasStreamToken(brokerName, client);
-  const active = Boolean(configId) && enabled && hasToken;
+  const active = Boolean(configId) && enabled && hasToken && !isZerodhaBroker(brokerName);
   const brokerKey = isKotakBroker(brokerName) ? 'kotak' : 'angel';
 
   useEffect(() => {
@@ -294,7 +364,7 @@ export function useOrderUpdates({
       sharedOrderHubs.set(key, hub);
     }
     const listener = { clientRef, onOrderRef, onPositionRef, onResyncRef, setStatus };
-    hub.listeners.add(listener);
+    hub.attach(listener);
     hub.connect();
 
     return () => {

@@ -20,6 +20,8 @@ import {
 } from '@mui/material'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { apiGet, apiPost, brokerAutoLogin } from '../../config/api'
+import { clearSession, getSavedSession, refreshBrokerAccounts } from '../../feedmaster/angelSessionStore'
+import { zerodhaLoginUrl } from '../../config/api'
 
 /* ============ BROKER FIELD SCHEMAS ============
    Each broker only asks for the credentials its auto-login
@@ -47,6 +49,10 @@ const DEFAULT_SCHEMA = {
     { name: 'app_key', label: 'App Key' }
   ]
 }
+
+const FALLBACK_BROKERS = [
+  { id: '__zerodha__', name: 'Zerodha', synthetic: true },
+]
 
 /* Each broker names the SAME columns differently — Angel's "Client Code" is
    Kotak's "UCC", Angel's "PIN" is Kotak's "MPIN" — so the schema carries the
@@ -84,6 +90,49 @@ const BROKER_SCHEMAS = [
         label: 'API Key',
         required: true,
         helper: 'SmartAPI app API key (X-PrivateKey)'
+      }
+    ]
+  },
+  {
+    // Zerodha Kite Connect needs the browser login redirect to mint a
+    // request_token, then the backend exchanges it for an access_token.
+    match: (name) => name.toLowerCase().replace(/\s/g, '').includes('zerodha')
+      || name.toLowerCase().replace(/\s/g, '').includes('kite'),
+    autoLogin: false,
+    broker: 'zerodha',
+    note: 'Zerodha Kite Connect does not support a fully headless login. Save the API credentials here, then complete the browser login flow so the backend can exchange the request token for an access token.',
+    fields: [
+      {
+        name: 'account_id',
+        label: 'User ID',
+        required: true,
+        helper: 'Your Zerodha user ID'
+      },
+      {
+        name: 'app_key',
+        label: 'API Key',
+        required: true,
+        helper: 'Kite Connect developer app key'
+      },
+      {
+        name: 'app_secret',
+        label: 'API Secret',
+        required: true,
+        type: 'password',
+        helper: 'Kite Connect developer app secret'
+      },
+      {
+        name: 'password',
+        label: 'Password',
+        required: true,
+        type: 'password',
+        helper: 'Zerodha account password'
+      },
+      {
+        name: 'totp_secret',
+        label: 'TOTP Secret',
+        required: true,
+        helper: 'Base32 TOTP secret enabled for the account'
       }
     ]
   },
@@ -137,6 +186,22 @@ const getBrokerSchema = (brokerName) => {
   return BROKER_SCHEMAS.find(s => s.match(brokerName)) || DEFAULT_SCHEMA
 }
 
+function brokerNameOf(broker = {}) {
+  return String(broker?.name || broker?.broker_name || '').trim()
+}
+
+function brokerLabelOf(broker = {}) {
+  return brokerNameOf(broker) || 'Broker'
+}
+
+function isFallbackBroker(brokerId) {
+  return String(brokerId || '') === '__zerodha__'
+}
+
+function hasSavedZerodhaSession(configId) {
+  return Boolean(getSavedSession(configId, 'zerodha')?.accessToken)
+}
+
 function BrokerConfigDialog({ user, open, onClose }) {
   /* ================= STATE ================= */
   const [configs, setConfigs] = useState([])
@@ -184,7 +249,22 @@ function BrokerConfigDialog({ user, open, onClose }) {
 
       if (seq !== loadSeq.current) return
       setConfigs(cfgRes.data || [])
-      setBrokers(brokerRes.data || [])
+      const list = brokerRes.data || []
+      const hasZerodha = list.some((broker) => /zerodha|kite/i.test(brokerNameOf(broker)))
+      setBrokers(hasZerodha ? list : [...list, ...FALLBACK_BROKERS])
+      const zerodhaLoginState = {}
+      for (const cfg of cfgRes.data || []) {
+        const brokerName = cfg.broker_name || brokerNameOf(list.find((broker) => String(broker.id) === String(cfg.broker_id)) || {})
+        if (/zerodha|kite/i.test(brokerName) && hasSavedZerodhaSession(cfg.id)) {
+          zerodhaLoginState[cfg.id] = {
+            status: 'on',
+            message: 'Logged in (session reused)',
+          }
+        }
+      }
+      if (Object.keys(zerodhaLoginState).length) {
+        setLoginState((prev) => ({ ...prev, ...zerodhaLoginState }))
+      }
     } catch (e) {
       if (seq !== loadSeq.current) return
       setError('Failed to load broker configurations')
@@ -209,6 +289,29 @@ function BrokerConfigDialog({ user, open, onClose }) {
     setForm(EMPTY_FORM)
     setEditing(null)
     setError('')
+  }
+
+  const ensureBrokerRow = async () => {
+    const selectedId = String(form.broker_id || '')
+    if (!isFallbackBroker(selectedId)) return selectedId
+
+    try {
+      await apiPost('/masters/brokers/create.php', { name: 'Zerodha' })
+    } catch (err) {
+      const alreadyExists = /duplicate|exists|unique/i.test(String(err?.message || ''))
+      if (!alreadyExists) throw err
+    }
+
+    const refresh = await apiGet('/masters/brokers/list.php')
+    const list = refresh.data || []
+    const match = list.find((broker) => /zerodha|kite/i.test(brokerNameOf(broker)))
+    if (!match?.id) {
+      throw new Error('Zerodha broker row could not be created')
+    }
+    setBrokers(list.some((broker) => /zerodha|kite/i.test(brokerNameOf(broker)))
+      ? list
+      : [...list, ...FALLBACK_BROKERS])
+    return String(match.id)
   }
 
   /* ================= ADD / EDIT ================= */
@@ -257,10 +360,12 @@ function BrokerConfigDialog({ user, open, onClose }) {
     }
 
     try {
+      const resolvedBrokerId = await ensureBrokerRow()
+
       // Only send fields this broker uses; blank out the rest so
       // stale values from a previous broker selection aren't saved.
       const activeFields = new Set(schema.fields.map(f => f.name))
-      const cleaned = { ...EMPTY_FORM, broker_id: form.broker_id }
+      const cleaned = { ...EMPTY_FORM, broker_id: resolvedBrokerId }
       activeFields.forEach(name => { cleaned[name] = form[name] })
 
       const payload = {
@@ -280,6 +385,9 @@ function BrokerConfigDialog({ user, open, onClose }) {
       setFormOpen(false)
       resetForm()
       loadData(user)
+      // Teach the session store about the config that was just added or changed,
+      // so it is signed in now rather than only at the next app start.
+      refreshBrokerAccounts().catch(() => {})
     } catch (e) {
       setError(e.message || 'Failed to save configuration')
     }
@@ -306,6 +414,31 @@ function BrokerConfigDialog({ user, open, onClose }) {
     if (current?.status === 'on') {
       localStorage.removeItem(key)
       setCfgLogin(cfg.id, { status: 'idle' })
+      return
+    }
+
+    if (broker === 'zerodha') {
+      if (current?.status === 'on' || hasSavedZerodhaSession(cfg.id)) {
+        clearSession(cfg.id, 'zerodha')
+        setCfgLogin(cfg.id, { status: 'idle' })
+        return
+      }
+
+      try {
+        const cfgDetails = await apiGet(`/users/broker-config/get.php?id=${cfg.id}`)
+        const loginUrl = await zerodhaLoginUrl(cfgDetails.data?.app_key || cfg.app_key || '')
+        if (loginUrl?.url) {
+          window.open(loginUrl.url, '_blank', 'noopener,noreferrer')
+          setCfgLogin(cfg.id, {
+            status: 'loading',
+            message: 'Complete the Zerodha login in the opened tab, then save the session.',
+          })
+          return
+        }
+        throw new Error('Zerodha login URL could not be created')
+      } catch (e) {
+        setCfgLogin(cfg.id, { status: 'error', message: e.message })
+      }
       return
     }
 
@@ -369,6 +502,7 @@ function BrokerConfigDialog({ user, open, onClose }) {
 
     await apiPost('/users/broker-config/delete.php', { id: row.id })
     loadData(user)
+    refreshBrokerAccounts().catch(() => {})
   }
 
   /* ================= RENDER ================= */
@@ -392,6 +526,9 @@ function BrokerConfigDialog({ user, open, onClose }) {
           {configs.map(cfg => {
             const cfgSchema = getBrokerSchema(cfg.broker_name)
             const login = loginState[cfg.id] || { status: 'idle' }
+            const savedZerodha = hasSavedZerodhaSession(cfg.id)
+            const isZerodha = /zerodha|kite/i.test(String(cfg.broker_name || ''))
+            const loginOn = login.status === 'on' || (isZerodha && savedZerodha)
 
             return (
               <Box
@@ -444,6 +581,28 @@ function BrokerConfigDialog({ user, open, onClose }) {
                     )
                   )}
 
+                  {/* Zerodha needs a browser login, so show a visible action
+                      row instead of hiding the control entirely. */}
+                  {!cfgSchema.autoLogin && isZerodha && (
+                    login.status === 'loading' ? (
+                      <CircularProgress size={20} sx={{ mx: 1.5 }} />
+                    ) : loginOn ? (
+                      <Switch
+                        size="small"
+                        checked
+                        onChange={() => handleLoginToggle(cfg)}
+                      />
+                    ) : (
+                      <Button
+                        size="small"
+                        onClick={() => handleLoginToggle(cfg)}
+                        sx={{ mr: 0.5 }}
+                      >
+                        Open Login
+                      </Button>
+                    )
+                  )}
+
                   <IconButton size="small" onClick={() => handleEdit(cfg)}>
                     <Pencil size={15} />
                   </IconButton>
@@ -486,9 +645,9 @@ function BrokerConfigDialog({ user, open, onClose }) {
                     value={form.broker_id}
                     onChange={handleChange('broker_id')}
                 >
-                    {brokers.map(b => (
+                    {brokers.map((b) => (
                     <MenuItem key={b.id} value={b.id}>
-                        {b.name}
+                        {brokerLabelOf(b)}
                     </MenuItem>
                     ))}
                 </Select>

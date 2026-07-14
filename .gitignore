@@ -12,7 +12,13 @@ dist
 dist-ssr
 *.local
 
-# Angel Node backend: generated scrip master (downloaded/rebuilt at runtime)
+# Broker instrument masters: downloaded and rebuilt at runtime, ~80MB, never
+# source. They are written relative to the backend's working directory, which is
+# the repo root when it is started through scripts/dev.mjs and node-backend/ when
+# it is started on its own - so both are ignored.
+scrip_master.json
+scrip_index.json
+instrument_cache/
 node-backend/scrip_master.json
 node-backend/scrip_index.json
 node-backend/instrument_cache/

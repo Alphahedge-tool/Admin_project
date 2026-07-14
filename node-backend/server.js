@@ -8,6 +8,7 @@ import { config } from './src/config.js';
 import { Client } from './src/httpClient.js';
 import { Auth } from './src/auth.js';
 import * as kotak from './src/kotak.js';
+import * as zerodha from './src/zerodha.js';
 import { MasterStore } from './src/master.js';
 import { allScripOptions } from './src/scripoptions.js';
 import {
@@ -17,7 +18,7 @@ import { getMargin, getCharges, placeBasket, book } from './src/orders.js';
 import { getHistoricalCandle } from './src/historical.js';
 import { Feed, wsType } from './src/feed.js';
 import { BrokerInstrumentManager } from './src/instruments/manager.js';
-import { mapKotakPositionToAngelFeed } from './src/instruments/positionRouter.js';
+import { mapKotakPositionToAngelFeed, mapZerodhaPositionToAngelFeed } from './src/instruments/positionRouter.js';
 import { KotakUserStream } from './src/kotakUserStream.js';
 import { KotakHsmRegistry } from './src/kotakHsmFeed.js';
 
@@ -77,6 +78,73 @@ app.post('/api/kotak/auto-login', h(async (req) => {
   }
   return result;
 }));
+
+app.post('/api/zerodha/auto-login', h(async (req) => {
+  const credentials = req.body?.client || req.body || {};
+  return zerodha.autoLogin(credentials);
+}));
+
+app.get('/api/zerodha/login-url', h(async (req) => ({
+  status: true,
+  broker: 'zerodha',
+  url: zerodha.buildLoginUrl(req.query.apiKey || req.query.api_key),
+})));
+
+app.get('/api/zerodha/orders', h(async (req) => zerodha.orderBook(req.query || {})));
+app.get('/api/zerodha/trades', h(async (req) => zerodha.tradeBook(req.query || {})));
+app.get('/api/zerodha/orders/:orderId', h(async (req) => (
+  zerodha.orderHistory(req.query || {}, req.params.orderId)
+)));
+app.get('/api/zerodha/orders/:orderId/trades', h(async (req) => (
+  zerodha.orderTrades(req.query || {}, req.params.orderId)
+)));
+app.post('/api/zerodha/orders/:variety', h(async (req) => (
+  zerodha.placeOrder({ ...req.body, variety: req.params.variety })
+)));
+app.put('/api/zerodha/orders/:variety/:orderId', h(async (req) => (
+  zerodha.modifyOrder({ ...req.body, variety: req.params.variety, orderId: req.params.orderId })
+)));
+app.delete('/api/zerodha/orders/:variety/:orderId', h(async (req) => (
+  zerodha.cancelOrder({ ...req.query, variety: req.params.variety, orderId: req.params.orderId })
+)));
+
+app.get('/api/zerodha/portfolio/holdings', h(async (req) => (
+  zerodha.holdings(req.query || {})
+)));
+
+app.get('/api/zerodha/portfolio/positions', h(async (req) => (
+  Promise.allSettled([
+    instruments.loadSessionBroker('zerodha', {
+      apiKey: req.query?.apiKey || req.query?.api_key || '',
+      accessToken: req.query?.accessToken || req.query?.access_token || '',
+    }),
+    instruments.loadAngel(),
+  ]).then(async () => {
+    const result = await zerodha.positions(req.query || {});
+    result.positions = result.positions.map((position) => (
+      mapZerodhaPositionToAngelFeed(position, instruments)
+    ));
+    result.day = result.day.map((position) => (
+      mapZerodhaPositionToAngelFeed(position, instruments)
+    ));
+    return result;
+  })
+)));
+
+app.post('/api/zerodha/order-book', h(async (req) => zerodha.orderBook(req.body || req.query || {})));
+app.post('/api/zerodha/trade-book', h(async (req) => zerodha.tradeBook(req.body || req.query || {})));
+
+app.get('/api/zerodha/portfolio/holdings/auctions', h(async (req) => (
+  zerodha.holdingsAuctions(req.query || {})
+)));
+
+app.put('/api/zerodha/portfolio/positions', h(async (req) => (
+  zerodha.convertPosition(req.body || {})
+)));
+
+app.post('/api/zerodha/portfolio/holdings/authorise', h(async (req) => (
+  zerodha.authoriseHoldings(req.body || {})
+)));
 
 // ── normalized broker instrument masters ───────────────────────────────────
 // One canonical contract resolves to the selected broker's own token, trading
@@ -249,7 +317,12 @@ app.post('/api/kotak/order-updates', async (req, res) => {
   const keepAlive = setInterval(() => {
     if (!res.writableEnded) res.write(': keep-alive\n\n');
   }, 20_000);
-  req.on('close', () => {
+  // The RESPONSE closing is what "the client went away" means. `req` is the
+  // request BODY stream, and Node ends it - firing 'close' - the moment the body
+  // has been read, which for a POST is immediately. Hanging the teardown off it
+  // tore the Kotak websocket down while it was still shaking hands, so the stream
+  // never opened, never errored, and the page sat on "Connecting" forever.
+  res.on('close', () => {
     clearInterval(keepAlive);
     stream?.close();
   });
@@ -279,7 +352,13 @@ app.post('/api/angel/order-updates', async (req, res) => {
     if (upstream && upstream.readyState === WebSocket.OPEN) upstream.close(1000, 'client closed');
   };
 
-  req.on('close', cleanup);
+  // On the response, not the request: Node ends the request body stream - firing
+  // its 'close' - as soon as the POST body is read, which is immediately. This
+  // stream only survived that because cleanup() skips a socket that is not OPEN
+  // yet, and at that instant it is still connecting. It did kill the keep-alive
+  // outright, though, and any slower teardown here would have killed the socket
+  // too - the same way it did Kotak's.
+  res.on('close', cleanup);
 
   try {
     const session = await auth.sessionOrLogin(cc);

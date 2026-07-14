@@ -12,8 +12,9 @@ import {
   saveBookSession, useBrokerBookClient,
 } from './brokerBookClient';
 import { useOrderUpdates } from './orderUpdates';
+import { useSharedTradeAccount, useSignedInAccounts } from './accountScope';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
-import { parseTradingSymbol, compactProductTag } from './symbolParse';
+import { contractMeta, compactProductTag } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
 import './tradepanel.css';
 
@@ -78,6 +79,7 @@ export default function GetOrderBook() {
   const loadRef = useRef(null);
   const loadSeqRef = useRef(0);
 
+  const signedIn = useSignedInAccounts();
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedBrokerName = selectedConfig?.broker_name || '';
   const selectedIsKotak = isKotakBroker(selectedBrokerName);
@@ -99,6 +101,43 @@ export default function GetOrderBook() {
     setLoading(true);
     saveTradeAccount({ userId, configId: value });
   }, [userId]);
+
+  // Viewing bberlia in Get Position and switching here shows bberlia's order book:
+  // the account picked on any Trade Panel page is adopted by all of them.
+  useSharedTradeAccount({
+    userId,
+    setUserId,
+    configId,
+    setConfigId,
+    configs,
+    onAdopt: () => setLoading(true),
+  });
+
+  // Only signed-in accounts are offered - one that never logged in has no book.
+  const visibleUsers = useMemo(
+    () => (signedIn.ready ? users.filter((user) => signedIn.userIds.has(String(user.id))) : users),
+    [users, signedIn],
+  );
+  const visibleConfigs = useMemo(
+    () => (signedIn.ready
+      ? configs.filter((config) => signedIn.configIds.has(String(config.id)))
+      : configs),
+    [configs, signedIn],
+  );
+
+  useEffect(() => {
+    if (!visibleUsers.length || !userId) return;
+    if (!visibleUsers.some((user) => String(user.id) === String(userId))) {
+      handleUserId(String(visibleUsers[0].id));
+    }
+  }, [visibleUsers, userId, handleUserId]);
+
+  useEffect(() => {
+    if (!visibleConfigs.length || !configId) return;
+    if (!visibleConfigs.some((config) => String(config.id) === String(configId))) {
+      handleConfigId(String(visibleConfigs[0].id));
+    }
+  }, [visibleConfigs, configId, handleConfigId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -237,7 +276,7 @@ export default function GetOrderBook() {
       return;
     }
     if (!client) {
-      setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} account credentials are not ready`);
+      setStatus(`${selectedBrokerName || 'Selected broker'} account credentials are not ready`);
       return;
     }
 
@@ -267,7 +306,7 @@ export default function GetOrderBook() {
         body = await fetchBrokerBook('order', selectedBrokerName, active);
       } catch (error) {
         if (!isAuthError(error)) throw error;
-        if (!silent) setStatus(`${selectedIsKotak ? 'Kotak' : 'Angel'} token expired - signing in again...`);
+        if (!silent) setStatus(`${selectedBrokerName || 'Selected broker'} token expired - signing in again...`);
         active = await ensureBookSession(configId, selectedBrokerName, active, { force: true });
         body = await fetchBrokerBook('order', selectedBrokerName, active);
       }
@@ -367,7 +406,7 @@ export default function GetOrderBook() {
             title="User"
             value={userId}
             onChange={handleUserId}
-            options={users.map((user) => ({
+            options={visibleUsers.map((user) => ({
               value: String(user.id),
               label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
             }))}
@@ -377,8 +416,8 @@ export default function GetOrderBook() {
             title="Account"
             value={configId}
             onChange={handleConfigId}
-            disabled={configLoading || !configs.length}
-            options={configs.map((config) => ({
+            disabled={configLoading || !visibleConfigs.length}
+            options={visibleConfigs.map((config) => ({
               value: String(config.id),
               label: config.account_id || `Account ${config.id}`,
               meta: config.broker_name || 'Broker',
@@ -535,7 +574,7 @@ export default function GetOrderBook() {
 
 function OrderSymbolCell({ row }) {
   const symbol = String(row.tradingsymbol || row.symbolname || row.symbol || '-');
-  const parsed = parseTradingSymbol(symbol);
+  const parsed = contractMeta(row);
   return (
     <div className="position-symbol-line orderbook-symbol-line" title={symbol}>
       <span className="orderbook-icon-chip"><ClipboardList size={13} /></span>
@@ -973,7 +1012,7 @@ function buildOrderFilterOptions(rows) {
     if (row.exchange) exchanges.add(String(row.exchange));
     const expiry = orderExpiryMeta(row);
     if (expiry.label && expiry.label !== 'No Expiry') expiries.set(expiry.label, expiry.sort);
-    const parsed = parseTradingSymbol(String(row.tradingsymbol || row.symbolname || row.symbol || '-'));
+    const parsed = contractMeta(row);
     if (parsed.optionType) optionTypes.add(parsed.optionType);
     const product = compactProductTag(row.producttype || row.product_type || '-');
     if (product && product !== '-') products.add(product);
@@ -1000,7 +1039,7 @@ function filterOrders(rows, statusFilter, query, filters = defaultOrderColumnFil
   const text = query.trim().toLowerCase();
   return rows.filter((row) => {
     if (statusFilter !== 'all' && normalizedStatus(row) !== statusFilter) return false;
-    const parsed = parseTradingSymbol(String(row.tradingsymbol || row.symbolname || row.symbol || '-'));
+    const parsed = contractMeta(row);
     const rowText = [
       row.tradingsymbol,
       row.symbolname,
@@ -1146,8 +1185,7 @@ function compareOrdersForExpiryGroup(a, b) {
 }
 
 function orderExpiryMeta(row) {
-  const symbol = String(row.tradingsymbol || row.symbolname || row.symbol || '-');
-  const parsed = parseTradingSymbol(symbol);
+  const parsed = contractMeta(row);
   const label = parsed.expiry || 'No Expiry';
   return {
     key: label,

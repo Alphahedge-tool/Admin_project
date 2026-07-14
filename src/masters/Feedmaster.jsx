@@ -13,7 +13,7 @@ import {
 } from '@mui/material'
 import { CheckCircle2, PlugZap, Save } from 'lucide-react'
 import {
-  BROKERS,
+  FEED_BROKERS,
   clearFeedMaster,
   getSavedFeedMaster,
   saveFeedMaster,
@@ -42,8 +42,12 @@ function Feedmaster() {
     ? userPick
     : String(accounts[0]?.userId || users[0]?.id || '')
 
+  // Angel accounts only: the store also holds Kotak accounts, and Kotak cannot
+  // carry the shared feed.
   const userAccounts = useMemo(
-    () => accounts.filter((account) => account.userId === String(userId)),
+    () => accounts.filter(
+      (account) => account.userId === String(userId) && account.broker === 'angelone',
+    ),
     [accounts, userId],
   )
 
@@ -120,7 +124,7 @@ function Feedmaster() {
           <FormControl fullWidth disabled={loading}>
             <InputLabel>Broker</InputLabel>
             <Select label="Broker" value={broker} onChange={(event) => setBroker(event.target.value)}>
-              {BROKERS.map((item) => (
+              {FEED_BROKERS.map((item) => (
                 <MenuItem key={item.id} value={item.id}>{item.label}</MenuItem>
               ))}
             </Select>

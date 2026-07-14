@@ -6,15 +6,21 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Trade Panel's Angel Node backend (option chain + basket + live feed).
-      // Only /api/angel and /api/kotak are proxied; every other /api path is the
-      // PHP admin API on Apache, so it is unaffected.
+      // Trade Panel's Node backend (option chain + basket + live feed + Zerodha).
+      // Only /api/angel, /api/kotak and /api/zerodha are proxied; every other
+      // /api path is the PHP admin API on Apache, so it is unaffected.
       '/api/angel': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
       // Kotak Neo's headless auto-login lives in the same Node backend.
       '/api/kotak': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      // Zerodha login still needs a browser redirect, but the token exchange
+      // runs through the same Node backend.
+      '/api/zerodha': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },

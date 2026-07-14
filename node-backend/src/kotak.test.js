@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  checkMargin, limits, normalizeKotakOrder, normalizeKotakPosition, normalizeKotakTrade, positions,
+  checkMargin, limits, normalizeKotakOrder, normalizeKotakPosition, normalizeKotakTrade, orderBook,
+  positions, tradeBook,
 } from './kotak.js';
 import { normalizeKotakStreamMessage, realtimeUrl } from './kotakUserStream.js';
 import {
@@ -77,6 +78,43 @@ test('calls Kotak position and limits APIs with the documented session headers a
   assert.deepEqual(JSON.parse(new URLSearchParams(requests[1].options.body).get('jData')), {
     seg: 'ALL', exch: 'ALL', prod: 'ALL',
   });
+});
+
+// Kotak answers an account that holds nothing with HTTP 200 and
+// {stCode:5203, errMsg:"No Data", stat:"Not_Ok"}. That is an empty book, not a
+// failure - reading it as one meant a flat account could not load its positions,
+// orders or trades at all, and the position sync failed on it too.
+test('an empty Kotak book reads back as an empty list, not an error', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ stCode: 5203, errMsg: 'No Data', desc: 'data not found', stat: 'Not_Ok' }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+  const client = { session: { baseUrl: 'https://example.test', sid: 'SID1', tradeToken: 'TOKEN1' } };
+  try {
+    assert.deepEqual((await positions(client)).positions, []);
+    assert.deepEqual((await orderBook(client)).orders, []);
+    assert.deepEqual((await tradeBook(client)).trades, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// A genuine failure must still surface, and must say what Kotak actually said -
+// the message lives in `errMsg`, and reading `emsg` turned every one of them
+// into a bare "Kotak HTTP 200".
+test('a real Kotak error surfaces its own message', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ stCode: 5001, errMsg: 'Invalid Session', stat: 'Not_Ok' }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+  const client = { session: { baseUrl: 'https://example.test', sid: 'SID1', tradeToken: 'TOKEN1' } };
+  try {
+    await assert.rejects(positions(client), /Invalid Session/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('maps shared order fields into the Kotak check-margin request', async () => {

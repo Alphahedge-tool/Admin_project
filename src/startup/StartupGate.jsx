@@ -1,11 +1,12 @@
 // What the user sees the moment the app opens, before any page renders:
 //
-//   1. every configured Angel One account is logged in and its token saved
-//      (so no page ever has to log in on its own), with a per-account line
-//      showing exactly what went wrong for the ones that fail - PIN, TOTP,
-//      API key, backend down;
+//   1. every configured broker account that can log in headlessly - Angel One
+//      and Kotak Neo - is logged in and its token saved (so no page ever has to
+//      log in on its own), with a per-account line showing exactly what went
+//      wrong for the ones that fail - PIN, TOTP, API key, backend down;
 //   2. the Feedmaster (the account that carries the shared live feed) is
-//      confirmed or picked.
+//      confirmed or picked. The feed is Angel-only, so only Angel accounts are
+//      offered there - a Kotak account still logs in, it just cannot carry it.
 //
 // Only then are the routes rendered.
 import { useEffect, useMemo, useState } from 'react'
@@ -32,7 +33,7 @@ import {
   retryFailedAccounts,
   useAngelSessions,
 } from '../feedmaster/angelSessionStore'
-import { BROKERS, getSavedFeedMaster, saveFeedMaster } from '../feedmaster/feedMasterStore'
+import { FEED_BROKERS, getSavedFeedMaster, saveFeedMaster } from '../feedmaster/feedMasterStore'
 
 function StartupGate({ children }) {
   const { phase, accounts, error } = useAngelSessions()
@@ -47,11 +48,18 @@ function StartupGate({ children }) {
   const failed = useMemo(() => accounts.filter((a) => a.status === 'failed'), [accounts])
   const booting = phase !== 'ready'
 
+  // The shared live feed runs on Angel's websocket, so only a live Angel account
+  // can be the Feedmaster - a logged-in Kotak account is not a candidate.
+  const feedCandidates = useMemo(
+    () => live.filter((a) => a.broker === 'angelone'),
+    [live],
+  )
+
   // The saved Feedmaster when it logged in, otherwise the first account that
   // did - a Feedmaster without a token feeds nothing.
-  const feedConfigId = live.some((a) => a.configId === feedPick)
+  const feedConfigId = feedCandidates.some((a) => a.configId === feedPick)
     ? feedPick
-    : (live[0]?.configId || '')
+    : (feedCandidates[0]?.configId || '')
 
   if (step === 'done') return children
 
@@ -82,7 +90,7 @@ function StartupGate({ children }) {
         />
       ) : (
         <FeedMasterStep
-          live={live}
+          live={feedCandidates}
           feedConfigId={feedConfigId}
           setFeedConfigId={setFeedPick}
           onBack={() => setStep('accounts')}
@@ -117,7 +125,7 @@ function AccountsStep({ accounts, booting, error, live, failed, onContinue }) {
     <>
       <Typography variant="h5" fontWeight={600}>Signing in broker accounts</Typography>
       <Typography color="text.secondary" fontSize="0.875rem" sx={{ mt: 0.5 }}>
-        Every Angel One account is logged in once here and its token saved, so no screen has to log in again.
+        Every Angel One and Kotak Neo account is logged in once here and its token saved, so no screen has to log in again.
       </Typography>
 
       {booting && (
@@ -132,7 +140,7 @@ function AccountsStep({ accounts, booting, error, live, failed, onContinue }) {
 
       {!booting && !accounts.length && (
         <Alert severity="warning" sx={{ mt: 2 }}>
-          No Angel One account is configured yet. Add one in Users -&gt; Broker Configuration.
+          No broker account is configured yet. Add one in Users -&gt; Broker Configuration.
         </Alert>
       )}
 
@@ -189,9 +197,17 @@ function AccountRow({ account }) {
       </Box>
 
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography fontWeight={600} fontSize="0.9rem">
-          {account.username} - {account.accountId || `Config ${account.configId}`}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Typography fontWeight={600} fontSize="0.9rem">
+            {account.username} - {account.accountId || `Config ${account.configId}`}
+          </Typography>
+          <Chip
+            size="small"
+            variant="outlined"
+            label={account.brokerName}
+            sx={{ height: 18, fontSize: '0.65rem' }}
+          />
+        </Box>
         {account.status === 'failed' ? (
           <>
             <Typography color="warning.main" fontSize="0.8rem" fontWeight={600}>
@@ -240,8 +256,9 @@ function FeedMasterStep({ live, feedConfigId, setFeedConfigId, onBack, onContinu
 
       {!live.length ? (
         <Alert severity="warning" sx={{ mt: 2 }}>
-          No account is logged in, so there is nothing to feed from. Go back, fix the login issue and retry -
-          or continue without a live feed.
+          No Angel One account is logged in, so there is nothing to feed from - the shared feed runs on Angel's
+          websocket, so a Kotak account cannot carry it. Go back, fix the login issue and retry - or continue
+          without a live feed.
         </Alert>
       ) : (
         <>
@@ -253,7 +270,7 @@ function FeedMasterStep({ live, feedConfigId, setFeedConfigId, onBack, onContinu
             <FormControl fullWidth>
               <InputLabel>Broker</InputLabel>
               <Select label="Broker" value="angelone" disabled>
-                {BROKERS.map((broker) => (
+                {FEED_BROKERS.map((broker) => (
                   <MenuItem key={broker.id} value={broker.id}>{broker.label}</MenuItem>
                 ))}
               </Select>
