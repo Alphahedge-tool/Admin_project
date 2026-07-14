@@ -13,18 +13,28 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { apiGet } from '../config/api'
 
-// Brokers that can log in headlessly, so the startup screen can sign them in.
+// Brokers the startup screen can sign in.
+//
+// Angel and Kotak log in headlessly. Zerodha CANNOT - Kite Connect has no PIN/TOTP
+// endpoint, the user has to pass through kite.zerodha.com in a browser once a day.
+// What the startup screen does for it is reuse the access token from that login
+// for as long as it lives, and say plainly when a new browser login is due.
 export const BROKERS = [
   { id: 'angelone', label: 'Angel One' },
   { id: 'kotak', label: 'Kotak Neo' },
+  { id: 'zerodha', label: 'Zerodha' },
 ]
 
-// The shared live feed runs on Angel's websocket, so a Kotak account - logged in
-// or not - cannot be the Feedmaster. Only these are offered as feed sources.
+// The shared live feed runs on Angel's websocket, so a Kotak or Zerodha account -
+// logged in or not - cannot be the Feedmaster. Only these are offered as sources.
 export const FEED_BROKERS = BROKERS.filter((broker) => broker.id === 'angelone')
 
-const SESSION_PREFIX = { angelone: 'angel_session_', kotak: 'kotak_session_' }
-const AUTO_LOGIN_URL = { angelone: '/api/angel/auto-login', kotak: '/api/kotak/auto-login' }
+const SESSION_PREFIX = { angelone: 'angel_session_', kotak: 'kotak_session_', zerodha: 'zerodha_session_' }
+const AUTO_LOGIN_URL = {
+  angelone: '/api/angel/auto-login',
+  kotak: '/api/kotak/auto-login',
+  zerodha: '/api/zerodha/auto-login',
+}
 const LOGIN_CONCURRENCY = 3
 const CONFIG_FETCH_CONCURRENCY = 4
 
@@ -43,12 +53,18 @@ export function isKotakBroker(name = '') {
   return String(name).toLowerCase().replace(/\s/g, '').includes('kotak')
 }
 
-// Which broker a config row belongs to. A broker with no headless login (a
-// Zerodha row, say) resolves to '' and is left out of the store entirely -
-// there is nothing the startup screen could do with it.
+export function isZerodhaBroker(name = '') {
+  const text = String(name).toLowerCase().replace(/\s/g, '')
+  return text.includes('zerodha') || text.includes('kite')
+}
+
+// Which broker a config row belongs to. A broker the app has no adapter for at all
+// resolves to '' and is left out of the store - there is nothing the startup screen
+// could do with it.
 export function brokerIdOf(brokerName = '') {
   if (isKotakBroker(brokerName)) return 'kotak'
   if (isAngelBroker(brokerName)) return 'angelone'
+  if (isZerodhaBroker(brokerName)) return 'zerodha'
   return ''
 }
 
@@ -61,6 +77,7 @@ export function sessionKey(configId, broker = 'angelone') {
 // different question per broker.
 export function hasToken(broker, session) {
   if (broker === 'kotak') return !!(session?.tradeToken && session.sid && session.baseUrl)
+  if (broker === 'zerodha') return !!session?.accessToken
   return !!session?.jwtToken
 }
 
@@ -149,6 +166,23 @@ export function clientFromAccount(account) {
   if (!account) return null
   const broker = account.broker || 'angelone'
   const session = account.session || null
+
+  if (broker === 'zerodha') {
+    return {
+      enabled: true,
+      broker: 'zerodha',
+      configId: account.configId,
+      userId: account.userId,
+      alias: account.alias,
+      clientCode: account.accountId,
+      apiKey: account.apiKey,
+      apiSecret: account.apiSecret,
+      requestToken: account.requestToken,
+      accessToken: session?.accessToken,
+      loggedIn: hasToken('zerodha', session),
+      session,
+    }
+  }
 
   if (broker === 'kotak') {
     return {
@@ -253,6 +287,27 @@ async function performLogin(configId, force) {
 
   try {
     const body = await postAutoLogin(broker, client)
+
+    // Zerodha can answer "I need you in a browser". That is not a failure to
+    // classify - it is the one step Kite Connect cannot automate - so it gets its
+    // own message and carries the URL to open, rather than a login-error guess.
+    if (body.needsLogin) {
+      const issue = {
+        code: 'browser-login',
+        title: 'Browser login needed',
+        hint: 'Zerodha has no headless login. Open Users -> Broker Configuration and complete the Zerodha login once - the token then lasts until Zerodha expires it, around 6am the next day.',
+      }
+      patchAccount(configId, {
+        status: 'failed',
+        issue,
+        message: issue.title,
+        loginUrl: body.loginUrl || '',
+      })
+      const needsLogin = new Error(issue.title)
+      needsLogin.handled = true
+      throw needsLogin
+    }
+
     const session = body.session || null
     if (!hasToken(broker, session)) throw new Error(`${brokerLabel(broker)} returned no token`)
 
@@ -273,6 +328,10 @@ async function performLogin(configId, force) {
     }
     return session
   } catch (error) {
+    // Already reported with an issue of its own (the Zerodha browser login) -
+    // classifying it again would replace a precise message with a guess.
+    if (error.handled) throw error
+
     const issue = classifyLoginError(error)
     patchAccount(configId, {
       status: 'failed',
@@ -300,6 +359,11 @@ async function postAutoLogin(broker, client) {
   }
 
   const body = await response.json().catch(() => ({}))
+
+  // "You need a browser login" comes back as status:false, because no session was
+  // minted - but it is an ANSWER, not a failure. The caller acts on it.
+  if (response.ok && body.needsLogin) return body
+
   if (!response.ok || body.status === false) {
     throw new Error(body.message || `Auto-login failed (HTTP ${response.status})`)
   }
@@ -310,7 +374,9 @@ async function postAutoLogin(broker, client) {
 // config id. Anything with a configId is routed through the shared, deduped
 // login so it can't start a second TOTP login behind the store's back.
 export async function loginAngelClient(client) {
-  const broker = brokerIdOf(client?.broker) || 'angelone'
+  const broker = client?.broker === 'zerodha'
+    ? 'zerodha'
+    : brokerIdOf(client?.broker) || 'angelone'
   if (client?.configId) {
     const session = await ensureSession(client.configId, {
       force: !hasToken(broker, client.session),
@@ -331,6 +397,16 @@ export function missingCredentials(account) {
     if (!account.mobileNumber) missing.push('Mobile Number')
     if (!account.pin) missing.push('MPIN')
     if (!account.totpSecret) missing.push('TOTP Secret')
+    return missing
+  }
+
+  // Kite Connect signs in through the browser, so the API key and secret are the
+  // whole of it - the key identifies the app, the secret signs the one token
+  // exchange. Demanding a password or TOTP here would block a login that never
+  // uses them.
+  if (account.broker === 'zerodha') {
+    if (!account.apiKey) missing.push('API Key')
+    if (!account.apiSecret) missing.push('API Secret')
     return missing
   }
 
@@ -562,13 +638,17 @@ async function hydrateAccount(config, user, broker) {
     apiKey: full.app_key || '',
     pin: full.pin || '',
     totpSecret: full.totp_secret || '',
+    // One column, two meanings: app_secret is Kotak's ACCESS TOKEN and Zerodha's
+    // API SECRET. Each broker reads the name it knows.
     accessToken: full.app_secret || '',
+    apiSecret: full.app_secret || '',
     mobileNumber: full.phone || '',
     session,
     status: 'pending',
     message: '',
     issue: null,
     margin: null,
+    loginUrl: '',
   }
 }
 

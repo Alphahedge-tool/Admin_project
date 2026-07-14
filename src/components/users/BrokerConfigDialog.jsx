@@ -19,9 +19,8 @@ import {
   CircularProgress
 } from '@mui/material'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { apiGet, apiPost, brokerAutoLogin } from '../../config/api'
-import { clearSession, getSavedSession, refreshBrokerAccounts } from '../../feedmaster/angelSessionStore'
-import { zerodhaLoginUrl } from '../../config/api'
+import { apiGet, apiPost, brokerAutoLogin, zerodhaLoginStart, zerodhaLoginUrl } from '../../config/api'
+import { clearSession, getSavedSession, refreshBrokerAccounts, saveSession } from '../../feedmaster/angelSessionStore'
 
 /* ============ BROKER FIELD SCHEMAS ============
    Each broker only asks for the credentials its auto-login
@@ -265,7 +264,7 @@ function BrokerConfigDialog({ user, open, onClose }) {
       if (Object.keys(zerodhaLoginState).length) {
         setLoginState((prev) => ({ ...prev, ...zerodhaLoginState }))
       }
-    } catch (e) {
+    } catch {
       if (seq !== loadSeq.current) return
       setError('Failed to load broker configurations')
     }
@@ -279,6 +278,39 @@ function BrokerConfigDialog({ user, open, onClose }) {
 
     loadData(user)
   }, [open, user?.id])
+
+  useEffect(() => {
+    const allowedOrigins = new Set(['http://127.0.0.1:3001', 'http://localhost:3001'])
+
+    const onMessage = (event) => {
+      if (!allowedOrigins.has(event.origin)) return
+      const data = event.data || {}
+      if (data.type !== 'zerodha-login-complete') return
+      if (!data.configId) return
+      if (data.status !== 'success' || !data.session?.accessToken) {
+        setLoginState((prev) => ({
+          ...prev,
+          [data.configId]: {
+            status: 'error',
+            message: data.message || 'Zerodha login failed',
+          },
+        }))
+        return
+      }
+
+      saveSession(data.configId, data.session, 'zerodha')
+      setLoginState((prev) => ({
+        ...prev,
+        [data.configId]: {
+          status: 'on',
+          message: 'Logged in (fresh browser login)',
+        },
+      }))
+    }
+
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
 
   /* ================= HELPERS ================= */
   const handleChange = (field) => (e) => {
@@ -424,19 +456,36 @@ function BrokerConfigDialog({ user, open, onClose }) {
         return
       }
 
+      const popup = window.open('', '_blank')
+      if (!popup) {
+        setCfgLogin(cfg.id, { status: 'error', message: 'Popup blocked. Allow popups to complete Zerodha login.' })
+        return
+      }
+
       try {
         const cfgDetails = await apiGet(`/users/broker-config/get.php?id=${cfg.id}`)
-        const loginUrl = await zerodhaLoginUrl(cfgDetails.data?.app_key || cfg.app_key || '')
+        const apiKey = cfgDetails.data?.app_key || cfg.app_key || ''
+        const apiSecret = cfgDetails.data?.app_secret || cfg.app_secret || ''
+        if (!apiKey || !apiSecret) {
+          throw new Error('Missing Zerodha API key or API secret')
+        }
+        await zerodhaLoginStart({
+          configId: String(cfg.id),
+          apiKey,
+          apiSecret,
+        })
+        const loginUrl = await zerodhaLoginUrl(apiKey)
         if (loginUrl?.url) {
-          window.open(loginUrl.url, '_blank', 'noopener,noreferrer')
+          popup.location.href = loginUrl.url
           setCfgLogin(cfg.id, {
             status: 'loading',
-            message: 'Complete the Zerodha login in the opened tab, then save the session.',
+            message: 'Complete the Zerodha login in the opened tab.',
           })
           return
         }
         throw new Error('Zerodha login URL could not be created')
       } catch (e) {
+        popup.close()
         setCfgLogin(cfg.id, { status: 'error', message: e.message })
       }
       return

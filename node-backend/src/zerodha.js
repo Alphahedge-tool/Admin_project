@@ -110,7 +110,13 @@ async function kiteRequest(path, {
 
   if (!response.ok || parsed.status === 'error') {
     const message = parsed.message || parsed.error_type || parsed.error || `Zerodha HTTP ${response.status}`;
-    throw new Error(message);
+    // Carry Kite's own error_type and the HTTP status on the error. A dead access
+    // token (TokenException / 403) has to be told apart from a real failure -
+    // the first means "log in again", the second must not silently do that.
+    const error = new Error(message);
+    error.status = response.status;
+    error.errorType = trim(parsed.error_type);
+    throw error;
   }
 
   if (parsed.status && parsed.status !== 'success') {
@@ -140,8 +146,102 @@ export function buildHoldingsAuthoriseUrl(apiKey, requestId) {
   return `https://kite.zerodha.com/connect/portfolio/authorise/holdings/${encodeURIComponent(key)}/${encodeURIComponent(id)}`;
 }
 
+// Kite kills the access token every morning (~6am IST). A saved one is therefore
+// verified, never assumed - and a dead token is a "log in again", not an error.
+function isDeadToken(error) {
+  if (error?.errorType === 'TokenException') return true;
+  if (error?.status === 403) return true;
+  return /token|api_key|access_token|unauthor/i.test(String(error?.message || ''));
+}
+
+export async function profile(input = {}) {
+  return kiteRequest('/user/profile', { method: 'GET', input });
+}
+
+export async function margins(input = {}) {
+  return kiteRequest('/user/margins', { method: 'GET', input });
+}
+
+function availableCashOf(data = {}) {
+  const equity = data.equity || {};
+  return Number(
+    equity.available?.live_balance
+    ?? equity.available?.cash
+    ?? equity.net
+    ?? 0,
+  );
+}
+
+/**
+ * Zerodha's login, in the only shape Kite Connect allows.
+ *
+ * Kite has NO headless login - there is no PIN/TOTP endpoint to call, the user
+ * has to go through kite.zerodha.com in a browser once. What can be automated is
+ * everything either side of that:
+ *
+ *   1. a saved access token is REUSED, after checking it is still alive;
+ *   2. a request token that the browser flow just produced is exchanged for one;
+ *   3. and only when neither is available does this ask for the browser login,
+ *      handing back the URL to open rather than throwing.
+ *
+ * Step 1 is what was missing: autoLogin demanded a request token every single
+ * time, so a perfectly good saved token was ignored and every app start sent the
+ * user back through the browser.
+ */
 export async function autoLogin(input = {}) {
   const creds = normalizeInput(input);
+
+  // 1. Reuse a saved token, if it is still good.
+  if (creds.apiKey && creds.accessToken && !creds.requestToken) {
+    try {
+      const me = await profile(input);
+      const data = me.data || {};
+      const session = mergedSession(creds, {
+        userId: trim(data.user_id || creds.session?.userId || ''),
+        userName: trim(data.user_name || creds.session?.userName || ''),
+        userShortname: trim(data.user_shortname || creds.session?.userShortname || ''),
+        broker: 'ZERODHA',
+        loginSource: 'session',
+      });
+
+      let availableMargin = 0;
+      try {
+        const funds = await margins(input);
+        availableMargin = availableCashOf(funds.data || {});
+      } catch {
+        // A funds hiccup must not discard a token the profile call just proved good.
+      }
+
+      return {
+        status: true,
+        broker: 'zerodha',
+        clientCode: session.userId || creds.apiKey,
+        availableMargin,
+        marginSource: 'kite-margins',
+        sessionSource: 'session',
+        session,
+        data,
+      };
+    } catch (error) {
+      // A dead token falls through to the browser login below. Anything else is a
+      // real failure and must not be papered over as "just log in again".
+      if (!isDeadToken(error)) throw error;
+    }
+  }
+
+  // 3. Nothing to exchange and nothing to reuse: the browser flow has to run.
+  if (!creds.requestToken) {
+    if (!creds.apiKey) throw new Error('Zerodha login needs an API key');
+    return {
+      status: false,
+      needsLogin: true,
+      broker: 'zerodha',
+      loginUrl: buildLoginUrl(creds.apiKey),
+      message: 'Zerodha needs a browser login - Kite Connect has no headless login.',
+    };
+  }
+
+  // 2. Exchange the request token the browser flow just produced.
   assertLoginCreds(creds);
 
   const response = await fetch(`${KITE_API_BASE_URL}/session/token`, {
@@ -175,7 +275,9 @@ export async function autoLogin(input = {}) {
   const data = body.data || body;
   const session = {
     apiKey: creds.apiKey,
-    apiSecret: creds.apiSecret,
+    // Deliberately NOT the API secret. This session is handed to the browser and
+    // saved there; the secret is only ever needed server-side, to sign this one
+    // exchange. Reusing the token afterwards needs the api key and nothing else.
     accessToken: trim(data.access_token || ''),
     publicToken: trim(data.public_token || ''),
     userId: trim(data.user_id || ''),

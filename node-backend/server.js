@@ -1,5 +1,6 @@
 // Node SmartAPI proxy for the admin Trade Panel. Exposes the same /api/angel/*
 // surface the option chain + basket frontend expects. Port of the Go httpapi.
+import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import WebSocket from 'ws';
@@ -28,9 +29,10 @@ const master = new MasterStore();
 const instruments = new BrokerInstrumentManager(master);
 const feed = new Feed();
 const kotakFeeds = new KotakHsmRegistry();
+const zerodhaLoginStates = new Map();
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '8mb' }));
 
 // Small wrapper so async handlers report errors as { status:false, message }.
@@ -42,6 +44,69 @@ const h = (fn) => async (req, res) => {
     if (!res.headersSent) res.status(500).json({ status: false, message: err.message || 'Server error' });
   }
 };
+
+function parseCookies(header = '') {
+  return header.split(';').reduce((acc, part) => {
+    const [rawKey, ...rest] = part.split('=');
+    const key = String(rawKey || '').trim();
+    if (!key) return acc;
+    acc[key] = decodeURIComponent(rest.join('=').trim() || '');
+    return acc;
+  }, {});
+}
+
+function clearZerodhaCookie(res) {
+  res.setHeader('Set-Cookie', 'zerodha_login_id=; Max-Age=0; Path=/; SameSite=Lax');
+}
+
+function renderZerodhaCallbackHtml({ status, title, message, configId, session, origin = '*' }) {
+  const payload = {
+    type: 'zerodha-login-complete',
+    status,
+    title,
+    message,
+    configId: configId ? String(configId) : '',
+    session: session || null,
+  };
+  const data = JSON.stringify(payload).replace(/</g, '\\u003c');
+  const titleText = String(title || 'Zerodha login');
+  const messageText = String(message || '');
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${titleText}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 32px; background: #f6f7fb; color: #1f2937; }
+    .card { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.08); }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    p { margin: 0 0 12px; line-height: 1.5; }
+    code { display: block; white-space: pre-wrap; word-break: break-word; background: #f3f4f6; padding: 12px; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>${titleText}</h1>
+    <p>${messageText}</p>
+    <p>You can close this tab once the Trade Panel updates.</p>
+  </div>
+  <script>
+    (function () {
+      const payload = ${data};
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(payload, ${JSON.stringify(origin)});
+        }
+      } catch (error) {
+        console.error(error);
+      }
+      setTimeout(() => window.close(), 250);
+    }());
+  </script>
+</body>
+</html>`;
+}
 
 // ── auth ─────────────────────────────────────────────────────────────────────
 app.post('/api/angel/auto-login', h(async (req) => {
@@ -84,11 +149,105 @@ app.post('/api/zerodha/auto-login', h(async (req) => {
   return zerodha.autoLogin(credentials);
 }));
 
+app.post('/api/zerodha/login-start', h(async (req, res) => {
+  const body = req.body || {};
+  const configId = String(body.configId || body.config_id || '').trim();
+  const apiKey = String(body.apiKey || body.api_key || '').trim();
+  const apiSecret = String(body.apiSecret || body.api_secret || '').trim();
+  if (!configId) throw new Error('Zerodha login start needs configId');
+  if (!apiKey) throw new Error('Zerodha login start needs API key');
+  if (!apiSecret) throw new Error('Zerodha login start needs API secret');
+
+  const loginId = crypto.randomUUID();
+  zerodhaLoginStates.set(loginId, {
+    configId,
+    apiKey,
+    apiSecret,
+    createdAt: Date.now(),
+  });
+  res.setHeader('Set-Cookie', `zerodha_login_id=${encodeURIComponent(loginId)}; Max-Age=300; Path=/; SameSite=Lax`);
+  return { status: true, loginId, configId };
+}));
+
 app.get('/api/zerodha/login-url', h(async (req) => ({
   status: true,
   broker: 'zerodha',
   url: zerodha.buildLoginUrl(req.query.apiKey || req.query.api_key),
 })));
+
+app.get('/zerodha/callback', async (req, res) => {
+  const cookies = parseCookies(req.headers.cookie || '');
+  const loginId = String(cookies.zerodha_login_id || req.query.login_id || '').trim();
+  const pending = loginId ? zerodhaLoginStates.get(loginId) : null;
+  const requestToken = String(req.query.request_token || req.query.requestToken || '').trim();
+  const status = String(req.query.status || '').toLowerCase();
+
+  if (!pending) {
+    clearZerodhaCookie(res);
+    res.status(400).setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(renderZerodhaCallbackHtml({
+      status: 'error',
+      title: 'Zerodha login not linked',
+      message: 'The callback did not match a pending Zerodha login. Please open the login again from the app.',
+    }));
+    return;
+  }
+
+  if (status && status !== 'success') {
+    zerodhaLoginStates.delete(loginId);
+    clearZerodhaCookie(res);
+    res.status(400).setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(renderZerodhaCallbackHtml({
+      status: 'error',
+      title: 'Zerodha login cancelled',
+      message: `Zerodha returned status=${status || 'unknown'}.`,
+      configId: pending.configId,
+    }));
+    return;
+  }
+
+  if (!requestToken) {
+    zerodhaLoginStates.delete(loginId);
+    clearZerodhaCookie(res);
+    res.status(400).setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(renderZerodhaCallbackHtml({
+      status: 'error',
+      title: 'Zerodha login failed',
+      message: 'The callback did not include a request token.',
+      configId: pending.configId,
+    }));
+    return;
+  }
+
+  try {
+    const result = await zerodha.autoLogin({
+      apiKey: pending.apiKey,
+      apiSecret: pending.apiSecret,
+      requestToken,
+    });
+    zerodhaLoginStates.delete(loginId);
+    clearZerodhaCookie(res);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(renderZerodhaCallbackHtml({
+      status: 'success',
+      title: 'Zerodha login complete',
+      message: 'The access token was generated successfully and sent back to the app.',
+      configId: pending.configId,
+      session: result.session,
+      origin: '*',
+    }));
+  } catch (error) {
+    zerodhaLoginStates.delete(loginId);
+    clearZerodhaCookie(res);
+    res.status(500).setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(renderZerodhaCallbackHtml({
+      status: 'error',
+      title: 'Zerodha login failed',
+      message: error.message || 'Could not exchange the request token.',
+      configId: pending.configId,
+    }));
+  }
+});
 
 app.get('/api/zerodha/orders', h(async (req) => zerodha.orderBook(req.query || {})));
 app.get('/api/zerodha/trades', h(async (req) => zerodha.tradeBook(req.query || {})));
@@ -566,10 +725,33 @@ app.get('/api/angel/stream', (req, res) => {
 });
 
 // ── boot ─────────────────────────────────────────────────────────────────────
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`Angel Trade Panel backend running at http://localhost:${config.port}`);
   master.warm()
     .then(() => instruments.loadAngel())
     .then(() => console.log('Angel + normalized instrument masters ready'))
     .catch((err) => console.log('Master warm-up failed:', err.message));
 });
+
+// Without a handler here, a taken port surfaces as an unhandled 'error' event -
+// a fifteen-line stack trace that says EADDRINUSE somewhere in the middle. It is
+// almost always a second `npm run dev` still running, so say that and stop.
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`\nPort ${config.port} is already in use - is another instance of this backend running?\n`);
+    process.exit(1);
+  }
+  throw error;
+});
+
+// The feed and the order streams hold sockets open, which would keep the process
+// alive after a --watch restart signal and leave the port bound just long enough
+// for the NEXT one to fail. Let go of them promptly.
+function shutdown() {
+  server.closeAllConnections?.();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 1500).unref();
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

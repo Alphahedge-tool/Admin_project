@@ -3,7 +3,7 @@ const API_BASE_URL = '/api'
 // Broker backend base URL. Leave empty to use the current origin and Vite's
 // dev proxy / reverse proxy in front of it, or set VITE_BROKER_API_BASE_URL
 // when the Node backend lives on a separate host.
-const BROKER_API_BASE_URL = (import.meta.env.VITE_BROKER_API_BASE_URL || '').replace(/\/$/, '')
+const BROKER_API_BASE_URL = (import.meta.env.VITE_BROKER_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '')
 
 function brokerApiUrl(path) {
   return `${BROKER_API_BASE_URL}/api${path}`
@@ -74,6 +74,7 @@ export async function brokerAutoLogin(broker, client) {
   }[broker] || 'angel'
   const res = await fetch(brokerApiUrl(`/${path}/auto-login`), {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ client }),
   })
@@ -105,6 +106,7 @@ async function zerodhaApi(path, { method = 'GET', query = {}, body } = {}) {
 
   const res = await fetch(url, {
     method,
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: body == null ? undefined : JSON.stringify(body),
   })
@@ -125,6 +127,10 @@ async function zerodhaApi(path, { method = 'GET', query = {}, body } = {}) {
 
 export function zerodhaLoginUrl(apiKey) {
   return zerodhaApi('/login-url', { query: { apiKey } })
+}
+
+export function zerodhaLoginStart(body) {
+  return zerodhaApi('/login-start', { method: 'POST', body })
 }
 
 export function zerodhaHoldings(client) {
