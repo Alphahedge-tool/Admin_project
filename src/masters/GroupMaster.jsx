@@ -235,8 +235,8 @@ function GroupMaster() {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 2,
-          background: 'linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)',
-          borderBottom: '1px solid #e5eaf3'
+          background: 'linear-gradient(180deg, var(--ao-blue-bg) 0%, var(--ao-surface) 100%)',
+          borderBottom: '1px solid var(--ao-border-soft)'
         }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
             <Box sx={{
@@ -246,17 +246,17 @@ function GroupMaster() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#3730a3',
-              background: 'linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%)',
-              border: '1px solid #c7d2fe'
+              color: 'primary.main',
+              background: 'var(--ao-blue-bg)',
+              border: '1px solid var(--ao-border)'
             }}>
               <UsersRound size={19} />
             </Box>
             <Box sx={{ minWidth: 0 }}>
-              <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, color: '#1f2937', lineHeight: 1.2 }}>
+              <Typography sx={{ fontSize: '1.05rem', fontWeight: 800, color: 'text.primary', lineHeight: 1.2 }}>
                 Users in {viewGroup?.name}
               </Typography>
-              <Typography sx={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 650, mt: 0.35 }}>
+              <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary', fontWeight: 650, mt: 0.35 }}>
                 Group membership details and assigned segments
               </Typography>
             </Box>
@@ -265,15 +265,15 @@ function GroupMaster() {
           <IconButton size="small" onClick={() => setViewGroup(null)} sx={{
             width: 32,
             height: 32,
-            border: '1px solid #e2e8f0',
+            border: '1px solid var(--ao-border)',
             borderRadius: 1,
-            color: '#64748b'
+            color: 'text.secondary'
           }}>
             <X size={16} />
           </IconButton>
         </DialogTitle>
 
-        <DialogContent sx={{ px: 3, py: 2.25, bgcolor: '#ffffff' }}>
+        <DialogContent sx={{ px: 3, py: 2.25, bgcolor: 'background.paper' }}>
           {usersLoading ? (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, py: 5 }}>
               <CircularProgress />

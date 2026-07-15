@@ -51,41 +51,41 @@
   color-scheme: light;
 
   /* Brand */
-  --ao-blue: #3F5BD9;
-  --ao-blue-hover: #354CB5;
+  --ao-blue: #4184F3;
+  --ao-blue-hover: #2E6FE0;
   --ao-blue-pressed: #202E6D;
-  --ao-blue-surface: #E8ECFC;
-  --ao-blue-bg: #F1F4FD;
+  --ao-blue-surface: #ECF3FE;
+  --ao-blue-bg: #F4F8FE;
 
-  --ao-green: #008F75;
-  --ao-green-surface: #E0F0E8;
-  --ao-green-bg: #F0FAF5;
-  --ao-up-bg: #E4F6F5;
+  --ao-green: #088F8F;
+  --ao-green-surface: #EBF8F2;
+  --ao-green-bg: #EBF8F2;
+  --ao-up-bg: #EBF8F2;
 
-  --ao-red: #D64D4D;
-  --ao-red-surface: #FFECEC;
-  --ao-red-bg: #FFF2F2;
-  --ao-down-bg: #FDEBEA;
+  --ao-red: #FF5722;
+  --ao-red-surface: #FEF0EF;
+  --ao-red-bg: #FEF0EF;
+  --ao-down-bg: #FEF0EF;
 
-  --ao-purple: #581DBE;
-  --ao-purple-surface: #EDE3FC;
-  --ao-gold: #FF9933;
+  --ao-purple: #844AEB;
+  --ao-purple-surface: #F3EDFD;
+  --ao-gold: #FF8F00;
   --ao-yellow: #F9BA4D;
   --ao-cyan: #21C7DB;
 
   /* Neutrals */
-  --ao-bold: #253040;
-  --ao-base: #425061;
-  --ao-muted: #A2A8B4;
-  --ao-caption: #717A89;
-  --ao-placeholder: #959FB0;
+  --ao-bold: #333333;
+  --ao-base: #444444;
+  --ao-muted: #CCCCCC;
+  --ao-caption: #9B9B9B;
+  --ao-placeholder: #9B9B9B;
 
-  --ao-bg: #F5F7FA;          /* page */
-  --ao-surface: #FFFFFF;     /* cards */
-  --ao-surface-2: #F1F4FD;   /* subtle fill */
-  --ao-hover: #F5F7FA;
-  --ao-border: #DDDFE4;
-  --ao-border-soft: #EAEBF1;
+  --ao-bg: #F8F8F8;
+  --ao-surface: #FFFFFF;
+  --ao-surface-2: #FAFAFB;
+  --ao-hover: #F8F8F8;
+  --ao-border: #DDDDDD;
+  --ao-border-soft: #EEEEEE;
 
   /* Type scale */
   --fs-xxs: 0.625rem;
@@ -104,26 +104,26 @@
      Lifted from Angel's production stylesheet so the basket maps to their
      genuine --color-* names. Light values; see .dark-mode-theme for dark. */
   --color-neutral-background: #ffffff;
-  --color-neutral-background-grey: #F1F4FD;
-  --color-neutral-background-hover: #F5F7FA;
-  --color-border-grey: #DDDFE4;
-  --color-neutral-border: #EAEBF1;
-  --color-text-bold: #253040;
-  --color-text-base: #425061;
-  --color-neutral-caption: #717A89;
-  --color-text-muted: #A2A8B4;
-  --color-neutral-placeholder: #959FB0;
-  --color-text-blue: #3F5BD9;
-  --color-text-blue-hover: #354CB5;
-  --color-surface-primary: #E8ECFC;
-  --color-background-primary: #F1F4FD;
-  --color-success-main: #008F75;
-  --color-background-success: #F0FAF5;
-  --color-error-main: #D64D4D;
-  --color-background-error: #FFF2F2;
-  --color-icon-gold: #FF9933;
-  --color-text-secondary: #581DBE;
-  --color-surface-secondary: #EDE3FC;
+  --color-neutral-background-grey: #FAFAFB;
+  --color-neutral-background-hover: #F8F8F8;
+  --color-border-grey: #DDDDDD;
+  --color-neutral-border: #EEEEEE;
+  --color-text-bold: #333333;
+  --color-text-base: #444444;
+  --color-neutral-caption: #9B9B9B;
+  --color-text-muted: #CCCCCC;
+  --color-neutral-placeholder: #9B9B9B;
+  --color-text-blue: #4184F3;
+  --color-text-blue-hover: #2E6FE0;
+  --color-surface-primary: #ECF3FE;
+  --color-background-primary: #F4F8FE;
+  --color-success-main: #088F8F;
+  --color-background-success: #EBF8F2;
+  --color-error-main: #FF5722;
+  --color-background-error: #FEF0EF;
+  --color-icon-gold: #FF8F00;
+  --color-text-secondary: #844AEB;
+  --color-surface-secondary: #F3EDFD;
   --color-basket-shadow: 6px 6px 28px 0px rgba(43, 47, 63, .1);
 
   -webkit-font-smoothing: antialiased;
@@ -153,8 +153,8 @@
 
 /* Slim, premium scrollbars */
 *::-webkit-scrollbar { width: 9px; height: 9px; }
-*::-webkit-scrollbar-thumb { background: #cdd2dc; border-radius: 9px; border: 2px solid transparent; background-clip: padding-box; }
-*::-webkit-scrollbar-thumb:hover { background: #b6bdca; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, .1); border-radius: 9px; border: 2px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, .4); background-clip: padding-box; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ App shell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -2272,6 +2272,22 @@ select { min-width: 96px; }
   cursor: pointer;
 }
 .positions-group-btn:hover { background: var(--ao-blue-hover); }
+.positions-selection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 0 2px;
+  background: var(--ao-surface);
+}
+.positions-selection-actions .positions-toolbar-divider { margin-inline: 0; }
+.positions-selection-actions .positions-selection-clear { margin-left: 0; }
+.positions-selection-actions .positions-group-btn,
+.positions-selection-actions .positions-selection-clear {
+  height: 28px;
+  padding: 0 9px;
+  white-space: nowrap;
+}
 .positions-remove-btn {
   display: inline-flex;
   align-items: center;
@@ -2305,27 +2321,44 @@ select { min-width: 96px; }
   z-index: 4200;
   display: grid;
   place-items: center;
-  background: rgba(37, 48, 64, .22);
+  padding: 16px;
+  background: rgba(15, 18, 24, .56);
+  backdrop-filter: blur(3px);
+  animation: strategy-backdrop-in .14s ease-out both;
 }
 .strategy-dialog {
-  width: min(420px, calc(100vw - 28px));
-  background: var(--ao-bg);
+  width: min(470px, calc(100vw - 28px));
+  background: var(--ao-surface);
   color: var(--ao-base);
   border: 1px solid var(--ao-border);
-  border-radius: 8px;
-  box-shadow: 0 12px 36px rgba(37, 48, 64, .18);
+  border-radius: 10px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .3);
   overflow: hidden;
+  animation: strategy-dialog-in .16s cubic-bezier(.2, .8, .2, 1) both;
 }
 .strategy-dialog-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 13px 16px;
-  background: var(--ao-surface-2);
+  padding: 14px 16px;
+  background: linear-gradient(180deg, var(--ao-blue-bg), var(--ao-surface));
   border-bottom: 1px solid var(--ao-border);
 }
-.strategy-dialog-title { display: inline-flex; align-items: center; gap: 9px; }
+.strategy-dialog-title { display: inline-flex; align-items: center; gap: 11px; min-width: 0; }
+.strategy-dialog-title-icon {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 28%, var(--ao-border));
+  border-radius: 8px;
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
+}
+.strategy-dialog-heading { min-width: 0; display: grid; gap: 2px; }
 .strategy-dialog-title strong { color: var(--ao-bold); font-size: var(--fs-base); }
+.strategy-dialog-heading small { color: var(--ao-caption); font-size: var(--fs-xs); font-weight: 500; }
 .strategy-dialog-close {
   width: 26px;
   height: 26px;
@@ -2340,7 +2373,24 @@ select { min-width: 96px; }
 }
 .strategy-dialog-close:hover { background: var(--ao-hover); }
 .strategy-dialog-close:disabled { opacity: .5; cursor: not-allowed; }
-.strategy-dialog-body { padding: 16px; display: grid; gap: 12px; }
+.strategy-dialog-body { padding: 14px 16px 16px; display: grid; gap: 13px; }
+.strategy-dialog-selection {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+}
+.strategy-dialog-selection-count,
+.strategy-dialog-selection-scope { min-width: 0; display: grid; gap: 1px; }
+.strategy-dialog-selection-count { padding-right: 12px; border-right: 1px solid var(--ao-border-soft); }
+.strategy-dialog-selection-count strong { color: var(--ao-blue); font-size: 18px; line-height: 1; font-weight: 700; }
+.strategy-dialog-selection small { color: var(--ao-caption); font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .035em; }
+.strategy-dialog-selection-scope strong { overflow: hidden; color: var(--ao-bold); font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .strategy-mode-toggle {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2419,6 +2469,17 @@ select { min-width: 96px; }
 .strategy-dialog-save:disabled,
 .strategy-dialog-cancel:disabled { opacity: .55; cursor: not-allowed; }
 
+body:has(.strategy-dialog-backdrop) .position-select-menu-portal { z-index: 4300; }
+
+@keyframes strategy-backdrop-in { from { opacity: 0; } }
+@keyframes strategy-dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(.985); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .strategy-dialog-backdrop,
+  .strategy-dialog { animation: none; }
+}
+
 /* Saved strategies panel (Sync Net Positions) */
 .strategy-list { margin-top: 14px; display: grid; gap: 12px; }
 .strategy-list--compact {
@@ -2436,6 +2497,53 @@ select { min-width: 96px; }
 }
 .strategy-list-head strong { color: var(--ao-bold); font-size: var(--fs-base); }
 .strategy-list-head span { color: var(--ao-caption); font-size: var(--fs-sm); }
+.strategy-list-head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.strategy-master-check {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--ao-border);
+  border-radius: 3px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.strategy-master-check:hover:not(:disabled) {
+  border-color: var(--ao-blue);
+  background: var(--ao-blue-bg);
+}
+.strategy-master-check.checked,
+.strategy-master-check.indeterminate {
+  border-color: var(--ao-blue);
+  background: var(--ao-blue);
+}
+.strategy-master-check:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+html[data-theme="dark"] .strategy-master-check {
+  border-color: #3d3d3d;
+  background: transparent;
+  color: #d3dbe8;
+}
+html[data-theme="dark"] .strategy-master-check:hover:not(:disabled) {
+  border-color: #386aa8;
+  background: rgba(49, 95, 152, .18);
+}
+html[data-theme="dark"] .strategy-master-check.checked,
+html[data-theme="dark"] .strategy-master-check.indeterminate {
+  border-color: #386aa8;
+  background: #315f98;
+}
 .strategy-list-head-actions {
   display: flex;
   align-items: center;
@@ -2466,7 +2574,36 @@ select { min-width: 96px; }
   padding: 12px 16px;
   background: linear-gradient(180deg, var(--ao-surface-2), var(--ao-surface));
   border-bottom: 1px solid var(--ao-border);
+  cursor: pointer;
+  user-select: none;
+  transition: background .12s ease;
 }
+.strategy-card-head:hover {
+  background: linear-gradient(180deg, var(--ao-hover), var(--ao-surface-2));
+}
+.strategy-card-head:focus-visible {
+  outline: 2px solid var(--ao-blue-surface);
+  outline-offset: -2px;
+}
+/* Collapsed: the head is the only row, so drop its divider. */
+.strategy-card.collapsed .strategy-card-head { border-bottom: 0; }
+/* Passive chevron indicator - the whole head toggles. Points down when open,
+   rotates to point right when the legs are collapsed. */
+.strategy-collapse-caret {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--ao-caption);
+  transition: transform .15s ease, color .12s ease, background .12s ease;
+}
+.strategy-card-head:hover .strategy-collapse-caret {
+  color: var(--ao-blue);
+  background: var(--ao-blue-bg);
+}
+.strategy-card.collapsed .strategy-collapse-caret { transform: rotate(-90deg); }
 .strategy-card-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .strategy-card-title::before {
   content: '';
@@ -2576,6 +2713,23 @@ select { min-width: 96px; }
   border: 1px solid var(--ao-border-soft);
   color: var(--ao-caption);
 }
+/* Owner chip on aggregated (group overview) strategy cards. */
+.strategy-card-meta > .strategy-owner-tag {
+  color: var(--ao-blue);
+  border-color: var(--ao-blue-surface);
+  background: var(--ao-blue-bg);
+  font-weight: 800;
+}
+.strategy-card-meta > .strategy-broker-tag {
+  gap: 5px;
+  padding-left: 5px;
+}
+.strategy-card-meta > .strategy-broker-tag .broker-mark {
+  width: 13px;
+  height: 13px;
+  flex-basis: 13px;
+}
+.strategy-card-meta > .strategy-broker-tag .broker-mark img { height: 13px; }
 .strategy-card-meta .up {
   color: var(--ao-green);
   background: color-mix(in srgb, var(--ao-green) 12%, transparent);
@@ -2790,7 +2944,7 @@ select { min-width: 96px; }
   width: 100%;
 }
 .client-dashboard-picker .position-select-option {
-  min-height: 44px;
+  min-height: 38px;
   align-items: center;
 }
 .client-dashboard-head {
@@ -2815,8 +2969,8 @@ select { min-width: 96px; }
 .client-strategy-strip {
   width: 100%;
   min-width: 0;
-  margin-top: 6px;
-  padding: 10px;
+  margin-top: 4px;
+  padding: 7px;
   border: 1px solid var(--ao-border);
   border-radius: 8px;
   background: var(--ao-surface);
@@ -2826,8 +2980,8 @@ select { min-width: 96px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 7px;
 }
 .client-strategy-strip-head strong {
   color: var(--ao-bold);
@@ -2850,7 +3004,7 @@ select { min-width: 96px; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 12px;
+  padding: 3px 10px;
   border-radius: 999px;
   border: 1px solid var(--ao-border-soft);
   background: var(--ao-surface-2);
@@ -2867,12 +3021,85 @@ select { min-width: 96px; }
   text-transform: none;
   letter-spacing: 0;
 }
+.client-group-pnl-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.client-group-pnl-card {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) auto minmax(110px, auto);
+  align-items: center;
+  gap: 12px;
+  padding: 5px 9px;
+  border: 1px solid var(--ao-border-soft);
+  border-left: 3px solid var(--ao-blue);
+  border-radius: 4px;
+  background: var(--ao-surface-2);
+}
+.client-group-pnl-name,
+.client-group-pnl-value {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.client-group-pnl-name span,
+.client-group-pnl-value span {
+  color: var(--ao-caption);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.client-group-pnl-name strong {
+  overflow: hidden;
+  color: var(--ao-bold);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.client-group-pnl-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.client-group-pnl-meta span {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 999px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.client-group-pnl-value {
+  justify-items: end;
+  padding-left: 12px;
+  border-left: 1px solid var(--ao-border-soft);
+}
+.client-group-pnl-value strong {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.client-group-pnl-value strong.up { color: var(--ao-green); }
+.client-group-pnl-value strong.down { color: var(--ao-red); }
 .client-strategy-row {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 .client-strategy-card {
-  min-height: 46px;
+  min-height: 44px;
   display: grid;
   gap: 0;
   overflow: hidden;
@@ -2893,15 +3120,33 @@ select { min-width: 96px; }
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(420px, 1fr) minmax(360px, 460px);
   align-items: center;
-  gap: 14px;
-  min-height: 46px;
-  padding: 7px 10px;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .12s ease;
 }
-.client-strategy-broker,
-.client-strategy-name {
+.client-strategy-summary:hover {
+  background: color-mix(in srgb, var(--ao-blue) 5%, transparent);
+}
+.client-strategy-summary:focus-visible {
+  outline: 2px solid var(--ao-blue-surface);
+  outline-offset: -2px;
+}
+/* The chevron is now a passive indicator - the whole row toggles - so it lights
+   up with the row on hover instead of being its own hit target. */
+.client-strategy-summary:hover .client-strategy-expand {
+  color: var(--ao-blue);
+  border-color: color-mix(in srgb, var(--ao-blue) 30%, var(--ao-border-soft));
+}
+/* One line, no vertical stacking: USER label · name pill · broker all inline. */
+.client-strategy-broker {
   min-width: 0;
-  display: grid;
-  gap: 3px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 .client-strategy-name {
   width: max-content;
@@ -2912,25 +3157,29 @@ select { min-width: 96px; }
   justify-self: start;
 }
 .client-strategy-broker span {
+  flex: none;
   color: var(--ao-caption);
-  font-size: var(--fs-xs);
-  font-weight: 850;
+  font-size: 0.625rem;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .05em;
   text-transform: uppercase;
 }
 .client-strategy-broker strong {
   justify-self: start;
   max-width: 100%;
-  height: 24px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--ao-border-soft);
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 30%, var(--ao-border));
   border-radius: 999px;
-  background: var(--ao-surface);
-  color: var(--ao-caption);
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
   font-size: var(--fs-sm);
-  font-weight: 850;
+  font-weight: 800;
+  line-height: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2939,8 +3188,12 @@ select { min-width: 96px; }
 .client-strategy-broker-sub {
   justify-self: start;
   max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--ao-caption);
   font-size: var(--fs-xs);
+  line-height: 1;
   font-style: normal;
   font-weight: 700;
   overflow: hidden;
@@ -2949,15 +3202,15 @@ select { min-width: 96px; }
 }
 .client-strategy-expand {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: inline-grid;
   place-items: center;
   border: 1px solid var(--ao-border-soft);
   border-radius: 999px;
   background: var(--ao-surface);
   color: var(--ao-caption);
-  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
 }
 .client-strategy-expand:hover {
   background: var(--ao-hover);
@@ -2976,7 +3229,7 @@ select { min-width: 96px; }
   color: var(--ao-bold);
   font-size: var(--fs-base);
   font-weight: 850;
-  line-height: 1.25;
+  line-height: 1.1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2989,22 +3242,32 @@ select { min-width: 96px; }
 }
 .client-strategy-metrics div {
   display: grid;
-  gap: 2px;
+  gap: 0;
   min-width: 0;
   padding: 0 8px;
   border-left: 1px solid var(--ao-border-soft);
 }
 .client-strategy-metrics span {
   color: var(--ao-caption);
-  font-size: var(--fs-xs);
+  font-size: 0.625rem;
+  line-height: 1.3;
   font-weight: 800;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 .client-strategy-metrics strong {
   color: var(--ao-bold);
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
+  line-height: 1.15;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
+}
+/* The P&L reads a touch larger, at a regular (not heavy) weight - Kite/Zerodha
+   style coloured numbers rather than a bold figure. */
+.client-strategy-metrics strong.up,
+.client-strategy-metrics strong.down {
+  font-size: var(--fs-base);
+  font-weight: 500;
 }
 .client-strategy-metrics strong.up { color: var(--ao-green); }
 .client-strategy-metrics strong.down { color: var(--ao-red); }
@@ -3038,8 +3301,8 @@ select { min-width: 96px; }
      one to match the taller - otherwise a short Strategy Details next to a long
      Get Position leaves a big empty box. */
   align-items: start;
-  gap: 10px;
-  padding: 8px;
+  gap: 8px;
+  padding: 6px;
   border-top: 1px solid var(--ao-border-soft);
   background: var(--ao-surface-2);
 }
@@ -3052,12 +3315,12 @@ select { min-width: 96px; }
   background: var(--ao-surface);
 }
 .client-detail-panel-head {
-  min-height: 34px;
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 6px 12px;
+  padding: 4px 10px;
   border-bottom: 1px solid var(--ao-border-soft);
   background: var(--ao-surface-2);
 }
@@ -3136,12 +3399,12 @@ select { min-width: 96px; }
   /* Keep every column at its natural width; the details area scrolls if the
      panel can't fit it, so text is never cut off. */
   min-width: 700px;
-  min-height: 46px;
-  padding: 9px 12px;
+  min-height: 34px;
+  padding: 6px 10px;
   font-size: clamp(11px, .74vw, 13px);
 }
 .client-detail-panel .client-leg-row.head {
-  min-height: 36px;
+  min-height: 28px;
   font-size: clamp(10px, .66vw, 12px);
 }
 .client-detail-panel .client-leg-symbol {
@@ -3202,34 +3465,52 @@ select { min-width: 96px; }
 .client-account-group + .client-account-group {
   border-top: 1px solid var(--ao-border-soft);
 }
+/* Group-header bar styled to match Get Position's expiry header: a grey bar
+   with pill-shaped labels on the left and a right-aligned coloured P&L. */
 .client-account-group-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  min-height: 30px;
-  padding: 5px 14px;
+  min-height: 32px;
+  padding: 5px 12px;
   background: var(--ao-surface-2);
+  border-top: 1px solid var(--ao-border-soft);
+  border-bottom: 1px solid var(--ao-border-soft);
 }
 .client-account-group-name {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
 .client-account-group-broker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--ao-surface);
+  border: 1px solid var(--ao-border);
   color: var(--ao-bold);
-  font-size: var(--fs-sm);
-  font-weight: 850;
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .client-account-group-name em {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--ao-hover);
   color: var(--ao-caption);
-  font-size: var(--fs-xs);
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   font-style: normal;
   font-variant-numeric: tabular-nums;
 }
@@ -3247,8 +3528,8 @@ select { min-width: 96px; }
   letter-spacing: .03em;
 }
 .client-account-group-total strong {
-  font-size: var(--fs-sm);
-  font-weight: 900;
+  font-size: 14px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 .client-account-group-total strong.up { color: var(--ao-green); }
@@ -3782,15 +4063,15 @@ select { min-width: 96px; }
    scoped so Get Position / OrderBook tables keep their taller rows. */
 .client-detail-panel .positions-table th,
 .client-detail-panel .positions-table td {
-  height: 30px;
-  padding: 3px 12px;
+  height: 26px;
+  padding: 2px 10px;
 }
 .compact-leg-row {
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  padding: 6px 0;
+  padding: 4px 0;
   font-size: var(--fs-sm);
   border-bottom: 1px solid var(--ao-border-soft);
 }
@@ -3799,8 +4080,8 @@ select { min-width: 96px; }
 .compact-leg-head {
   position: sticky;
   top: 0;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 5px;
+  padding-bottom: 5px;
   font-size: var(--fs-xs, 11px);
   font-weight: 700;
   letter-spacing: .04em;
@@ -4328,6 +4609,35 @@ select { min-width: 96px; }
   min-width: 0;
   text-align: left;
 }
+.broker-mark {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 3px;
+  line-height: 0;
+}
+.broker-mark img {
+  display: block;
+  width: auto;
+  max-width: none;
+  height: 15px;
+}
+.positions-view-compact .broker-mark {
+  width: 14px;
+  height: 14px;
+  flex-basis: 14px;
+}
+.positions-view-compact .broker-mark img { height: 14px; }
+.broker-mark--zerodha {
+  display: inline-grid;
+  place-items: center;
+}
+.broker-mark--zerodha img {
+  width: 100%;
+  height: auto;
+}
 .position-select-text strong {
   min-width: 0;
   overflow: hidden;
@@ -4589,8 +4899,125 @@ button.position-expiry-row-content {
    class selectors also win on specificity over the base .position-book-table
    rules regardless of source order. */
 .positions-view.positions-view-compact {
-  padding: 4px 8px 8px;
-  gap: 8px;
+  --ao-blue: #4184F3;
+  --ao-blue-hover: #2E6FE0;
+  --ao-blue-surface: #ECF3FE;
+  --ao-blue-bg: #F4F8FE;
+  --ao-green: #088F8F;
+  --ao-green-bg: #EBF8F2;
+  --ao-red: #FF5722;
+  --ao-red-bg: #FEF0EF;
+  --ao-purple: #844AEB;
+  --ao-purple-surface: #F3EDFD;
+  --ao-bold: #333333;
+  --ao-base: #444444;
+  --ao-muted: #CCCCCC;
+  --ao-caption: #9B9B9B;
+  --ao-placeholder: #9B9B9B;
+  --ao-bg: #F8F8F8;
+  --ao-surface: #FFFFFF;
+  --ao-surface-2: #FAFAFB;
+  --ao-hover: #F8F8F8;
+  --ao-border: #DDDDDD;
+  --ao-border-soft: #EEEEEE;
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 3px 10px rgba(0, 0, 0, .04);
+  color: var(--ao-base);
+  font-family: "Open Sans", Roboto, ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
+}
+.positions-workspace-head {
+  flex: none;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface-2);
+}
+.positions-workspace-title {
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.positions-workspace-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 8px;
+  color: var(--ao-blue);
+  background: var(--ao-blue-bg);
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 16%, transparent);
+}
+.positions-workspace-title > div { min-width: 0; display: grid; gap: 1px; }
+.positions-workspace-title strong { color: var(--ao-bold); font-size: 17px; font-weight: 500; line-height: 1.2; }
+.positions-workspace-title small {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ao-caption);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.positions-head-metrics { display: flex; align-self: stretch; }
+.positions-head-metric {
+  min-width: 66px;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 0 13px;
+  border-left: 1px solid var(--ao-border-soft);
+}
+.positions-head-metric span { color: var(--ao-caption); font-size: 10.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+.positions-head-metric strong { color: var(--ao-bold); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.positions-head-metric.is-long strong { color: var(--ao-green); }
+.positions-head-metric.is-short strong { color: var(--ao-red); }
+.positions-head-metric.is-pnl { min-width: 112px; }
+.positions-head-metric.up strong { color: var(--ao-green); }
+.positions-head-metric.down strong { color: var(--ao-red); }
+.positions-head-health { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.positions-view-compact .positions-toolbar {
+  z-index: 61;
+  min-height: 48px;
+  gap: 10px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface);
+}
+.positions-toolbar-section { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.positions-toolbar-scope { flex: none; }
+.positions-toolbar-tools { flex: 1; justify-content: flex-end; border-left: 1px solid var(--ao-border); padding-left: 10px; }
+.positions-view-compact .positions-load-btn { height: 30px; min-width: 86px; padding: 0 11px; gap: 6px; border-radius: 4px; font-size: 12.5px; font-weight: 600; box-shadow: none; }
+.positions-load-btn .spin { animation: basket-spin .8s linear infinite; }
+.positions-view-compact .positions-search { width: min(220px, 18vw); height: 30px; border-radius: 4px; }
+.positions-view-compact .positions-search input { height: 28px; font-size: 13px; font-weight: 400; }
+.positions-status-strip {
+  flex: none;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.positions-status-strip svg { color: var(--ao-blue); flex: none; }
+.positions-view-compact .positions-table-wrap {
+  border: 0;
+  border-radius: 0 0 4px 4px;
+  box-shadow: none;
+  background: var(--ao-surface);
 }
 .position-book-summary.position-book-summary-compact div {
   min-height: 44px;
@@ -4598,17 +5025,241 @@ button.position-expiry-row-content {
 }
 .position-book-table.position-book-compact th,
 .position-book-table.position-book-compact td {
-  padding: 5px 12px;
+  padding: 0 14px;
+  border-bottom-color: var(--ao-border-soft);
+  border-left: 0;
+  color: var(--ao-base);
+  font-size: 13px;
+  font-weight: 400;
 }
 .position-book-table.position-book-compact tbody tr {
-  height: 44px;
+  height: 42px;
 }
 .position-book-table.position-book-compact th {
-  height: 32px;
+  height: 36px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: inset 0 -1px 0 var(--ao-border-soft);
 }
 .position-book-table.position-book-compact tbody tr.position-expiry-row td {
+  height: 28px;
+  padding: 0 14px;
+}
+.position-book-compact .book-stock-cell,
+.position-book-compact .book-qty-cell,
+.position-book-compact .book-status-cell { gap: 1px; }
+.position-book-compact .position-symbol-line { gap: 5px; }
+.position-book-compact .position-symbol-line strong {
+  color: var(--ao-bold);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: .05px;
+}
+.position-book-compact .position-expiry {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 28%, var(--ao-border));
+  border-radius: 3px;
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.position-book-compact .position-strike {
+  color: var(--ao-bold);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.position-book-compact .book-tag { height: 21px; padding: 0 7px; border-radius: 3px; font-size: 10.5px; font-weight: 600; }
+.position-book-compact .book-tag.product { background: var(--ao-purple-surface); color: var(--ao-purple); }
+/* Client Dashboard legs use the same crisp, medium-weight LONG/SHORT (and
+   product) tags as the Sync / Get Position compact tables. */
+.client-detail-panel .book-tag { height: 21px; padding: 0 7px; border-radius: 3px; font-size: 10.5px; font-weight: 600; }
+.client-detail-panel .book-tag.product { background: var(--ao-purple-surface); color: var(--ao-purple); }
+/* Client Dashboard legs table: same zebra striping, hover and P&L-column tint
+   as Get Position's compact table, so the two read identically. */
+.client-detail-panel .position-book-table tbody tr.position-row-short td { background: transparent; }
+.client-detail-panel .position-book-table tbody tr:not(.position-expiry-row):nth-child(even) td { background: var(--ao-hover); }
+.client-detail-panel .position-book-table tbody tr:hover td,
+.client-detail-panel .position-book-table tbody tr.position-row-short:hover td { background: color-mix(in srgb, var(--ao-hover) 65%, transparent); }
+.client-detail-panel .position-book-table .position-pnl-value { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.client-detail-panel .position-book-table .book-qty-cell { font-size: 13px; font-weight: 500; }
+.position-book-compact .position-price,
+.position-book-compact .position-price-muted { color: var(--ao-base); font-size: 13px; font-weight: 400; }
+.position-book-compact .position-price-muted { color: var(--ao-muted); }
+.position-book-compact .position-pnl-value { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.position-book-compact .book-qty-cell { font-size: 13px; font-weight: 500; }
+.position-book-compact .position-lots-badge { color: var(--ao-muted); font-size: 10.5px; font-weight: 500; }
+.position-book-compact .position-expiry-row span { height: 19px; padding: 0 6px; font-size: 10.5px; }
+.position-book-compact .position-expiry-row small { height: 18px; padding: 0 6px; font-size: 10px; }
+.position-book-compact .position-expiry-row strong { font-size: 11.5px; }
+.position-book-table.position-book-compact th:nth-child(4),
+.position-book-table.position-book-compact td:nth-child(4),
+.position-book-table.position-book-compact th:nth-child(6),
+.position-book-table.position-book-compact td:nth-child(6),
+.position-book-table.position-book-compact th:nth-child(7),
+.position-book-table.position-book-compact td:nth-child(7) { border-left: 0; }
+.position-book-table.position-book-compact tbody tr.position-row-short td { background: transparent; }
+.position-book-table.position-book-compact tbody tr:not(.position-expiry-row):nth-child(even) td {
+  background: var(--ao-hover);
+}
+.position-book-table.position-book-compact tbody tr:hover td,
+.position-book-table.position-book-compact tbody tr.position-row-short:hover td { background: color-mix(in srgb, var(--ao-hover) 65%, transparent); }
+.position-book-table.position-book-compact tbody tr.position-row-selected td,
+.position-book-table.position-book-compact tbody tr.position-row-selected:hover td { background: color-mix(in srgb, var(--ao-blue-bg) 55%, transparent); }
+.position-book-table.position-book-compact th.col-pnl,
+.position-book-table.position-book-compact tbody tr:not(.position-row-closed):not(.position-row-selected) td.col-pnl {
+  background: color-mix(in srgb, var(--ao-hover) 60%, var(--ao-surface));
+}
+.position-book-table.position-book-compact tr.position-row-closed .position-symbol-line,
+.position-book-table.position-book-compact tr.position-row-closed .book-product-cell,
+.position-book-table.position-book-compact tr.position-row-closed .book-qty-cell,
+.position-book-table.position-book-compact tr.position-row-closed .position-price,
+.position-book-table.position-book-compact tr.position-row-closed .position-pnl-value { color: var(--ao-placeholder); opacity: .72; }
+.positions-view-compact .position-sort-btn { color: inherit; font-size: 12px; font-weight: 500; }
+.positions-view-compact .position-filter-btn { color: var(--ao-caption); }
+.positions-view-compact .positions-compact-select { color: var(--ao-caption); font-size: 12.5px; font-weight: 500; }
+.positions-view-compact .positions-compact-select > span { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.positions-view-compact .position-select-trigger {
+  height: 32px;
+  border-radius: 7px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 1px rgba(43, 47, 63, .03);
+}
+.positions-view-compact .position-select-text strong { color: var(--ao-bold); font-size: 12.5px; font-weight: 700; }
+.positions-view-compact .position-select-text em {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+.positions-view-compact .orderbook-live-pill { min-height: 24px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+
+/* Expiry is primary contract information, not a secondary tag. The small EXP
+   lead-in makes the date immediately identifiable across Positions, Sync,
+   Order Book and Trade Book without introducing a loud badge. */
+.positions-view-compact .position-symbol-line .position-expiry,
+.positions-view-compact .compact-leg-symbol .position-expiry {
+  min-height: 21px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 0 7px 0 5px;
+  border: 1px solid #BDD0EA;
+  border-radius: 3px;
+  background: #EDF4FD;
+  color: #315B8A;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.positions-view-compact .position-symbol-line .position-expiry::before,
+.positions-view-compact .compact-leg-symbol .position-expiry::before {
+  content: "EXP";
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  padding-right: 5px;
+  border-right: 1px solid #C8D8EC;
+  color: var(--ao-blue);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.positions-toolbar-divider {
+  width: 1px;
+  height: 24px;
+  flex: none;
+  margin: 0 2px;
+  background: var(--ao-border);
+}
+.positions-toolbar-summary,
+.positions-toolbar-pnl {
+  flex: none;
+  color: var(--ao-caption);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.positions-toolbar-summary strong { color: var(--ao-base); font-weight: 600; }
+.positions-toolbar-pnl strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+.positions-toolbar-pnl.up strong { color: var(--ao-green); }
+.positions-toolbar-pnl.down strong { color: var(--ao-red); }
+.positions-toolbar-status {
+  min-width: 90px;
+  max-width: 180px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--ao-caption);
+  font-size: 11px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.positions-toolbar-status svg { flex: none; color: var(--ao-blue); }
+.positions-view-compact .positions-toolbar .positions-selection-count {
+  flex: none;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.positions-view-compact .positions-toolbar .positions-group-btn,
+.positions-view-compact .positions-toolbar .positions-selection-clear {
   height: 26px;
-  padding: 3px 12px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+@media (max-width: 1180px) {
+  .positions-workspace-head { gap: 10px; }
+  .positions-workspace-title { min-width: 150px; }
+  .positions-head-metric { min-width: 54px; padding: 0 9px; }
+  .positions-toolbar-section { gap: 6px; }
+  .positions-view-compact .positions-compact-select:not(.position-group-select) .position-select { width: 128px; }
+  .positions-view-compact .positions-compact-select:not(.position-group-select) + .positions-compact-select:not(.position-group-select) .position-select { width: 150px; }
+}
+@media (max-width: 900px) {
+  .positions-workspace-head { flex-wrap: wrap; }
+  .positions-head-health { margin-left: 0; }
+}
+
+/* Get Positions is deliberately a single command bar. Shared responsive rules
+   further down this file allow other transaction toolbars to wrap, but this
+   screen keeps Client, Account, Refresh, View, Groups and Search on one line.
+   At genuinely narrow widths the bar scrolls horizontally instead of becoming
+   a tall two-row form and taking space away from the positions book. */
+.positions-view.positions-view-compact .positions-toolbar {
+  flex-wrap: nowrap !important;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: none;
+}
+.positions-view.positions-view-compact .positions-toolbar::-webkit-scrollbar { display: none; }
+.positions-view-compact .positions-toolbar-section { flex-wrap: nowrap; white-space: nowrap; }
+.positions-view-compact .positions-toolbar-scope { flex: none; }
+.positions-view-compact .positions-toolbar-tools { flex: 1 1 auto; min-width: 0; }
+.positions-view-compact .positions-compact-select { flex: 0 0 auto; }
+.positions-view-compact .positions-search { flex: 1 1 180px; min-width: 140px; max-width: 320px; }
+
+@media (max-width: 1180px) {
+  .positions-view-compact .positions-toolbar { gap: 7px; padding-inline: 8px; }
+  .positions-view-compact .positions-toolbar-section { gap: 6px; }
+  .positions-view-compact .positions-toolbar-tools { padding-left: 7px; }
+  .positions-view-compact .positions-compact-select:not(.position-group-select) .position-select { width: 112px; }
+  .positions-view-compact .positions-compact-select:not(.position-group-select) + .positions-compact-select:not(.position-group-select) .position-select { width: 132px; }
+  .positions-view-compact .positions-compact-select.position-group-select .position-select { width: 108px; }
+  .positions-view-compact .positions-search { flex-basis: 150px; min-width: 125px; }
 }
 .position-book-table th:nth-child(1),
 .position-book-table td:nth-child(1) { width: 29%; text-align: left; }
@@ -4785,13 +5436,13 @@ button.position-expiry-row-content {
 .book-qty-cell {
   justify-items: end;
   align-content: center;
-  color: #1f2937;
+  color: var(--ao-base);
   font-size: 13px;
   font-weight: 400;
 }
 .book-qty-cell small,
 .book-status-cell small {
-  color: #6f7785;
+  color: var(--ao-caption);
   font-size: 12px;
   font-weight: 400;
 }
@@ -6046,5 +6697,1841 @@ button.position-expiry-row-content {
     flex: 1 1 100%;
     margin-left: 0;
   }
+}
+
+/* ── Sync Net Positions: production workstation treatment ────────────────
+   Mirrors Get Positions: one compact command bar, soft gray layers, flat
+   Zerodha-style panels and restrained typography. Functional progress,
+   history and strategy behavior remains unchanged. */
+.positions-view.positions-view-compact.sync-view-production {
+  padding: 0;
+  gap: 4px;
+  border-radius: 4px;
+  background: var(--ao-bg);
+  box-shadow: none;
+}
+.positions-view.positions-view-compact.sync-view-production .positions-toolbar {
+  top: 0;
+  min-height: 42px;
+  margin: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 2px rgba(43, 47, 63, .04);
+}
+.sync-view-production .positions-load-btn { min-width: 76px; }
+.sync-view-production .positions-load-btn.ghost { min-width: 86px; }
+.sync-view-production .positions-load-btn .spin { animation: basket-spin .8s linear infinite; }
+.sync-view-production .view-toggle {
+  flex: none;
+  height: 30px;
+  padding: 1px;
+  border-color: var(--ao-border);
+  border-radius: 4px;
+  background: var(--ao-surface);
+}
+.sync-view-production .view-toggle-btn { width: 28px; height: 26px; border-radius: 3px; }
+.sync-view-production .sync-toolbar-result {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--ao-green) 25%, var(--ao-border));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ao-green-bg) 70%, var(--ao-surface));
+  color: var(--ao-green);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sync-view-production .sync-toolbar-result.down {
+  border-color: color-mix(in srgb, var(--ao-red) 25%, var(--ao-border));
+  background: color-mix(in srgb, var(--ao-red-bg) 70%, var(--ao-surface));
+  color: var(--ao-red);
+}
+.sync-view-production .positions-toolbar .positions-remove-btn,
+.sync-view-production .positions-toolbar .positions-selection-clear {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.sync-view-production .sync-bulk-preview {
+  gap: 5px;
+  margin: 0;
+  padding: 7px 8px;
+  border-color: var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface-2);
+  box-shadow: none;
+}
+.sync-view-production .sync-bulk-preview-head { font-size: 12.5px; font-weight: 600; }
+.sync-view-production .sync-bulk-preview-groups { gap: 7px; max-height: 200px; }
+.sync-view-production .sync-bulk-preview-group {
+  gap: 6px;
+  padding: 8px;
+  border-radius: 3px;
+  background: var(--ao-surface);
+}
+.sync-view-production .sync-bulk-preview-user { font-size: 12px; font-weight: 600; }
+.sync-view-production .sync-bulk-preview-account {
+  padding: 6px 8px;
+  border-left-width: 2px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ao-surface-2);
+}
+
+.sync-view-production .sync-progress {
+  border-color: var(--ao-border);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: none;
+}
+.sync-view-production .sync-progress::before { width: 3px; }
+.sync-view-production .sync-progress-head {
+  min-height: 44px;
+  padding: 6px 10px 6px 12px;
+  background: var(--ao-surface-2);
+}
+.sync-view-production .sync-progress-heading { gap: 8px; }
+.sync-view-production .sync-progress-heading-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+}
+.sync-view-production .sync-progress-eyebrow { font-size: 10px; font-weight: 600; }
+.sync-view-production .sync-progress-title { font-size: 13px; font-weight: 600; }
+.sync-view-production .sync-progress-count,
+.sync-view-production .sync-progress-pct { border-radius: 3px; font-weight: 600; }
+.sync-view-production .sync-progress > .sync-progress-bar { margin: 8px 14px 0; }
+.sync-view-production .sync-progress-users {
+  gap: 7px;
+  max-height: none;
+  margin-top: 6px;
+  padding: 6px 8px 7px 12px;
+  background: var(--ao-surface-2);
+}
+.sync-view-production .sync-progress-user-group {
+  gap: 5px;
+  padding: 8px;
+  border-radius: 3px;
+  box-shadow: none;
+}
+.sync-view-production .sync-progress-user { font-size: 12px; font-weight: 600; }
+.sync-view-production .sync-progress-account { padding: 6px 8px; border-radius: 0 3px 3px 0; }
+
+.sync-result-panel {
+  flex: none;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+}
+.sync-result-copy { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.sync-result-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ao-green-bg);
+  color: var(--ao-green);
+}
+.sync-result-icon.has-failures { background: var(--ao-red-bg); color: var(--ao-red); }
+.sync-result-copy > div { min-width: 0; display: grid; gap: 2px; }
+.sync-result-copy strong { color: var(--ao-bold); font-size: 13px; font-weight: 600; }
+.sync-result-copy span { color: var(--ao-caption); font-size: 11px; font-weight: 400; }
+.sync-result-metrics { display: flex; align-self: stretch; }
+.sync-result-metrics > span {
+  min-width: 72px;
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 0 12px;
+  border-left: 1px solid var(--ao-border-soft);
+}
+.sync-result-metrics small { color: var(--ao-caption); font-size: 9.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+.sync-result-metrics strong { color: var(--ao-base); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sync-result-metrics .success strong { color: var(--ao-green); }
+.sync-result-metrics .failed strong { color: var(--ao-red); }
+
+.sync-log-panel {
+  flex: none;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  overflow: hidden;
+}
+.sync-log-panel summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  color: var(--ao-base);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.sync-log-panel summary::-webkit-details-marker { display: none; }
+.sync-log-panel summary span {
+  min-width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 10px;
+}
+.sync-log-lines { max-height: 180px; overflow: auto; border-top: 1px solid var(--ao-border-soft); }
+.sync-log-lines div { padding: 7px 10px; border-bottom: 1px solid var(--ao-border-soft); color: var(--ao-base); font-size: 11.5px; }
+.sync-log-lines div:nth-child(even) { background: var(--ao-hover); }
+
+.sync-view-production .strategy-list {
+  margin-top: 0;
+  gap: 4px;
+  padding-bottom: 4px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface-2);
+}
+.sync-view-production .strategy-list-head {
+  min-height: 34px;
+  padding: 4px 8px;
+  background: var(--ao-surface-2);
+}
+.sync-view-production .strategy-list-head strong { font-size: 13px; font-weight: 600; }
+.sync-view-production .strategy-clear-all-btn {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.sync-view-production .strategy-card {
+  border-color: var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: none;
+}
+.sync-view-production .strategy-card-head { background: var(--ao-surface-2); }
+.sync-view-production .strategy-card-head {
+  min-height: 36px;
+  padding: 4px 8px;
+  border-bottom-color: var(--ao-border-soft);
+}
+.sync-view-production .strategy-card-title { gap: 7px; }
+.sync-view-production .strategy-card-title::before { width: 3px; height: 17px; border-radius: 2px; }
+.sync-view-production .strategy-card-title strong { color: var(--ao-bold); font-size: 14px; font-weight: 600; }
+.sync-view-production .strategy-card-meta { gap: 6px; }
+.sync-view-production .strategy-card-meta > span,
+.sync-view-production .strategy-select-all {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 500;
+  background: var(--ao-surface);
+  box-shadow: none;
+}
+.sync-view-production .strategy-card .positions-table-wrap {
+  border: 0;
+  border-radius: 0;
+  background: var(--ao-surface);
+  box-shadow: none;
+}
+.sync-view-production .strategy-legs-table.position-book-compact {
+  min-width: 920px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.sync-view-production .strategy-legs-table.position-book-compact th,
+.sync-view-production .strategy-legs-table.position-book-compact td {
+  height: 38px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  border-left: 0;
+  color: var(--ao-base);
+  font-size: 13px;
+}
+.sync-view-production .strategy-legs-table.position-book-compact th {
+  height: 32px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: .15px;
+  box-shadow: inset 0 -1px 0 var(--ao-border-soft);
+}
+.sync-view-production .strategy-legs-table.position-book-compact tbody tr.position-row-short td { background: transparent; }
+.sync-view-production .strategy-legs-table.position-book-compact tbody tr:nth-child(even) td { background: var(--ao-hover); }
+.sync-view-production .strategy-legs-table.position-book-compact tbody tr:hover td { background: var(--ao-hover); }
+.sync-view-production .strategy-legs-table.position-book-compact th.col-pnl,
+.sync-view-production .strategy-legs-table.position-book-compact tbody tr:not(.strategy-leg-closed) td.col-pnl {
+  background: color-mix(in srgb, var(--ao-hover) 65%, var(--ao-surface));
+}
+.sync-view-production .strategy-legs-table .position-symbol-line { gap: 5px; }
+.sync-view-production .strategy-legs-table .position-symbol-line strong {
+  color: var(--ao-bold);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.sync-view-production .strategy-legs-table .position-expiry {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 28%, var(--ao-border));
+  border-radius: 3px;
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.sync-view-production .strategy-legs-table .position-strike { color: var(--ao-bold); font-size: 13.5px; font-weight: 600; }
+.sync-view-production .strategy-legs-table .book-tag,
+.sync-view-production .strategy-legs-table .leg-entry-tag,
+.sync-view-production .strategy-legs-table .strategy-open-tag,
+.sync-view-production .strategy-legs-table .strategy-closed-tag {
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.sync-view-production .strategy-legs-table .position-price,
+.sync-view-production .strategy-legs-table .position-price-muted,
+.sync-view-production .strategy-legs-table .position-pnl-value,
+.sync-view-production .strategy-legs-table .book-qty-cell { font-size: 13px; font-weight: 500; }
+.sync-view-production .strategy-legs-table .position-price-muted { color: var(--ao-muted); }
+.sync-view-production .strategy-leg-closed td { color: var(--ao-placeholder); background: var(--ao-surface-2) !important; opacity: .78; }
+
+/* Compact and Buy/Sell views keep the same crisp row rhythm as Normal. */
+.sync-view-production .compact-legs { padding: 0 12px; background: var(--ao-surface); }
+.sync-view-production .compact-leg-row { min-height: 38px; padding: 4px 0; border-bottom-color: var(--ao-border-soft); font-size: 13px; }
+.sync-view-production .compact-leg-head { min-height: 32px; padding-block: 4px; background: var(--ao-surface-2); font-size: 11px; font-weight: 500; }
+.sync-view-production .compact-leg-symbol strong { color: var(--ao-bold); font-size: 13.5px; font-weight: 600; }
+.sync-view-production .compact-leg-symbol .position-expiry { border-radius: 3px; background: var(--ao-blue-bg); color: var(--ao-blue); font-size: 11.5px; }
+.sync-view-production .compact-leg-symbol .position-strike { color: var(--ao-bold); font-size: 13.5px; font-weight: 600; }
+.sync-view-production .legs-split { gap: 4px; padding: 4px; background: var(--ao-surface-2); }
+.sync-view-production .legs-table-title { padding: 5px 8px; background: var(--ao-surface-2); }
+.sync-view-production .strategy-list--compact .strategy-list-empty,
+.sync-view-production .sync-strategy-empty {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 16px;
+  border: 1px solid var(--ao-border);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  text-align: center;
+}
+.sync-strategy-empty-icon {
+  width: 38px;
+  height: 38px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 24%, var(--ao-border));
+  border-radius: 4px;
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
+}
+.sync-view-production .sync-strategy-empty strong {
+  color: var(--ao-bold);
+  font-size: 14px;
+  font-weight: 600;
+}
+.sync-view-production .sync-strategy-empty p {
+  max-width: 480px;
+  margin: 0;
+  color: var(--ao-caption);
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .sync-result-panel { align-items: flex-start; flex-direction: column; }
+  .sync-result-metrics { width: 100%; }
+  .sync-result-metrics > span:first-child { border-left: 0; }
+}
+
+/* ── Order Book / Trade Book: compact workstation treatment ────────────── */
+.positions-view.positions-view-compact.book-view-production {
+  padding: 0;
+  gap: 0;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 2px rgba(43, 47, 63, .04);
+}
+.positions-view.positions-view-compact.book-view-production .positions-toolbar {
+  min-height: 42px;
+  padding: 5px 8px;
+  gap: 7px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface);
+}
+.book-view-production .positions-load-btn {
+  height: 30px;
+  min-width: 84px;
+  padding: 0 10px;
+  gap: 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.book-view-production .positions-load-btn .spin { animation: basket-spin .8s linear infinite; }
+.book-view-production .orderbook-search {
+  min-width: 170px;
+  max-width: 260px;
+  height: 30px;
+  flex: 1 1 210px;
+  padding: 0 8px;
+  border-radius: 4px;
+}
+.book-view-production .orderbook-search input { font-size: 12px; font-weight: 400; }
+.book-view-production .orderbook-filter-chip,
+.book-view-production .orderbook-refresh-chip {
+  height: 24px;
+  flex: none;
+  margin-left: 0;
+  padding: 0 7px;
+  gap: 5px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.book-view-production .orderbook-filter-chip span {
+  min-width: 17px;
+  height: 17px;
+  border-radius: 3px;
+  font-size: 9.5px;
+}
+.book-toolbar-stat {
+  flex: none;
+  color: var(--ao-caption);
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.book-toolbar-stat strong { color: var(--ao-base); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.book-toolbar-stat.open strong,
+.book-toolbar-stat.buy strong { color: var(--ao-blue); }
+.book-toolbar-stat.complete strong { color: var(--ao-green); }
+.book-toolbar-stat.failed strong,
+.book-toolbar-stat.sell strong { color: var(--ao-red); }
+.book-toolbar-stat.turnover strong { color: var(--ao-purple); }
+
+.book-view-production .positions-table-wrap {
+  border: 0;
+  border-radius: 0 0 4px 4px;
+  background: var(--ao-surface);
+  box-shadow: none;
+}
+.book-view-production .orderbook-table.position-book-compact th,
+.book-view-production .orderbook-table.position-book-compact td {
+  height: 40px;
+  padding: 2px 10px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  border-left: 0;
+  color: var(--ao-base);
+  font-size: 12.5px;
+}
+.book-view-production .orderbook-table.position-book-compact th {
+  height: 32px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 11.5px;
+  font-weight: 500;
+  box-shadow: inset 0 -1px 0 var(--ao-border-soft);
+}
+.book-view-production .orderbook-col-head { min-height: 24px; }
+.book-view-production .orderbook-col-title { font-weight: 500; }
+.book-view-production .orderbook-table.position-book-compact tbody tr.position-row-short td { background: transparent; }
+.book-view-production .orderbook-table.position-book-compact tbody tr:not(.position-expiry-row):nth-child(even) td { background: var(--ao-hover); }
+.book-view-production .orderbook-table.position-book-compact tbody tr:hover td { background: var(--ao-hover); }
+.book-view-production .orderbook-table.position-book-compact tbody tr.position-expiry-row td {
+  height: 28px;
+  padding: 1px 10px;
+  background: var(--ao-bg);
+}
+.book-view-production .orderbook-symbol-line { gap: 5px; }
+.book-view-production .orderbook-symbol-line strong { color: var(--ao-bold); font-size: 13.5px; font-weight: 600; }
+.book-view-production .orderbook-symbol-line .position-expiry {
+  min-height: 20px;
+  padding: 0 6px;
+  border: 1px solid #DDE6F2;
+  border-radius: 3px;
+  background: #F5F8FC;
+  color: #52677F;
+  font-size: 11px;
+  font-weight: 500;
+}
+.book-view-production .orderbook-symbol-line .position-strike { color: var(--ao-bold); font-size: 13.5px; font-weight: 600; }
+.book-view-production .orderbook-icon-chip { width: 20px; height: 20px; border-radius: 3px; }
+.book-view-production .orderbook-order-id { font-size: 9.5px; font-weight: 500; }
+.book-view-production .book-tag,
+.book-view-production .orderbook-mini-tag,
+.book-view-production .orderbook-status-chip,
+.book-view-production .tradebook-value {
+  min-height: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.book-view-production .orderbook-filled-badge,
+.book-view-production .orderbook-avg-chip { min-height: 18px; padding: 0 5px; border-radius: 3px; font-size: 9.5px; }
+.book-view-production .orderbook-price-cell,
+.book-view-production .orderbook-status-cell,
+.book-view-production .orderbook-time-cell,
+.book-view-production .orderbook-qty-cell { gap: 2px; }
+.book-view-production .position-price,
+.book-view-production .position-price.ltp { color: var(--ao-base); font-size: 12.5px; font-weight: 500; }
+.book-view-production .position-price.ltp { color: var(--ao-blue); }
+.book-view-production .orderbook-status-cell small,
+.book-view-production .orderbook-time-cell small { font-size: 9.5px; font-weight: 400; }
+.book-view-production .positions-empty { height: 180px; padding: 16px; }
+.book-view-production .positions-empty-state { min-height: 145px; }
+
+@media (max-width: 1180px) {
+  .book-view-production .orderbook-search { min-width: 140px; max-width: 190px; }
+  .book-view-production .book-toolbar-stat.turnover { display: none; }
+}
+
+/* Contract columns never collapse until their contents are cut off. A narrower
+   viewport gets a horizontal table scroller, which is safer for trading data
+   than ellipsising expiry, strike, order IDs, prices or statuses. */
+.positions-view-compact .position-book-table.position-book-compact { min-width: 1050px; }
+.sync-view-production .strategy-legs-table.position-book-compact { min-width: 1080px; }
+.book-view-production .orderbook-table.position-book-compact { min-width: 1180px; }
+
+.book-view-production .orderbook-table:not(.tradebook-table) th:nth-child(1),
+.book-view-production .orderbook-table:not(.tradebook-table) td:nth-child(1) { width: 35%; }
+.book-view-production .orderbook-table:not(.tradebook-table) th:nth-child(2),
+.book-view-production .orderbook-table:not(.tradebook-table) td:nth-child(2) { width: 7%; }
+.book-view-production .orderbook-table:not(.tradebook-table) th:nth-child(3),
+.book-view-production .orderbook-table:not(.tradebook-table) td:nth-child(3) { width: 15%; }
+.book-view-production .orderbook-table:not(.tradebook-table) th:nth-child(4),
+.book-view-production .orderbook-table:not(.tradebook-table) td:nth-child(4) { width: 8%; }
+.book-view-production .orderbook-table:not(.tradebook-table) th:nth-child(5),
+.book-view-production .orderbook-table:not(.tradebook-table) td:nth-child(5) { width: 10%; }
+.book-view-production .orderbook-table:not(.tradebook-table) th:nth-child(6),
+.book-view-production .orderbook-table:not(.tradebook-table) td:nth-child(6) { width: 14%; }
+.book-view-production .orderbook-table:not(.tradebook-table) th:nth-child(7),
+.book-view-production .orderbook-table:not(.tradebook-table) td:nth-child(7) { width: 11%; }
+
+.book-view-production .tradebook-table th:nth-child(1),
+.book-view-production .tradebook-table td:nth-child(1) { width: 33%; }
+.book-view-production .tradebook-table th:nth-child(2),
+.book-view-production .tradebook-table td:nth-child(2) { width: 7%; }
+.book-view-production .tradebook-table th:nth-child(3),
+.book-view-production .tradebook-table td:nth-child(3) { width: 14%; }
+.book-view-production .tradebook-table th:nth-child(4),
+.book-view-production .tradebook-table td:nth-child(4) { width: 10%; }
+.book-view-production .tradebook-table th:nth-child(5),
+.book-view-production .tradebook-table td:nth-child(5) { width: 11%; }
+.book-view-production .tradebook-table th:nth-child(6),
+.book-view-production .tradebook-table td:nth-child(6) { width: 14%; }
+.book-view-production .tradebook-table th:nth-child(7),
+.book-view-production .tradebook-table td:nth-child(7) { width: 11%; }
+
+/* Final high-specificity expiry treatment keeps all four books identical even
+   where older screen-specific rules appear earlier in the stylesheet. */
+.positions-view.positions-view-compact .position-symbol-line .position-expiry,
+.positions-view.positions-view-compact .compact-leg-symbol .position-expiry {
+  min-height: 21px;
+  padding: 0 7px 0 5px;
+  border: 1px solid #BDD0EA;
+  border-radius: 3px;
+  background: #EDF4FD;
+  color: #315B8A;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* ── Global night theme ────────────────────────────────────────────────────
+   These overrides deliberately sit after the screen-specific production
+   rules. They preserve every compact dimension and only exchange colour,
+   contrast and elevation tokens. */
+html[data-theme="dark"] .positions-view.positions-view-compact {
+  --ao-blue: #4184F3;
+  --ao-blue-hover: #64A0FF;
+  --ao-blue-surface: #1D3150;
+  --ao-blue-bg: #17263D;
+  --ao-green: #4CAF50;
+  --ao-green-bg: #19331D;
+  --ao-red: #FF5722;
+  --ao-red-bg: #3A2018;
+  --ao-purple: #A77AF3;
+  --ao-purple-surface: #302440;
+  --ao-bold: #D8D8D8;
+  --ao-base: #C4C4C4;
+  --ao-muted: #777777;
+  --ao-caption: #8E8E8E;
+  --ao-placeholder: #777777;
+  --ao-bg: #111111;
+  --ao-surface: #181818;
+  --ao-surface-2: #202020;
+  --ao-hover: #292929;
+  --ao-border: #3A3A3A;
+  --ao-border-soft: #2D2D2D;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .22), 0 4px 14px rgba(0, 0, 0, .16);
+}
+
+html[data-theme="dark"] .positions-workspace-head,
+html[data-theme="dark"] .book-view-production .orderbook-table.position-book-compact th,
+html[data-theme="dark"] .position-book-table th {
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  border-color: var(--ao-border-soft);
+  box-shadow: inset 0 -1px 0 var(--ao-border-soft);
+}
+
+html[data-theme="dark"] .position-select-trigger,
+html[data-theme="dark"] .position-select-trigger:hover,
+html[data-theme="dark"] .position-select.compact .position-select-trigger {
+  background: var(--ao-surface);
+  border-color: var(--ao-border);
+  color: var(--ao-bold);
+}
+
+html[data-theme="dark"] .position-book-table tbody tr:hover td,
+html[data-theme="dark"] .book-view-production .orderbook-table.position-book-compact tbody tr:hover td {
+  background: var(--ao-hover);
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-table.position-book-compact tbody tr:not(.position-expiry-row):nth-child(even) td {
+  background: #1D1D1D;
+}
+
+html[data-theme="dark"] .position-book-table tbody tr.position-row-short td {
+  background: color-mix(in srgb, var(--ao-red) 7%, var(--ao-surface));
+}
+
+html[data-theme="dark"] .position-book-table tbody tr.position-row-selected td {
+  background: color-mix(in srgb, var(--ao-blue) 10%, var(--ao-surface));
+}
+
+html[data-theme="dark"] .position-book-table tbody tr.position-expiry-row td,
+html[data-theme="dark"] .book-view-production .orderbook-table.position-book-compact tbody tr.position-expiry-row td {
+  background: #151515;
+  border-color: var(--ao-border-soft);
+  color: var(--ao-caption);
+}
+
+html[data-theme="dark"] .position-expiry-row span,
+html[data-theme="dark"] .positions-view.positions-view-compact .position-symbol-line .position-expiry,
+html[data-theme="dark"] .positions-view.positions-view-compact .compact-leg-symbol .position-expiry,
+html[data-theme="dark"] .book-view-production .orderbook-symbol-line .position-expiry {
+  background: #1D3150;
+  border-color: #31517E;
+  color: #AFCBFA;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-symbol-line strong,
+html[data-theme="dark"] .book-view-production .orderbook-symbol-line .position-strike {
+  color: var(--ao-bold);
+}
+
+html[data-theme="dark"] .strategy-leg-closed td,
+html[data-theme="dark"] .strategy-leg-closed {
+  background: #151515 !important;
+  color: var(--ao-caption);
+}
+
+html[data-theme="dark"] .strategy-closed-tag,
+html[data-theme="dark"] .strategy-exit-price,
+html[data-theme="dark"] .sync-table-sort-btn,
+html[data-theme="dark"] .sync-strategy-select {
+  background: var(--ao-surface-2);
+  border-color: var(--ao-border);
+  color: var(--ao-base);
+}
+
+html[data-theme="dark"] .basket-search-dropdown,
+html[data-theme="dark"] .bs-add,
+html[data-theme="dark"] .basket-toggle::after {
+  background: var(--ao-surface);
+  border-color: var(--ao-border);
+}
+
+html[data-theme="dark"] .basket-search-tabs,
+html[data-theme="dark"] .basket-search-tabs button:hover,
+html[data-theme="dark"] .basket-search-item:hover {
+  background: var(--ao-surface-2);
+}
+
+html[data-theme="dark"] .bs-sym { color: var(--ao-bold); }
+html[data-theme="dark"] .bs-sub { color: var(--ao-caption); }
+
+/* Zerodha palette normalization for the compact books. Keeping these values
+   token-based also means the same selectors resolve correctly in night mode. */
+.positions-workspace-head,
+.sync-strategy-section-head,
+.sync-view-production .strategy-card-head,
+.sync-view-production .compact-leg-head,
+.sync-view-production .legs-table-title,
+.sync-view-production .strategy-legs-table.position-book-compact th,
+.book-view-production .orderbook-table.position-book-compact th {
+  background: var(--ao-surface-2);
+  border-color: var(--ao-border-soft);
+}
+
+.sync-log-lines div:nth-child(even),
+.sync-view-production .strategy-legs-table.position-book-compact tbody tr:nth-child(even) td,
+.book-view-production .orderbook-table.position-book-compact tbody tr:not(.position-expiry-row):nth-child(even) td {
+  background: var(--ao-hover);
+}
+
+.book-view-production .orderbook-table.position-book-compact tbody tr.position-expiry-row td {
+  background: var(--ao-bg);
+}
+
+.positions-view.positions-view-compact .position-symbol-line .position-expiry,
+.positions-view.positions-view-compact .compact-leg-symbol .position-expiry,
+.sync-view-production .compact-leg-symbol .position-expiry,
+.book-view-production .orderbook-symbol-line .position-expiry {
+  background: var(--ao-blue-bg);
+  border-color: color-mix(in srgb, var(--ao-blue) 28%, var(--ao-border));
+  color: var(--ao-blue);
+}
+
+/* Dark-mode glare control. Native white form controls and the light-mode tag
+   fills are the brightest objects on a dense trading table, so they receive
+   restrained charcoal/tinted surfaces without weakening financial colours. */
+html[data-theme="dark"] input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 15px;
+  min-width: 15px;
+  height: 15px;
+  margin: 0;
+  border: 1px solid #3D3D3D;
+  border-radius: 3px;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] input[type="checkbox"]:hover {
+  border-color: #505050;
+  background-color: rgba(255, 255, 255, .025);
+}
+
+html[data-theme="dark"] input[type="checkbox"]:checked,
+html[data-theme="dark"] input[type="checkbox"]:indeterminate {
+  border-color: #386AA8;
+  background-color: #315F98;
+}
+
+html[data-theme="dark"] input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23d3dbe8' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round' d='m3.2 8.2 3 3.1 6.7-7'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 13px;
+}
+
+html[data-theme="dark"] input[type="checkbox"]:indeterminate {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath stroke='%23d3dbe8' stroke-width='2.1' stroke-linecap='round' d='M3.5 8h9'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 13px;
+}
+
+html[data-theme="dark"] input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(65, 132, 243, .28);
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] input[type="checkbox"]:disabled {
+  border-color: #303030;
+  background-color: transparent;
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+html[data-theme="dark"] .position-expiry-row small,
+html[data-theme="dark"] .position-expiry-row small:first-of-type,
+html[data-theme="dark"] .book-qty-cell .position-lots-badge {
+  border: 1px solid #383838;
+  background: #242424;
+  color: #A6A6A6;
+}
+
+html[data-theme="dark"] .book-tag.exchange,
+html[data-theme="dark"] .book-tag.product {
+  background: #252525;
+  color: #9A9A9A;
+}
+
+html[data-theme="dark"] .book-tag.option.pe {
+  background: #342719;
+  color: #D9AA68;
+}
+
+html[data-theme="dark"] .book-tag.option.ce {
+  background: #2B2140;
+  color: #A982E8;
+}
+
+html[data-theme="dark"] .book-tag.side.buy {
+  background: #19311E;
+  color: #69BE6D;
+}
+
+html[data-theme="dark"] .book-tag.side.sell {
+  background: #3A211A;
+  color: #FF7950;
+}
+
+html[data-theme="dark"] .orderbook-live-pill.live {
+  border-color: #285A33;
+  background: #19311E;
+  color: #72C878;
+}
+
+html[data-theme="dark"] .orderbook-live-pill.connecting {
+  border-color: #294C78;
+  background: #182A42;
+  color: #79A9F5;
+}
+
+html[data-theme="dark"] .orderbook-live-pill.offline {
+  border-color: #633125;
+  background: #3A211A;
+  color: #FF7950;
+}
+
+/* Order Book / Trade Book anti-glare palette. These components intentionally
+   use slightly different hues for state recognition, but no white fills. */
+html[data-theme="dark"] .book-view-production .orderbook-icon-chip {
+  background: #182A42;
+  color: #79A9F5;
+}
+
+html[data-theme="dark"] .book-view-production .tradebook-icon-chip {
+  background: #2B2140;
+  color: #A982E8;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-type-cell .book-tag.product {
+  border-color: #48516A;
+  background: #232733;
+  color: #B4BDD5;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .book-view-production .tradebook-product-cell .book-tag.product {
+  border-color: #285A33;
+  background: #19311E;
+  color: #72C878;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-mini-tag {
+  border-color: #3A3A3A;
+  background: #242424;
+  color: #A8A8A8;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-mini-tag.market {
+  border-color: #28536A;
+  background: #182D3A;
+  color: #76B9DC;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-mini-tag.limit {
+  border-color: #454D78;
+  background: #252A47;
+  color: #A5ADE8;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-mini-tag.stoploss,
+html[data-theme="dark"] .book-view-production .orderbook-mini-tag.variety.stoploss {
+  border-color: #68491D;
+  background: #392B17;
+  color: #E0AE5D;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-mini-tag.variety.normal {
+  border-color: #3A3A3A;
+  background: #242424;
+  color: #A8A8A8;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-mini-tag.variety.robo {
+  border-color: #4D3B70;
+  background: #2B2140;
+  color: #A982E8;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-filled-badge,
+html[data-theme="dark"] .book-view-production .orderbook-avg-chip {
+  border-color: #3A3A3A;
+  background: #242424;
+  color: #A8A8A8;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-filled-badge span,
+html[data-theme="dark"] .book-view-production .orderbook-avg-chip span {
+  background: #1D3150;
+  color: #82ADFA;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-status-chip.open,
+html[data-theme="dark"] .book-view-production .orderbook-expiry-stats em.open {
+  border-color: #294C78;
+  background: #182A42;
+  color: #79A9F5;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-status-chip.complete,
+html[data-theme="dark"] .book-view-production .orderbook-expiry-stats em.complete {
+  border-color: #285A33;
+  background: #19311E;
+  color: #72C878;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-status-chip.rejected,
+html[data-theme="dark"] .book-view-production .orderbook-expiry-stats em.rejected {
+  border-color: #633125;
+  background: #3A211A;
+  color: #FF7950;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-status-chip.cancelled,
+html[data-theme="dark"] .book-view-production .orderbook-expiry-stats em.cancelled {
+  border-color: #68491D;
+  background: #392B17;
+  color: #E0AE5D;
+}
+
+html[data-theme="dark"] .book-view-production .tradebook-value {
+  border-color: #4D3B70;
+  background: #2B2140;
+  color: #B394EA;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .book-view-production .orderbook-rejection-trigger {
+  border-color: #63313E;
+  background: #3A2028;
+  color: #F27796;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .orderbook-rejection-tooltip {
+  border-color: #63313E;
+  background: #242020;
+  color: var(--ao-base);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .42);
+}
+
+html[data-theme="dark"] .orderbook-rejection-tooltip::after {
+  border-color: #63313E;
+  background: #242020;
+}
+
+html[data-theme="dark"] .orderbook-rejection-tooltip-head span,
+html[data-theme="dark"] .orderbook-rejection-tooltip strong {
+  border-color: #63313E;
+  background: #3A2028;
+  color: #F27796;
+}
+
+html[data-theme="dark"] .orderbook-rejection-tooltip p {
+  color: var(--ao-base);
+}
+
+/* Sync Positions anti-glare palette. Saved-leg lifecycle chips are separate
+   from the Order/Trade Book badges, so normalize their dark surfaces here. */
+html[data-theme="dark"] .sync-view-production .leg-entry-tag.is-today,
+html[data-theme="dark"] .sync-view-production .strategy-open-tag {
+  border: 1px solid #285A33;
+  background: #19311E;
+  color: #72C878;
+}
+
+html[data-theme="dark"] .sync-view-production .leg-entry-tag.is-carried {
+  border: 1px solid #3A3A3A;
+  background: #242424;
+  color: #A6A6A6;
+}
+
+html[data-theme="dark"] .sync-view-production .strategy-closed-tag,
+html[data-theme="dark"] .sync-view-production .strategy-exit-price {
+  border-color: #3A3A3A;
+  background: #242424;
+  color: #A6A6A6;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .sync-view-production .strategy-exit-price span {
+  background: #303030;
+  color: #AFAFAF;
+}
+
+html[data-theme="dark"] .sync-view-production .strategy-card-meta > span,
+html[data-theme="dark"] .sync-view-production .strategy-select-all {
+  border-color: #383838;
+  background: #202020;
+  color: #9A9A9A;
+}
+
+html[data-theme="dark"] .sync-view-production .strategy-select-all:hover,
+html[data-theme="dark"] .sync-view-production .strategy-select-all.active {
+  border-color: #31517E;
+  background: #1D3150;
+  color: #82ADFA;
+}
+
+html[data-theme="dark"] .sync-view-production .strategy-card-meta .up {
+  border-color: #285A33;
+  background: #19311E;
+  color: #72C878;
+}
+
+html[data-theme="dark"] .sync-view-production .strategy-card-meta .down {
+  border-color: #633125;
+  background: #3A211A;
+  color: #FF7950;
+}
+
+html[data-theme="dark"] .sync-view-production .sync-toolbar-result {
+  border-color: #285A33;
+  background: #19311E;
+  color: #72C878;
+}
+
+html[data-theme="dark"] .sync-view-production .sync-toolbar-result.down {
+  border-color: #633125;
+  background: #3A211A;
+  color: #FF7950;
+}
+
+html[data-theme="dark"] .sync-view-production .sync-progress-count {
+  border-color: #383838;
+  background: #202020;
+  color: #9A9A9A;
+}
+
+html[data-theme="dark"] .sync-view-production .sync-progress-pct {
+  background: #1D3150;
+  color: #82ADFA;
+}
+
+/* Client Dashboard production position book. It reuses the exact compact table
+   rhythm from Get Positions, but remains a read-only monitoring surface. */
+.client-dashboard-production .client-strategy-card {
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: none;
+}
+
+.client-dashboard-production .client-strategy-summary,
+.client-dashboard-production .client-detail-panel-head,
+.client-dashboard-production .client-panel-total {
+  background: var(--ao-surface-2);
+}
+
+.client-dashboard-production .client-expanded-details {
+  gap: 4px;
+  padding: 4px;
+  background: var(--ao-bg);
+}
+
+.client-dashboard-production .client-detail-panel {
+  border-radius: 4px;
+  background: var(--ao-surface);
+}
+
+.client-dashboard-production .strategy-legs-table.position-book-compact {
+  min-width: 1050px;
+}
+
+.client-dashboard-production .strategy-legs-table.position-book-compact th,
+.client-dashboard-production .strategy-legs-table.position-book-compact td {
+  height: 42px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ao-border-soft);
+  color: var(--ao-base);
+  font-size: 13px;
+}
+
+.client-dashboard-production .strategy-legs-table.position-book-compact th {
+  height: 36px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: inset 0 -1px 0 var(--ao-border-soft);
+}
+
+.client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:nth-child(even) td {
+  background: var(--ao-hover);
+}
+
+.client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:hover td {
+  background: color-mix(in srgb, var(--ao-hover) 72%, var(--ao-surface));
+}
+
+/* Dashboard tables are deliberately read-only: never expose row-selection UI,
+   even if the shared leg renderer gains a selection prop in the future. */
+.client-dashboard-production .position-row-check,
+.client-dashboard-production input[type="checkbox"] {
+  display: none !important;
+}
+
+html[data-theme="dark"] .client-dashboard-production .leg-entry-tag.is-today,
+html[data-theme="dark"] .client-dashboard-production .strategy-open-tag {
+  border: 1px solid #285A33;
+  background: #19311E;
+  color: #72C878;
+}
+
+html[data-theme="dark"] .client-dashboard-production .leg-entry-tag.is-carried,
+html[data-theme="dark"] .client-dashboard-production .strategy-closed-tag,
+html[data-theme="dark"] .client-dashboard-production .strategy-exit-price {
+  border-color: #3A3A3A;
+  background: #242424;
+  color: #A6A6A6;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .client-dashboard-production .strategy-exit-price span {
+  background: #303030;
+  color: #AFAFAF;
+}
+
+/* The dashboard carries only .positions-view-compact (not the full Get
+   Positions root), so give its expiry identity chip the same explicit night
+   treatment instead of allowing the light #EDF4FD fill to win. */
+html[data-theme="dark"] .client-dashboard-production .position-symbol-line .position-expiry,
+html[data-theme="dark"] .client-dashboard-production .compact-leg-symbol .position-expiry {
+  border-color: #31517E;
+  background: #1D3150;
+  color: #AFCBFA;
+}
+
+html[data-theme="dark"] .client-dashboard-production .position-symbol-line .position-expiry::before,
+html[data-theme="dark"] .client-dashboard-production .compact-leg-symbol .position-expiry::before {
+  border-right-color: #3C5E8B;
+  color: #82ADFA;
+}
+
+/* Short-position row cue for Get Positions and Sync Positions only. The tint
+   stays restrained enough for dense tables while making short exposure visible
+   before the quantity is read. */
+.positions-view.positions-view-compact:not(.book-view-production)
+  .position-book-table.position-book-compact tbody tr.position-row-short td {
+  background: color-mix(in srgb, var(--ao-red) 7%, var(--ao-surface));
+}
+
+.positions-view.positions-view-compact:not(.book-view-production)
+  .position-book-table.position-book-compact tbody tr.position-row-short:hover td {
+  background: color-mix(in srgb, var(--ao-red) 11%, var(--ao-surface));
+}
+
+html[data-theme="dark"]
+  .positions-view.positions-view-compact:not(.book-view-production)
+  .position-book-table.position-book-compact tbody tr.position-row-short td {
+  background: color-mix(in srgb, var(--ao-red) 9%, var(--ao-surface));
+}
+
+html[data-theme="dark"]
+  .positions-view.positions-view-compact:not(.book-view-production)
+  .position-book-table.position-book-compact tbody tr.position-row-short:hover td {
+  background: color-mix(in srgb, var(--ao-red) 13%, var(--ao-surface));
+}
+
+/* P&L-only emphasis: improve scan weight without changing type size or rows. */
+.get-positions-view .position-book-compact .position-pnl-value,
+.get-positions-view .position-group-pnl {
+  font-weight: 600;
+}
+.get-positions-view .positions-toolbar-pnl strong {
+  font-weight: 700;
+}
+.sync-view-production .strategy-legs-table .position-pnl-value,
+.sync-view-production .compact-leg-pnl,
+.sync-view-production .legs-table-title-pnl,
+.sync-view-production .strategy-pnl-tag {
+  font-weight: 600;
+}
+
+/* =========================================================
+   Client Dashboard — StackWealth light theme
+   Scoped to light mode so the established dark dashboard is untouched.
+   ========================================================= */
+html:not([data-theme="dark"]) .client-dashboard-production {
+  --sw-border: #e8edf3;
+  --sw-border-soft: #eef2f6;
+  --sw-border-strong: #dce4ed;
+  --sw-text: #172033;
+  --sw-secondary: #596579;
+  --sw-muted: #8b96a6;
+  --sw-blue: #2563eb;
+  --sw-blue-soft: #eff6ff;
+  --sw-blue-border: #bfdbfe;
+  --sw-green: #088F8F;
+  --sw-green-soft: #effcf9;
+  --sw-green-border: #b9eee7;
+  --sw-red: #ef3f3f;
+  --sw-red-soft: #fff5f5;
+  --sw-red-border: #fecaca;
+
+  padding: 10px 12px 18px;
+  background: #fff;
+  color: var(--sw-text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-head {
+  display: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  min-height: 50px;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--sw-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .02);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-picker {
+  flex: 0 1 220px;
+  min-width: 180px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-picker.account {
+  flex-basis: 230px;
+  min-width: 190px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-picker .positions-compact-select {
+  gap: 6px;
+  color: var(--sw-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-picker .position-select-trigger {
+  height: 32px;
+  padding: 0 9px;
+  border-color: var(--sw-border-strong);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-picker .position-select-trigger:hover {
+  border-color: #c6d2df;
+  background: #f8fbff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-picker .position-select-text strong {
+  color: var(--sw-text);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-picker .position-select-text em {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--sw-blue-soft);
+  color: var(--sw-blue);
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .orderbook-live-pill {
+  height: 30px;
+  padding: 0 10px;
+  border-color: var(--sw-green-border);
+  border-radius: 7px;
+  background: var(--sw-green-soft);
+  color: var(--sw-green);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .view-toggle {
+  height: 32px;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--sw-border-strong);
+  border-radius: 8px;
+  background: #fff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .view-toggle-btn {
+  width: 28px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--sw-secondary);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .view-toggle-btn.active {
+  background: var(--sw-blue);
+  color: #fff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-strip {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-strip-head {
+  min-height: 32px;
+  margin: 0 0 10px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--sw-border);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-strip-title > strong {
+  font-size: 0;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-strip-title > strong::after {
+  content: "All Strategies";
+  color: var(--sw-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-strip-head > span {
+  color: var(--sw-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-strip-head .client-viewing-user {
+  height: 22px;
+  padding: 0 7px;
+  border-color: var(--sw-border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--sw-muted);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-strip-head .client-viewing-user strong {
+  color: var(--sw-blue);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-group-pnl-strip {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-group-pnl-card {
+  min-height: 40px;
+  padding: 5px 9px;
+  border-color: var(--sw-border);
+  border-left: 2px solid var(--sw-blue);
+  border-radius: 6px;
+  background: #fbfcfe;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-card {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--sw-border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .02);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-card:hover,
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-card.expanded {
+  border-color: #d9e2ec;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .03);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-summary {
+  grid-template-areas: "name broker metrics";
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--sw-border-soft);
+  background: #fff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-summary:hover {
+  background: #f8fbff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-name {
+  grid-area: name;
+  width: auto;
+  min-width: 0;
+  gap: 7px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-name .client-strategy-expand {
+  order: -1;
+  width: 17px;
+  height: 17px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sw-secondary);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-name strong {
+  max-width: 100%;
+  color: var(--sw-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker {
+  grid-area: broker;
+  gap: 4px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker > span {
+  display: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker strong,
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker-sub {
+  height: 22px;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--sw-border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--sw-secondary);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics {
+  grid-area: metrics;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--sw-border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div:first-child {
+  display: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics span {
+  display: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div:nth-child(2) strong {
+  color: var(--sw-secondary);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div:nth-child(2) strong::after {
+  content: " legs";
+  font-weight: 500;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div:last-child {
+  border-color: var(--sw-green-border);
+  background: var(--sw-green-soft);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div:last-child strong {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div:last-child strong::before {
+  content: "P&L ";
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics > div:last-child:has(strong.down) {
+  border-color: var(--sw-red-border);
+  background: var(--sw-red-soft);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-expanded-details {
+  display: block;
+  padding: 0;
+  border-top: 0;
+  background: #fff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-detail-panel {
+  overflow-x: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-detail-panel-head,
+html:not([data-theme="dark"]) .client-dashboard-production .client-panel-total {
+  display: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th,
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td {
+  height: 34px;
+  padding: 0 5px;
+  border-bottom: 1px solid #f1f4f7;
+  background: #fff;
+  color: var(--sw-text);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th {
+  height: 28px;
+  border-bottom-color: var(--sw-border-soft);
+  background: #fcfdff;
+  color: var(--sw-muted);
+  font-size: 8.5px;
+  font-weight: 650;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(1),
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(1) {
+  width: 37%;
+  padding-left: 8px;
+}
+
+/* Show the Product Type column (LONG / SHORT · CF) like Get Position. */
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(2),
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(2) {
+  width: 14%;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(3),
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(3) { width: 12%; }
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(4),
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(4) { width: 10%; }
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(5),
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(5) { width: 10%; }
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(6),
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(6) { width: 10%; }
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(7),
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(7) { width: 11%; }
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:nth-child(even) td {
+  background: #F6F8FA;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:hover td {
+  background: #f8fbff;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line {
+  gap: 4px;
+  overflow: hidden;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line > strong {
+  flex: none;
+  color: var(--sw-text);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .position-expiry {
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--sw-blue-border);
+  border-radius: 4px;
+  background: var(--sw-blue-soft);
+  color: var(--sw-blue);
+  font-size: 8.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .position-strike {
+  flex: none;
+  color: var(--sw-text);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .book-tag,
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .leg-entry-tag,
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .strategy-open-tag,
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .strategy-closed-tag {
+  flex: none;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 8.5px;
+  font-weight: 650;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .book-tag.exchange,
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .strategy-open-tag,
+html:not([data-theme="dark"]) .client-dashboard-production .position-symbol-line .strategy-closed-tag {
+  display: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-exit-price {
+  min-width: 0;
+  height: 21px;
+  padding: 0 5px;
+  border-color: var(--sw-blue-border);
+  border-radius: 5px;
+  background: var(--sw-blue-soft);
+  color: var(--sw-blue);
+  font-size: 9.5px;
+  font-weight: 650;
+  box-shadow: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table .book-qty-cell,
+html:not([data-theme="dark"]) .client-dashboard-production .strategy-legs-table .position-pnl-value {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .up { color: var(--sw-green); }
+html:not([data-theme="dark"]) .client-dashboard-production .down { color: var(--sw-red); }
+
+@media (max-width: 1400px) {
+  html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+@media (max-width: 860px) {
+  html:not([data-theme="dark"]) .client-dashboard-production .client-dashboard-toolbar {
+    overflow-x: auto;
+  }
+  html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Flexible light-theme strategy headers. Long names keep readable space while
+   metadata wraps as a complete unit instead of squeezing or clipping text. */
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 7px;
+  row-gap: 5px;
+  min-height: 40px;
+  padding-block: 6px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-name {
+  flex: 1 1 190px;
+  width: auto;
+  min-width: 130px;
+  max-width: none;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-name strong {
+  flex: 1 1 auto;
+  max-width: none;
+  overflow: visible;
+  line-height: 1.2;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker strong,
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker-sub {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 150px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@media (max-width: 1180px) {
+  html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-summary {
+    align-items: flex-start;
+  }
+  html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-name {
+    flex-basis: calc(100% - 4px);
+  }
+  html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker {
+    flex: 1 1 150px;
+  }
+}
+
+/* Horizontal strategy accordion requested for the light Client Dashboard. */
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-card {
+  width: 100%;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-name { order: 1; }
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-broker { order: 2; }
+html:not([data-theme="dark"]) .client-dashboard-production .client-strategy-metrics { order: 3; }
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .client-strategy-card:not(.expanded) .client-strategy-summary {
+  border-bottom-color: transparent;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .client-strategy-card:not(.expanded) .client-strategy-summary:hover {
+  border-bottom-color: var(--sw-border-soft);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table.position-book-compact th:nth-child(1),
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table.position-book-compact td:nth-child(1) { width: 31%; }
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table.position-book-compact th:nth-child(2),
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table.position-book-compact td:nth-child(2) {
+  display: table-cell;
+  width: 15%;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .client-strategy-card.expanded .client-expanded-details {
+  animation: client-strategy-open 140ms ease-out both;
+}
+
+@keyframes client-strategy-open {
+  from { opacity: 0; transform: translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-theme="dark"]) .client-dashboard-production
+    .client-strategy-card.expanded .client-expanded-details {
+    animation: none;
+  }
+}
+
+/* Readable identity and outcome columns in the horizontal light dashboard. */
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table .position-symbol-line > strong {
+  color: var(--sw-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table .position-pnl-value {
+  color: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table .position-pnl-value.up {
+  color: var(--sw-green);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .strategy-legs-table .position-pnl-value.down {
+  color: var(--sw-red);
+}
+
+html:not([data-theme="dark"]) .client-dashboard-production
+  .client-strategy-metrics > div:last-child strong {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 

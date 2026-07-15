@@ -22,7 +22,7 @@ import {
 import DataTable from '../components/common/DataTable'
 import { apiGet, apiPost } from '../config/api'
 import { refreshBrokerAccounts } from '../feedmaster/angelSessionStore'
-import { Settings } from 'lucide-react'
+import { Settings, Plus, Users2 } from 'lucide-react'
 import Tooltip from '@mui/material/Tooltip'
 
 import BrokerConfigDialog from '../components/users/BrokerConfigDialog'
@@ -78,6 +78,9 @@ function UsersPage() {
   const [deleteUser, setDeleteUser] = useState(null)
 
   const [brokerUser, setBrokerUser] = useState(null)
+
+  // Group filter for the table: '' = all groups, '__none__' = users with no group.
+  const [groupFilter, setGroupFilter] = useState('')
 
   const [form, setForm] = useState({
     firstName: '',
@@ -152,20 +155,24 @@ function UsersPage() {
       sortable: true,
       render: (row) => (
         row.group_name
-          ? <SegmentChip label={row.group_name} bg="#eef2ff" color="#4338ca" />
-          : <Typography variant="caption" color="text.secondary">No group</Typography>
+          ? <SegmentChip label={row.group_name} bg="var(--ao-blue-bg)" color="var(--ao-blue)" border="var(--ao-blue-surface)" />
+          : <Typography variant="caption" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>No group</Typography>
       )
     },
     {
       field: 'segments',
       label: 'Segments',
-      render: (row) => (
-        <Box sx={{ display: 'flex', gap: 0.5 }}>
-          {row.segments.mf && <SegmentChip label="MF" bg="#dbeafe" color="#1e40af" />}
-          {row.segments.eq && <SegmentChip label="EQ" bg="#dcfce7" color="#166534" />}
-          {row.segments.fo && <SegmentChip label="FO" bg="#fef3c7" color="#92400e" />}
-        </Box>
-      )
+      render: (row) => {
+        const active = row.segments.mf || row.segments.eq || row.segments.fo
+        if (!active) return <Typography variant="caption" sx={{ color: 'text.secondary' }}>—</Typography>
+        return (
+          <Box sx={{ display: 'flex', gap: 0.625 }}>
+            {row.segments.mf && <SegmentChip label="MF" bg="var(--ao-blue-bg)" color="var(--ao-blue)" border="var(--ao-blue-surface)" />}
+            {row.segments.eq && <SegmentChip label="EQ" bg="var(--ao-green-bg)" color="var(--ao-green)" border="#CBEBDF" />}
+            {row.segments.fo && <SegmentChip label="FO" bg="#FBF3E3" color="#B7791F" border="#F1E2C2" />}
+          </Box>
+        )
+      }
     },
     {
       field: 'broker_config',
@@ -344,26 +351,68 @@ const handleDelete = (row) => {
     setApiError('')
   }
 
+  /* ================= GROUP FILTER ================= */
+  const visibleUsers = groupFilter
+    ? (groupFilter === '__none__'
+        ? users.filter((u) => !u.group_name)
+        : users.filter((u) => u.group_name === groupFilter))
+    : users
+
   /* ================= RENDER ================= */
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* HEADER */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h5" fontWeight={600}>Users</Typography>
-        <Button variant="contained" onClick={openAddDialog}>Add User</Button>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', mb: 1.25 }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700} sx={{ lineHeight: 1.1 }}>Users</Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+            Manage clients, segments and broker access
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+          <FormControl size="small" sx={{ minWidth: 190 }}>
+            <Select
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
+              displayEmpty
+              disabled={groupsLoading}
+              renderValue={(val) => (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875, minWidth: 0 }}>
+                  <Users2 size={14} style={{ flex: 'none', color: 'var(--ao-caption)' }} />
+                  <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {val ? (val === '__none__' ? 'No group' : val) : 'All Groups'}
+                  </Box>
+                </Box>
+              )}
+            >
+              <MenuItem value="">All Groups</MenuItem>
+              {groups.map((group) => (
+                <MenuItem key={group.id} value={group.name}>{group.name}</MenuItem>
+              ))}
+              <MenuItem value="__none__">No group</MenuItem>
+            </Select>
+          </FormControl>
+          <Button
+            variant="contained"
+            onClick={openAddDialog}
+            startIcon={<Plus size={16} strokeWidth={2.5} />}
+          >
+            Add User
+          </Button>
+        </Box>
       </Box>
 
       {/* TABLE */}
-      <Paper sx={{ flex: 1, p: 2 }}>
+      <Paper sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', px: 2, pt: 1.5, pb: 2 }}>
         <DataTable
           columns={columns}
-          rows={users}
+          rows={visibleUsers}
           showStatus
           onStatusToggle={handleStatusToggle}
           showActions
           onEdit={handleEdit}
           onDelete={handleDelete}
-          pageSize={5}
+          pageSize={50}
         />
       </Paper>
 
@@ -434,7 +483,7 @@ const handleDelete = (row) => {
               }}
               sx={{
                 borderRadius: 1.25,
-                bgcolor: '#fff',
+                bgcolor: 'background.paper',
                 '& .MuiOutlinedInput-notchedOutline': {
                   borderColor: '#d7deea'
                 },
@@ -549,16 +598,22 @@ const handleDelete = (row) => {
 }
 
 /* ================= SEGMENT CHIP ================= */
-function SegmentChip({ label, bg, color }) {
+function SegmentChip({ label, bg, color, border }) {
   return (
     <Box sx={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      height: 22,
       px: 1,
-      py: '2px',
-      fontSize: '0.7rem',
-      borderRadius: 1,
+      fontSize: '0.6875rem',
+      lineHeight: 1,
+      letterSpacing: '.03em',
+      borderRadius: 999,
       background: bg,
       color,
-      fontWeight: 600
+      border: `1px solid ${border || 'transparent'}`,
+      fontWeight: 700,
+      whiteSpace: 'nowrap'
     }}>
       {label}
     </Box>

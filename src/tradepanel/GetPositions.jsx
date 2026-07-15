@@ -630,6 +630,15 @@ export default function GetPositions() {
     loadExistingStrategies(userId);
   }, [loadExistingStrategies, userId]);
 
+  useEffect(() => {
+    if (!strategyDialogOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && !savingStrategy) setStrategyDialogOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [savingStrategy, strategyDialogOpen]);
+
   const openStrategyDialog = useCallback(async () => {
     if (!userId) {
       setStatus('Select a user first');
@@ -707,10 +716,10 @@ export default function GetPositions() {
 
   return (
     <div className="trade-panel">
-      <div className="positions-view positions-view-compact">
+      <div className="positions-view positions-view-compact get-positions-view">
         <div className="positions-toolbar">
           <CompactSelect
-            title="User"
+            title="Client"
             value={userId}
             onChange={handleUserId}
             options={visibleUsers.map((user) => ({
@@ -718,7 +727,6 @@ export default function GetPositions() {
               label: user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`,
             }))}
           />
-
           <CompactSelect
             title="Account"
             value={configId}
@@ -730,9 +738,27 @@ export default function GetPositions() {
               meta: config.broker_name || 'Broker',
             }))}
           />
+          <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsSupported && !client)} type="button">
+            <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            {loading ? 'Loading' : 'Refresh'}
+          </button>
+
+          {selectedCount > 0 && (
+            <div className="positions-selection-actions">
+              <span className="positions-selection-count">{selectedCount} selected</span>
+              <button type="button" className="positions-group-btn" onClick={openStrategyDialog}>
+                <Layers size={13} /> Add Group
+              </button>
+              <button type="button" className="positions-selection-clear" onClick={() => setSelectedPositionKeys(new Set())}>
+                Clear
+              </button>
+            </div>
+          )}
+
+          <span className="positions-toolbar-divider" aria-hidden="true" />
 
           <CompactSelect
-            title="Group"
+            title="View"
             value={grouping}
             onChange={setGrouping}
             className="position-group-select"
@@ -741,10 +767,9 @@ export default function GetPositions() {
               { value: 'none', label: 'Ungrouped' },
             ]}
           />
-
           {showGroupControls && (
             <CompactSelect
-              title="Expiry groups"
+              title="Groups"
               value={groupView}
               onChange={(value) => setAllGroupsCollapsed(value === 'collapsed')}
               className="position-group-select"
@@ -754,90 +779,40 @@ export default function GetPositions() {
               ]}
             />
           )}
-
-          <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsSupported && !client)} type="button">
-            {loading ? 'Loading' : 'Get Positions'}
-          </button>
-          {positionRows.length > 0 && (
-            <span className={`positions-total ${totalPnl >= 0 ? 'up' : 'down'}`}>
-              Total P&amp;L: {money(totalPnl)}
-            </span>
-          )}
-
-          <span className={`orderbook-live-pill ${positionFeedStatus}`} title={positionFeedTitle}>
-            <Radio size={13} />
-            {positionFeedStatus === 'live' ? 'Live' : positionFeedStatus === 'connecting' ? 'Connecting' : 'Offline'}
-          </span>
-
-          <span className={`orderbook-live-pill ${fillSyncStatus}`} title="Auto re-syncs positions when an order fills">
-            <RefreshCw size={13} />
-            Auto-sync: {fillSyncStatus === 'live' ? 'On' : fillSyncStatus === 'connecting' ? 'Connecting' : 'Off'}
-          </span>
-
-          <label className="orderbook-search">
+          <label className="orderbook-search positions-search">
             <Search size={14} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search symbol, qty, P&L..."
-            />
-            {query && (
-              <button type="button" onClick={() => setQuery('')} aria-label="Clear search">
-                <X size={13} />
-              </button>
-            )}
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search positions" />
+            {query && <button type="button" onClick={() => setQuery('')} aria-label="Clear search"><X size={13} /></button>}
           </label>
 
           {activeFilterCount > 0 && (
             <button className="positions-clear-filters" type="button" onClick={() => setFilters(defaultPositionFilters)}>
-              <X size={14} /> Clear filters
+              <X size={13} /> Clear {activeFilterCount}
             </button>
           )}
-          {status && <span className="positions-status">{status}</span>}
+
+          <span className="positions-toolbar-divider" aria-hidden="true" />
+          <span className="positions-toolbar-summary" title={`${longCount} long · ${shortCount} short`}>
+            <strong>{positionRows.length}</strong> positions
+          </span>
+          <span className={`positions-toolbar-pnl ${totalPnl >= 0 ? 'up' : 'down'}`}>
+            P&amp;L <strong>{money(totalPnl)}</strong>
+          </span>
+          <span className={`orderbook-live-pill ${positionFeedStatus}`} title={positionFeedTitle}>
+            <Radio size={12} /> {positionFeedStatus === 'live' ? 'Market live' : positionFeedStatus === 'connecting' ? 'Connecting' : 'Offline'}
+          </span>
+          <span className={`orderbook-live-pill ${fillSyncStatus}`} title="Auto re-syncs positions when an order fills">
+            <RefreshCw size={12} /> {fillSyncStatus === 'live' ? 'Auto-sync' : fillSyncStatus === 'connecting' ? 'Syncing' : 'Sync off'}
+          </span>
+          {status && <span className="positions-toolbar-status" title={status}><Info size={12} /> {status}</span>}
         </div>
-
-        {selectedCount > 0 && (
-          <div className="positions-selection-bar">
-            <span className="positions-selection-count">{selectedCount} selected</span>
-            <button type="button" className="positions-group-btn" onClick={openStrategyDialog}>
-              <Layers size={14} /> Add to Group
-            </button>
-            <button
-              type="button"
-              className="positions-selection-clear"
-              onClick={() => setSelectedPositionKeys(new Set())}
-            >
-              Clear
-            </button>
-          </div>
-        )}
-
-        {positionRows.length > 0 && (
-          <div className="position-book-summary position-book-summary-compact">
-            <div>
-              <span className="buy">Long Positions</span>
-              <strong>{longCount}</strong>
-              <em>Net qty above zero</em>
-            </div>
-            <div>
-              <span className="sell">Short Positions</span>
-              <strong>{shortCount}</strong>
-              <em>Net qty below zero</em>
-            </div>
-            <div>
-              <span>Total P&amp;L</span>
-              <strong className={totalPnl >= 0 ? 'up' : 'down'}>{money(totalPnl)}</strong>
-              <em>{positionRows.length} Positions</em>
-            </div>
-          </div>
-        )}
 
         <div className="positions-table-wrap">
           <table className="positions-table position-book-table position-book-compact">
             <thead>
               <tr>
                 {POSITION_COLUMNS.map((column) => (
-                  <th key={column} className={positionColumnIsNumeric(column) ? 'num' : ''}>
+                  <th key={column} className={`${positionColumnIsNumeric(column) ? 'num' : ''}${column === 'pnl' ? ' col-pnl' : ''}`}>
                     <PositionColumnHeader
                       column={column}
                       sort={sort}
@@ -874,7 +849,7 @@ export default function GetPositions() {
                         <span>{item.expiry}</span>
                         <small>{item.exchange}</small>
                         <small>{item.count} positions</small>
-                        <strong className={item.pnl >= 0 ? 'up' : 'down'}>
+                        <strong className={`position-group-pnl ${item.pnl >= 0 ? 'up' : 'down'}`}>
                           Group P&amp;L: {money(item.pnl)}
                         </strong>
                       </button>
@@ -887,10 +862,10 @@ export default function GetPositions() {
                     return (
                   <tr
                     key={rowKey}
-                    className={`${Number(item.row.netqty || 0) < 0 ? 'position-row-short' : ''}${selected ? ' position-row-selected' : ''}`}
+                    className={`${Number(item.row.netqty || 0) < 0 ? 'position-row-short' : ''}${Number(item.row.netqty || 0) === 0 ? ' position-row-closed' : ''}${selected ? ' position-row-selected' : ''}`}
                   >
                     {POSITION_COLUMNS.map((column) => (
-                      <td key={column} className={positionColumnIsNumeric(column) ? 'num' : ''}>
+                      <td key={column} className={`${positionColumnIsNumeric(column) ? 'num' : ''}${column === 'pnl' ? ' col-pnl' : ''}`}>
                         {renderPositionCell(item.row, column, {
                           selected,
                           rowKey,
@@ -929,11 +904,20 @@ export default function GetPositions() {
             className="strategy-dialog-backdrop"
             onMouseDown={() => { if (!savingStrategy) setStrategyDialogOpen(false); }}
           >
-            <div className="strategy-dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <div
+              className="strategy-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="strategy-dialog-title"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
               <div className="strategy-dialog-head">
                 <div className="strategy-dialog-title">
-                  <Layers size={16} />
-                  <strong>Add to Group</strong>
+                  <span className="strategy-dialog-title-icon"><Layers size={17} /></span>
+                  <span className="strategy-dialog-heading">
+                    <strong id="strategy-dialog-title">Add positions to group</strong>
+                    <small>Save selected contracts as one managed strategy</small>
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -947,10 +931,20 @@ export default function GetPositions() {
               </div>
 
               <div className="strategy-dialog-body">
-                <p className="strategy-dialog-meta">
-                  {selectedCount} position{selectedCount === 1 ? '' : 's'} selected
-                  {selectedUserLabel && <> &middot; for <strong>{selectedUserLabel}</strong></>}
-                </p>
+                <div className="strategy-dialog-selection">
+                  <span className="strategy-dialog-selection-count">
+                    <strong>{selectedCount}</strong>
+                    <small>Selected {selectedCount === 1 ? 'position' : 'positions'}</small>
+                  </span>
+                  <span className="strategy-dialog-selection-scope">
+                    <small>Client</small>
+                    <strong>{selectedUserLabel || 'Selected client'}</strong>
+                  </span>
+                  <span className="strategy-dialog-selection-scope">
+                    <small>Account</small>
+                    <strong>{selectedConfig?.account_id || selectedBrokerName || 'Selected account'}</strong>
+                  </span>
+                </div>
 
                 {existingStrategies.length > 0 && (
                   <div className="strategy-mode-toggle">
@@ -959,25 +953,25 @@ export default function GetPositions() {
                       className={strategyMode === 'new' ? 'active' : ''}
                       onClick={() => { setStrategyMode('new'); setStrategyError(''); }}
                     >
-                      New strategy
+                      New group
                     </button>
                     <button
                       type="button"
                       className={strategyMode === 'existing' ? 'active' : ''}
                       onClick={() => { setStrategyMode('existing'); setStrategyError(''); }}
                     >
-                      Add to existing
+                      Existing group
                     </button>
                   </div>
                 )}
 
                 {strategyMode === 'existing' ? (
                   <label className="strategy-dialog-field">
-                    <span>Existing strategy</span>
+                    <span>Existing group</span>
                     <PositionSelect
                       value={selectedStrategyCode}
                       onChange={setSelectedStrategyCode}
-                      emptyLabel="Select a strategy"
+                      emptyLabel="Select a group"
                       portal
                       options={existingStrategies.map((strategy) => ({
                         value: strategy.strategy_code,
@@ -988,7 +982,7 @@ export default function GetPositions() {
                   </label>
                 ) : (
                   <label className="strategy-dialog-field">
-                    <span>Strategy name</span>
+                    <span>Group name</span>
                     <input
                       autoFocus
                       type="text"
@@ -1020,7 +1014,7 @@ export default function GetPositions() {
                 >
                   {savingStrategy
                     ? 'Saving…'
-                    : (strategyMode === 'existing' ? 'Add to Strategy' : 'Save Strategy')}
+                    : (strategyMode === 'existing' ? 'Add to Group' : 'Create Group')}
                 </button>
               </div>
             </div>

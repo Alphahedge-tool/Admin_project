@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
+import { BrokerMark } from './BrokerMark';
 
 export function CompactSelect({ title, value, options, onChange, disabled = false, menuMinWidth = 0, className = '' }) {
   return (
@@ -19,6 +20,7 @@ export function CompactSelect({ title, value, options, onChange, disabled = fals
           value: option.value,
           label: option.label,
           meta: option.meta,
+          brokerName: option.brokerName,
         }))}
       />
     </label>
@@ -100,6 +102,7 @@ export function PositionSelect({ value, options, onChange, disabled = false, emp
             onClick={() => choose(option.value)}
           >
             <span>
+              <BrokerMark brokerName={option.brokerName || option.meta || option.label} />
               {option.meta && <em>{option.meta}</em>}
               <strong>{option.label}</strong>
             </span>
@@ -121,6 +124,7 @@ export function PositionSelect({ value, options, onChange, disabled = false, emp
         onClick={() => setOpen((current) => !current)}
       >
         <span className="position-select-text">
+          <BrokerMark brokerName={selected?.brokerName || selected?.meta || selected?.label} />
           {selected?.meta && <em>{selected.meta}</em>}
           <strong>{selected?.label || emptyLabel}</strong>
         </span>

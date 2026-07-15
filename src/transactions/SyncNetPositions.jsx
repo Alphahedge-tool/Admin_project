@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlignJustify, ArrowUpDown, Check, History, Minus, Pencil, Radio, RefreshCw, RotateCcw, Table, Trash2, X,
+  AlignJustify, ArrowUpDown, Check, ChevronDown, History, Info, Minus, Pencil, Radio, RefreshCw, RotateCcw, Table, Trash2, X,
 } from 'lucide-react'
 import { apiGet, apiPost } from '../config/api'
 import { useFeedMasterAccount } from '../feedmaster/feedMasterStore'
@@ -10,6 +10,7 @@ import {
 import { releaseFeedTokens } from '../tradepanel/feedTokens'
 import { getSavedTradeAccount, saveTradeAccount } from '../tradepanel/tradeAccountStore'
 import { CompactSelect } from '../tradepanel/PositionSelect'
+import { BrokerMark } from '../tradepanel/BrokerMark'
 import { legIsClosed, money, withLiveTick } from '../tradepanel/legFormat'
 import { CompactLegs, LegsTable } from '../tradepanel/strategyLegsView'
 import '../tradepanel/tradepanel.css'
@@ -41,6 +42,9 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // one account at a time. Never persisted to the shared trade-account store -
 // the other Trade Panel pages would read it back as a real user id.
 const ALL_USERS = 'all'
+// A group selection scopes the whole page (Client picker, bulk sync queue and the
+// strategies shown) to just that group's users. 'all' means every group.
+const ALL_GROUPS = 'all-groups'
 
 // How far through one account the bar sits at the start of each step. The sync
 // really does await these in order, so the bar only moves on work that finished.
@@ -104,6 +108,8 @@ function deriveLegForDate(leg, dateFilter) {
 function SyncNetPositions() {
   const [users, setUsers] = useState([])
   const [userId, setUserId] = useState('')
+  const [groups, setGroups] = useState([])
+  const [groupId, setGroupId] = useState(ALL_GROUPS)
   const [configs, setConfigs] = useState([])
   const [configId, setConfigId] = useState('')
   const [status, setStatus] = useState('Select a user and account')
@@ -126,6 +132,18 @@ function SyncNetPositions() {
   const [savingBrokerTagCode, setSavingBrokerTagCode] = useState('')
   const [brokerTagDoneCode, setBrokerTagDoneCode] = useState('')
   const [brokerConfigs, setBrokerConfigs] = useState([])
+  // Strategy cards whose legs are collapsed. Default expanded (legs visible);
+  // clicking a card's head toggles its legs open/closed.
+  const [collapsedStrategies, setCollapsedStrategies] = useState(() => new Set())
+
+  const toggleStrategyCollapsed = useCallback((code) => {
+    setCollapsedStrategies((current) => {
+      const next = new Set(current)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      return next
+    })
+  }, [])
 
   // Startup logged every Angel account in and kept its real client code. The
   // broker-config list endpoint masks account_id as "****", so that store is
@@ -144,8 +162,6 @@ function SyncNetPositions() {
     ...config,
     accountId: angelAccountByConfigId.get(config.configId)?.accountId || '',
   })), [brokerConfigs, angelAccountByConfigId])
-  const bulkAccountGroups = useMemo(() => groupByUser(allAccounts), [allAccounts])
-
   const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount()
   const [liveTicks, setLiveTicks] = useState({})
   const [feedStatus, setFeedStatus] = useState('offline') // 'offline' | 'connecting' | 'live'
@@ -417,7 +433,29 @@ function SyncNetPositions() {
   const selectedConfig = configs.find((config) => String(config.id) === String(configId))
   const selectedBrokerName = selectedConfig?.broker_name || ''
   const selectedIsAngel = isAngelBroker(selectedBrokerName)
-  const canRun = allUsers ? allAccounts.length > 0 : Boolean(selectedConfig)
+
+  const selectedGroup = groups.find((group) => String(group.id) === String(groupId)) || null
+
+  // The users a group selection narrows the page down to (all users when the
+  // group filter is 'all-groups'). The Client picker, the bulk sync queue and the
+  // strategies shown all work off THIS list.
+  const groupUsers = useMemo(() => (
+    groupId === ALL_GROUPS
+      ? users
+      : users.filter((user) => String(user.group_id || '') === String(groupId))
+  ), [users, groupId])
+
+  // Every broker account inside the current group scope - what a group-wide Sync
+  // walks, one account at a time.
+  const scopedAccounts = useMemo(() => {
+    if (groupId === ALL_GROUPS) return allAccounts
+    const ids = new Set(groupUsers.map((user) => String(user.id)))
+    return allAccounts.filter((account) => ids.has(String(account.userId)))
+  }, [allAccounts, groupUsers, groupId])
+
+  const bulkAccountGroups = useMemo(() => groupByUser(scopedAccounts), [scopedAccounts])
+
+  const canRun = allUsers ? scopedAccounts.length > 0 : Boolean(selectedConfig)
 
   // Manual picks here should also become the shared Trade Panel selection -
   // except the bulk sentinel, which only means something on this page.
@@ -426,13 +464,52 @@ function SyncNetPositions() {
     if (value !== ALL_USERS) saveTradeAccount({ userId: value, configId: '' })
   }, [])
 
+  // Picking a group shows that whole group at once - its members' strategies and
+  // its accounts - rather than leaving one user selected.
+  const handleGroupId = useCallback((value) => {
+    setGroupId(value)
+    setUserId(ALL_USERS)
+    setConfigId('')
+    // Group overview is read-only, so drop any leg selection carried in from a
+    // single-account view.
+    setSelectedLegKeys(new Set())
+  }, [])
+
   const handleConfigId = useCallback((value) => {
     setConfigId(value)
     if (userId !== ALL_USERS) saveTradeAccount({ userId, configId: value })
   }, [userId])
 
   const loadStrategies = useCallback(async (nextUserId = userId, cancelled = false) => {
-    if (!nextUserId || nextUserId === ALL_USERS) {
+    // Group overview: pull every member's strategies at once and tag each with
+    // its owner, so the cards can span the whole group. Read-only in this mode.
+    if (nextUserId === ALL_USERS) {
+      if (!groupUsers.length) {
+        setStrategies([])
+        return
+      }
+      setStrategiesLoading(true)
+      try {
+        const results = await Promise.all(groupUsers.map(async (user) => {
+          try {
+            const res = await apiGet(`/strategy-master/list.php?user_id=${user.id}`)
+            return (res.data || []).map((strategy) => ({
+              ...strategy,
+              _userId: String(user.id),
+              _userLabel: userLabel(user),
+            }))
+          } catch {
+            return []
+          }
+        }))
+        if (!cancelled) setStrategies(results.flat())
+      } finally {
+        if (!cancelled) setStrategiesLoading(false)
+      }
+      return
+    }
+
+    if (!nextUserId) {
       setStrategies([])
       return
     }
@@ -446,7 +523,7 @@ function SyncNetPositions() {
     } finally {
       if (!cancelled) setStrategiesLoading(false)
     }
-  }, [userId])
+  }, [userId, groupUsers])
 
   const toggleLegSelection = useCallback((legId) => {
     setSelectedLegKeys((current) => {
@@ -476,6 +553,39 @@ function SyncNetPositions() {
       return next
     })
   }, [])
+
+  const visibleStrategyLegIds = useMemo(
+    () => strategies.flatMap((strategy) => {
+      const legs = strategy.legs || []
+      const visibleLegs = dateFilter === 'all'
+        ? legs
+        : legs.filter((leg) => legDateKey(leg) === dateFilter)
+
+      return visibleLegs.map((leg) => leg.id).filter((id) => id != null)
+    }),
+    [dateFilter, strategies],
+  )
+
+  const allVisibleStrategyLegsSelected = visibleStrategyLegIds.length > 0
+    && visibleStrategyLegIds.every((id) => selectedLegKeys.has(id))
+  const someVisibleStrategyLegsSelected = !allVisibleStrategyLegsSelected
+    && visibleStrategyLegIds.some((id) => selectedLegKeys.has(id))
+
+  const toggleAllVisibleStrategyLegs = useCallback(() => {
+    if (!visibleStrategyLegIds.length) return
+
+    setSelectedLegKeys((current) => {
+      const next = new Set(current)
+      const shouldClear = visibleStrategyLegIds.every((id) => next.has(id))
+
+      visibleStrategyLegIds.forEach((id) => {
+        if (shouldClear) next.delete(id)
+        else next.add(id)
+      })
+
+      return next
+    })
+  }, [visibleStrategyLegIds])
 
   const startEditStrategy = useCallback((strategy) => {
     setEditingStrategyCode(strategy.strategy_code)
@@ -615,9 +725,10 @@ function SyncNetPositions() {
 
     async function loadUsers() {
       try {
-        const [usersOut, authOut] = await Promise.allSettled([
+        const [usersOut, authOut, groupsOut] = await Promise.allSettled([
           apiGet('/users/list.php'),
           apiGet('/auth/me.php'),
+          apiGet('/masters/groups/list.php'),
         ])
         if (cancelled) return
 
@@ -628,6 +739,10 @@ function SyncNetPositions() {
 
         const list = usersOut.value.data || []
         setUsers(list)
+        // Only groups that actually have a user in them are worth offering.
+        const allGroups = groupsOut.status === 'fulfilled' ? (groupsOut.value.data || []) : []
+        const peopled = new Set(list.map((user) => String(user.group_id || '')))
+        setGroups(allGroups.filter((group) => peopled.has(String(group.id))))
         const auth = authOut.status === 'fulfilled' ? authOut.value : null
         const principal = auth?.user || auth?.admin || auth?.data || auth || {}
 
@@ -755,9 +870,10 @@ function SyncNetPositions() {
 
   useEffect(() => {
     if (allUsers) {
-      setStatus(allAccounts.length
-        ? `${allAccounts.length} broker account${allAccounts.length === 1 ? '' : 's'} queued`
-        : 'No broker accounts configured')
+      const scope = selectedGroup ? ` in ${selectedGroup.name}` : ''
+      setStatus(scopedAccounts.length
+        ? `${scopedAccounts.length} broker account${scopedAccounts.length === 1 ? '' : 's'}${scope} queued`
+        : `No broker accounts configured${scope}`)
       return
     }
 
@@ -775,13 +891,13 @@ function SyncNetPositions() {
     } else {
       setStatus('')
     }
-  }, [allAccounts.length, allUsers, configId, selectedBrokerName, selectedConfig, selectedIsAngel])
+  }, [scopedAccounts.length, selectedGroup, allUsers, configId, selectedBrokerName, selectedConfig, selectedIsAngel])
 
   // Every broker account the run will touch, grouped user-then-account so the
   // bulk mode walks them in the order they are listed on screen.
   const buildQueue = useCallback(() => {
     if (allUsers) {
-      return [...allAccounts].sort((a, b) => (
+      return [...scopedAccounts].sort((a, b) => (
         Number(a.userId) - Number(b.userId) || Number(a.configId) - Number(b.configId)
       ))
     }
@@ -794,7 +910,7 @@ function SyncNetPositions() {
       brokerName: selectedBrokerName || 'Broker',
       accountId: angelAccountByConfigId.get(String(configId))?.accountId || '',
     }]
-  }, [allAccounts, allUsers, angelAccountByConfigId, configId, selectedBrokerName, selectedConfig, selectedUser, userId])
+  }, [scopedAccounts, allUsers, angelAccountByConfigId, configId, selectedBrokerName, selectedConfig, selectedUser, userId])
 
   // Sync and unsync walk the same queue one account at a time; only the work
   // done per account differs. Driving the loop here (rather than handing the
@@ -941,31 +1057,46 @@ function SyncNetPositions() {
       ? `${verb} completed with ${failed} failure${failed === 1 ? '' : 's'}`
       : `${verb} completed`)
 
-    // The legs the run closed (or reopened) are only visible once reloaded. The
-    // bulk mode has no single user's strategies on screen to refresh.
-    if (!allUsers) await loadStrategies(userId)
+    // The legs the run closed (or reopened) are only visible once reloaded -
+    // for a single user or the whole group's aggregated cards alike.
+    await loadStrategies(userId)
 
     setRunning('')
   }, [allUsers, buildQueue, loadStrategies, userId])
 
   return (
     <div className="trade-panel">
-      <div className="positions-view sync-view">
+      <div className="positions-view positions-view-compact sync-view sync-view-production">
         <div className="positions-toolbar">
           <CompactSelect
-            title="User"
+            title="Group"
+            value={groupId}
+            onChange={handleGroupId}
+            disabled={Boolean(running) || !groups.length}
+            options={[
+              { value: ALL_GROUPS, label: 'All groups', meta: `${users.length} user${users.length === 1 ? '' : 's'}` },
+              ...groups.map((group) => ({
+                value: String(group.id),
+                label: group.name,
+                meta: `${users.filter((user) => String(user.group_id || '') === String(group.id)).length} users`,
+              })),
+            ]}
+          />
+
+          <CompactSelect
+            title="Client"
             value={userId}
             onChange={handleUserId}
             disabled={Boolean(running)}
             options={[
-              ...(allAccounts.length
+              ...(scopedAccounts.length
                 ? [{
                   value: ALL_USERS,
-                  label: 'All users',
-                  meta: `${allAccounts.length} account${allAccounts.length === 1 ? '' : 's'}`,
+                  label: selectedGroup ? `All of ${selectedGroup.name}` : 'All users',
+                  meta: `${scopedAccounts.length} account${scopedAccounts.length === 1 ? '' : 's'}`,
                 }]
                 : []),
-              ...users.map((user) => ({
+              ...groupUsers.map((user) => ({
                 value: String(user.id),
                 label: userLabel(user),
               })),
@@ -978,7 +1109,7 @@ function SyncNetPositions() {
             onChange={handleConfigId}
             disabled={Boolean(running) || allUsers || configLoading || !configs.length}
             options={allUsers
-              ? [{ value: ALL_USERS, label: 'All accounts', meta: 'Every user' }]
+              ? [{ value: ALL_USERS, label: 'All accounts', meta: selectedGroup ? selectedGroup.name : 'Every user' }]
               : configs.map((config) => ({
                 value: String(config.id),
                 label: config.account_id || `Account ${config.id}`,
@@ -992,6 +1123,7 @@ function SyncNetPositions() {
             disabled={Boolean(running) || !canRun}
             type="button"
           >
+            <RefreshCw size={13} className={running === 'sync' ? 'spin' : ''} />
             {running === 'sync' ? 'Syncing…' : 'Sync'}
           </button>
 
@@ -1006,12 +1138,13 @@ function SyncNetPositions() {
             {running === 'unsync' ? 'Unsyncing…' : 'Unsync'}
           </button>
 
+          <span className="positions-toolbar-divider" aria-hidden="true" />
+
           {summary && (
-            <span className={`positions-total ${summary.failed ? 'down' : 'up'}`}>
-              {progress?.mode === 'unsync' ? 'Unsynced' : 'Synced'}: {summary.success || 0} / {summary.total_accounts || 0}
+            <span className={`sync-toolbar-result ${summary.failed ? 'down' : 'up'}`}>
+              <Check size={12} /> {summary.success || 0}/{summary.total_accounts || 0} successful
             </span>
           )}
-          {status && <span className="positions-status">{status}</span>}
 
           {dateFilter === 'all' ? (
             <span className={`orderbook-live-pill ${feedStatus}`} title="Live LTP feed (Feedmaster)">
@@ -1030,6 +1163,8 @@ function SyncNetPositions() {
                     : 'Historical'}
             </span>
           )}
+
+          <span className="positions-toolbar-divider" aria-hidden="true" />
 
           <CompactSelect
             title="Date"
@@ -1077,13 +1212,27 @@ function SyncNetPositions() {
               <ArrowUpDown size={16} />
             </button>
           </div>
+
+          {status && <span className="positions-toolbar-status" title={status}>{status}</span>}
+          {selectedLegKeys.size > 0 && (
+            <>
+              <span className="positions-toolbar-divider" aria-hidden="true" />
+              <span className="positions-selection-count">{selectedLegKeys.size} selected</span>
+              <button type="button" className="positions-remove-btn" onClick={removeSelectedLegs} disabled={removingLegs}>
+                <Trash2 size={13} /> {removingLegs ? 'Removing…' : 'Remove'}
+              </button>
+              <button type="button" className="positions-selection-clear" onClick={() => setSelectedLegKeys(new Set())}>
+                <X size={12} /> Clear
+              </button>
+            </>
+          )}
         </div>
 
-        {allUsers && allAccounts.length > 0 && (
+        {allUsers && scopedAccounts.length > 0 && (
           <div className="sync-bulk-preview" aria-label="Accounts queued for sync">
             <div className="sync-bulk-preview-head">
-              <strong>Accounts that will sync</strong>
-              <span>{allAccounts.length} broker account{allAccounts.length === 1 ? '' : 's'}</span>
+              <strong>Accounts that will sync{selectedGroup ? ` · ${selectedGroup.name}` : ''}</strong>
+              <span>{scopedAccounts.length} broker account{scopedAccounts.length === 1 ? '' : 's'}</span>
             </div>
 
             <div className="sync-bulk-preview-groups">
@@ -1191,69 +1340,63 @@ function SyncNetPositions() {
           </div>
         )}
 
-        <div className="positions-table-wrap">
-          <table className="positions-table">
-            <thead>
-              <tr>
-                <th>Result</th>
-                <th className="num">Total Accounts</th>
-                <th className="num">Success</th>
-                <th className="num">Skipped</th>
-                <th className="num">Failed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary ? (
-                <tr>
-                  <td>
-                    {progress?.mode === 'unsync'
-                      ? 'Net positions restored to their pre-sync state'
-                      : 'Net positions sync completed'}
-                  </td>
-                  <td className="num">{summary.total_accounts || 0}</td>
-                  <td className="num up">{summary.success || 0}</td>
-                  <td className="num">{summary.skipped || 0}</td>
-                  <td className="num down">{summary.failed || 0}</td>
-                </tr>
-              ) : (
-                <tr>
-                  <td className="positions-empty" colSpan={5}>No sync result to show</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {log.length > 0 && (
-          <div className="positions-table-wrap sync-log-wrap">
-            <table className="positions-table">
-              <thead>
-                <tr>
-                  <th>Sync Log</th>
-                </tr>
-              </thead>
-              <tbody>
-                {log.map((item, index) => (
-                  <tr key={`${index}-${item}`}>
-                    <td>{item}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {summary && (
+          <section className="sync-result-panel" aria-label="Sync result">
+            <div className="sync-result-copy">
+              <span className={`sync-result-icon${summary.failed ? ' has-failures' : ''}`}>
+                {summary.failed ? <X size={16} /> : <Check size={16} />}
+              </span>
+              <div>
+                <strong>{progress?.mode === 'unsync' ? 'Positions restored' : 'Positions synchronized'}</strong>
+                <span>{summary.failed ? 'Completed with account failures' : 'All requested account operations completed'}</span>
+              </div>
+            </div>
+            <div className="sync-result-metrics">
+              <span><small>Accounts</small><strong>{summary.total_accounts || 0}</strong></span>
+              <span className="success"><small>Success</small><strong>{summary.success || 0}</strong></span>
+              <span><small>Skipped</small><strong>{summary.skipped || 0}</strong></span>
+              <span className={summary.failed ? 'failed' : ''}><small>Failed</small><strong>{summary.failed || 0}</strong></span>
+            </div>
+          </section>
         )}
 
-        {userId && !allUsers && (
+        {log.length > 0 && (
+          <details className="sync-log-panel">
+            <summary><History size={14} /> Activity log <span>{log.length}</span></summary>
+            <div className="sync-log-lines">
+              {log.map((item, index) => <div key={`${index}-${item}`}>{item}</div>)}
+            </div>
+          </details>
+        )}
+
+        {userId && (
           <div className={`strategy-list strategy-list--${view}`}>
             <div className="strategy-list-head">
-              <strong>Saved Strategies</strong>
+              <div className="strategy-list-head-title">
+                {!allUsers && (
+                  <button
+                    type="button"
+                    className={`strategy-master-check${allVisibleStrategyLegsSelected ? ' checked' : ''}${someVisibleStrategyLegsSelected ? ' indeterminate' : ''}`}
+                    role="checkbox"
+                    aria-checked={someVisibleStrategyLegsSelected ? 'mixed' : allVisibleStrategyLegsSelected}
+                    aria-label={allVisibleStrategyLegsSelected ? 'Clear all visible strategy legs' : 'Select all visible strategy legs'}
+                    title={allVisibleStrategyLegsSelected ? 'Clear all visible strategy legs' : 'Select all visible strategy legs'}
+                    onClick={toggleAllVisibleStrategyLegs}
+                    disabled={strategiesLoading || visibleStrategyLegIds.length === 0}
+                  >
+                    {allVisibleStrategyLegsSelected && <Check size={12} strokeWidth={2.5} />}
+                    {someVisibleStrategyLegsSelected && <Minus size={12} strokeWidth={2.5} />}
+                  </button>
+                )}
+                <strong>{allUsers ? (selectedGroup ? `${selectedGroup.name} · Strategies` : 'All Strategies') : 'Saved Strategies'}</strong>
+              </div>
               <div className="strategy-list-head-actions">
                 <span>
                   {strategiesLoading
                     ? 'Loading…'
                     : `${strategies.length} ${strategies.length === 1 ? 'strategy' : 'strategies'}`}
                 </span>
-                {!strategiesLoading && strategies.length > 0 && (
+                {!allUsers && !strategiesLoading && strategies.length > 0 && (
                   <button
                     type="button"
                     className="positions-remove-btn strategy-clear-all-btn"
@@ -1268,27 +1411,12 @@ function SyncNetPositions() {
             </div>
 
             {!strategiesLoading && strategies.length === 0 && (
-              <div className="strategy-list-empty">No strategies saved for this user yet</div>
-            )}
-
-            {selectedLegKeys.size > 0 && (
-              <div className="positions-selection-bar">
-                <span className="positions-selection-count">{selectedLegKeys.size} selected</span>
-                <button
-                  type="button"
-                  className="positions-remove-btn"
-                  onClick={removeSelectedLegs}
-                  disabled={removingLegs}
-                >
-                  <Trash2 size={14} /> {removingLegs ? 'Removing…' : 'Remove'}
-                </button>
-                <button
-                  type="button"
-                  className="positions-selection-clear"
-                  onClick={() => setSelectedLegKeys(new Set())}
-                >
-                  <X size={13} /> Clear
-                </button>
+              <div className="strategy-list-empty sync-strategy-empty">
+                <span className="sync-strategy-empty-icon"><Info size={18} /></span>
+                <strong>No synced positions</strong>
+                <p>{allUsers
+                  ? `No strategies are saved for ${selectedGroup ? selectedGroup.name : 'any user'} yet. Run Sync to bring positions here.`
+                  : 'No strategies are saved for this client yet. Select a broker account and run Sync to bring positions here.'}</p>
               </div>
             )}
 
@@ -1311,16 +1439,39 @@ function SyncNetPositions() {
               const brokerMatchesSelected = strategyBrokerMatchesSelected(strategy, selectedConfig, selectedBrokerName, configId)
               const showBrokerTagButton = selectedConfig && !brokerMatchesSelected
               const showBrokerDone = brokerTagDoneCode === strategy.strategy_code
+              // Group overview aggregates several users' strategies: key each card
+              // (and its collapse state) by owner+code, and render it read-only.
+              const readOnly = allUsers
+              const cardKey = `${strategy._userId || userId}::${strategy.strategy_code}`
+              const cardSelection = readOnly ? undefined : legSelection
+              const collapsed = collapsedStrategies.has(cardKey)
               return (
-                <div className="strategy-card" key={strategy.strategy_code}>
-                  <div className="strategy-card-head">
+                <div className={`strategy-card${collapsed ? ' collapsed' : ''}`} key={cardKey}>
+                  <div
+                    className="strategy-card-head"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={!collapsed}
+                    onClick={() => toggleStrategyCollapsed(cardKey)}
+                    onKeyDown={(event) => {
+                      if ((event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget) {
+                        event.preventDefault()
+                        toggleStrategyCollapsed(cardKey)
+                      }
+                    }}
+                  >
                     <div className="strategy-card-title">
+                      <span className="strategy-collapse-caret" aria-hidden="true">
+                        <ChevronDown size={15} />
+                      </span>
                       {isEditing ? (
                         <input
                           className="strategy-title-input"
                           value={editingStrategyName}
+                          onClick={(event) => event.stopPropagation()}
                           onChange={(event) => setEditingStrategyName(event.target.value)}
                           onKeyDown={(event) => {
+                            event.stopPropagation()
                             if (event.key === 'Enter') saveStrategyName()
                             if (event.key === 'Escape') cancelEditStrategy()
                           }}
@@ -1329,12 +1480,12 @@ function SyncNetPositions() {
                       ) : (
                         <strong>{strategy.strategy_name}</strong>
                       )}
-                      {isEditing ? (
+                      {!readOnly && (isEditing ? (
                         <span className="strategy-card-actions">
                           <button
                             type="button"
                             className="strategy-icon-btn"
-                            onClick={saveStrategyName}
+                            onClick={(event) => { event.stopPropagation(); saveStrategyName() }}
                             disabled={savingStrategyName || !editingStrategyName.trim()}
                             aria-label="Save strategy name"
                             title="Save name"
@@ -1344,7 +1495,7 @@ function SyncNetPositions() {
                           <button
                             type="button"
                             className="strategy-icon-btn"
-                            onClick={cancelEditStrategy}
+                            onClick={(event) => { event.stopPropagation(); cancelEditStrategy() }}
                             disabled={savingStrategyName}
                             aria-label="Cancel strategy name edit"
                             title="Cancel"
@@ -1356,31 +1507,39 @@ function SyncNetPositions() {
                         <button
                           type="button"
                           className="strategy-icon-btn"
-                          onClick={() => startEditStrategy(strategy)}
+                          onClick={(event) => { event.stopPropagation(); startEditStrategy(strategy) }}
                           aria-label={`Edit ${strategy.strategy_name}`}
                           title="Edit name"
                         >
                           <Pencil size={14} />
                         </button>
-                      )}
+                      ))}
                     </div>
                     <div className="strategy-card-meta">
-                      {legs.length > 0 && (
+                      {readOnly && strategy._userLabel && (
+                        <span className="strategy-owner-tag">{strategy._userLabel}</span>
+                      )}
+                      {!readOnly && legs.length > 0 && (
                         <button
                           type="button"
                           className={`strategy-select-all${allVisibleSelected ? ' active' : ''}`}
-                          onClick={() => selectStrategyLegs(legs)}
+                          onClick={(event) => { event.stopPropagation(); selectStrategyLegs(legs) }}
                         >
                           <Check size={13} /> {allVisibleSelected ? 'Clear all' : 'Select all'}
                         </button>
                       )}
-                      {brokerLabel && <span>{brokerLabel}</span>}
+                      {brokerLabel && (
+                        <span className="strategy-broker-tag">
+                          <BrokerMark brokerName={strategy.broker_name} />
+                          {brokerLabel}
+                        </span>
+                      )}
                       {showBrokerDone && <span className="strategy-tag-done">Done</span>}
                       {showBrokerTagButton && (
                         <button
                           type="button"
                           className="strategy-tag-btn"
-                          onClick={() => saveStrategyBrokerTag(strategy)}
+                          onClick={(event) => { event.stopPropagation(); saveStrategyBrokerTag(strategy) }}
                           disabled={savingBrokerTagCode === strategy.strategy_code}
                           title={`Use selected account: ${selectedBrokerName || 'Broker'} ${selectedConfig.account_id || ''}`}
                         >
@@ -1390,27 +1549,29 @@ function SyncNetPositions() {
                         </button>
                       )}
                       <span>{legs.length} {legs.length === 1 ? 'leg' : 'legs'}</span>
-                      <span className={totalPnl >= 0 ? 'up' : 'down'}>P&amp;L {money(totalPnl)}</span>
+                      <span className={`strategy-pnl-tag ${totalPnl >= 0 ? 'up' : 'down'}`}>P&amp;L {money(totalPnl)}</span>
                     </div>
                   </div>
 
-                  {legs.length > 0 ? (
-                    view === 'buysell' ? (
-                      <div className="legs-split">
-                        <LegsTable title="Buy" legs={legs.filter((leg) => Number(leg.net_qty || 0) > 0)} selection={legSelection} />
-                        <LegsTable title="Sell" legs={legs.filter((leg) => Number(leg.net_qty || 0) < 0)} selection={legSelection} />
-                      </div>
-                    ) : view === 'compact' ? (
-                      <CompactLegs legs={legs} selection={legSelection} />
+                  {!collapsed && (
+                    legs.length > 0 ? (
+                      view === 'buysell' ? (
+                        <div className="legs-split">
+                          <LegsTable compact title="Buy" legs={legs.filter((leg) => Number(leg.net_qty || 0) > 0)} selection={cardSelection} />
+                          <LegsTable compact title="Sell" legs={legs.filter((leg) => Number(leg.net_qty || 0) < 0)} selection={cardSelection} />
+                        </div>
+                      ) : view === 'compact' ? (
+                        <CompactLegs legs={legs} selection={cardSelection} />
+                      ) : (
+                        <LegsTable compact legs={legs} selection={cardSelection} />
+                      )
                     ) : (
-                      <LegsTable legs={legs} selection={legSelection} />
+                      <div className="strategy-card-nolegs">
+                        {dateFilter === 'all' || allLegs.length === 0
+                          ? 'No legs saved for this strategy'
+                          : `No legs added on ${formatDateKey(dateFilter)}`}
+                      </div>
                     )
-                  ) : (
-                    <div className="strategy-card-nolegs">
-                      {dateFilter === 'all' || allLegs.length === 0
-                        ? 'No legs saved for this strategy'
-                        : `No legs added on ${formatDateKey(dateFilter)}`}
-                    </div>
                   )}
                 </div>
               )

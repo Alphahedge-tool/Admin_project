@@ -1,27 +1,49 @@
 import { createTheme } from '@mui/material/styles'
 
-const tokens = {
-  blue: '#3F5BD9',
-  blueHover: '#354CB5',
-  blueSurface: '#E8ECFC',
-  blueBg: '#F1F4FD',
-  green: '#008F75',
-  red: '#D64D4D',
-  bold: '#253040',
-  base: '#425061',
-  caption: '#717A89',
-  placeholder: '#959FB0',
-  bg: '#F5F7FA',
+const lightTokens = {
+  blue: '#4184F3',
+  blueHover: '#2E6FE0',
+  blueSurface: '#ECF3FE',
+  blueBg: '#F4F8FE',
+  green: '#088F8F',
+  red: '#FF5722',
+  bold: '#333333',
+  base: '#444444',
+  caption: '#9B9B9B',
+  placeholder: '#9B9B9B',
+  bg: '#F8F8F8',
   surface: '#FFFFFF',
-  surface2: '#F1F4FD',
-  hover: '#F5F7FA',
-  border: '#DDDFE4',
-  borderSoft: '#EAEBF1',
+  surface2: '#FAFAFB',
+  hover: '#F8F8F8',
+  border: '#DDDDDD',
+  borderSoft: '#EEEEEE',
 }
 
-export const adminTheme = createTheme({
+const darkTokens = {
+  blue: '#4184F3',
+  blueHover: '#64A0FF',
+  blueSurface: '#1D3150',
+  blueBg: '#17263D',
+  green: '#4CAF50',
+  red: '#FF5722',
+  bold: '#D8D8D8',
+  base: '#C4C4C4',
+  caption: '#8E8E8E',
+  placeholder: '#777777',
+  bg: '#111111',
+  surface: '#181818',
+  surface2: '#202020',
+  hover: '#292929',
+  border: '#3A3A3A',
+  borderSoft: '#2D2D2D',
+}
+
+export const createAdminTheme = (mode = 'light') => {
+  const tokens = mode === 'dark' ? darkTokens : lightTokens
+
+  return createTheme({
   palette: {
-    mode: 'light',
+    mode,
     primary: { main: tokens.blue, dark: tokens.blueHover, light: tokens.blueSurface },
     success: { main: tokens.green },
     error: { main: tokens.red },
@@ -37,7 +59,7 @@ export const adminTheme = createTheme({
     button: { fontWeight: 700, letterSpacing: 0, textTransform: 'none' },
   },
   shape: {
-    borderRadius: 8,
+    borderRadius: 7,
   },
   components: {
     MuiCssBaseline: {
@@ -54,14 +76,14 @@ export const adminTheme = createTheme({
           background: tokens.surface,
           color: tokens.bold,
           borderBottom: `1px solid ${tokens.borderSoft}`,
-          boxShadow: '0 1px 3px rgba(43, 47, 63, .04)',
+          boxShadow: mode === 'dark' ? '0 1px 3px rgba(0, 0, 0, .28)' : '0 1px 3px rgba(43, 47, 63, .05)',
         },
       },
     },
     MuiToolbar: {
       styleOverrides: {
         root: {
-          minHeight: '52px !important',
+          minHeight: '46px !important',
           paddingLeft: '16px !important',
           paddingRight: '16px !important',
         },
@@ -72,7 +94,7 @@ export const adminTheme = createTheme({
         root: {
           backgroundImage: 'none',
           borderRadius: 8,
-          boxShadow: '0 1px 2px rgba(43, 47, 63, .06), 0 4px 16px rgba(43, 47, 63, .06)',
+          boxShadow: mode === 'dark' ? '0 1px 2px rgba(0, 0, 0, .22), 0 4px 14px rgba(0, 0, 0, .16)' : '0 1px 2px rgba(43, 47, 63, .05), 0 4px 14px rgba(43, 47, 63, .05)',
         },
       },
     },
@@ -83,8 +105,9 @@ export const adminTheme = createTheme({
       styleOverrides: {
         root: {
           minHeight: 34,
-          borderRadius: 7,
+          borderRadius: 6,
           padding: '0 14px',
+          fontSize: '0.875rem',
         },
         containedPrimary: {
           backgroundColor: tokens.blue,
@@ -100,9 +123,9 @@ export const adminTheme = createTheme({
     MuiIconButton: {
       styleOverrides: {
         root: {
-          width: 30,
-          height: 30,
-          borderRadius: 7,
+          width: 32,
+          height: 32,
+          borderRadius: 6,
           color: tokens.caption,
           '&:hover': {
             backgroundColor: tokens.surface2,
@@ -124,17 +147,32 @@ export const adminTheme = createTheme({
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          minHeight: 38,
-          borderRadius: 8,
+          minHeight: 36,
+          borderRadius: 7,
+          fontSize: '0.875rem',
           backgroundColor: tokens.surface,
-          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#cfd3da' },
+          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: mode === 'dark' ? '#505866' : '#cfd3da' },
           '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
             borderColor: tokens.blue,
             boxShadow: `0 0 0 3px ${tokens.blueSurface}`,
           },
         },
+        input: {
+          padding: '8px 14px',
+        },
+        inputSizeSmall: {
+          padding: '7px 12px',
+        },
         notchedOutline: {
           borderColor: tokens.border,
+        },
+      },
+    },
+    MuiMenuItem: {
+      styleOverrides: {
+        root: {
+          minHeight: 38,
+          fontSize: '0.875rem',
         },
       },
     },
@@ -143,6 +181,7 @@ export const adminTheme = createTheme({
         root: {
           color: tokens.caption,
           fontWeight: 600,
+          fontSize: '0.875rem',
         },
       },
     },
@@ -151,7 +190,11 @@ export const adminTheme = createTheme({
         root: {
           borderBottom: `1px solid ${tokens.borderSoft}`,
           color: tokens.base,
-          fontSize: '0.8125rem',
+          fontSize: '0.875rem',
+          padding: '9px 14px',
+        },
+        sizeSmall: {
+          padding: '8px 14px',
         },
         head: {
           backgroundColor: tokens.surface2,
@@ -159,7 +202,8 @@ export const adminTheme = createTheme({
           fontSize: '0.75rem',
           fontWeight: 700,
           textTransform: 'uppercase',
-          letterSpacing: '.02em',
+          letterSpacing: '.04em',
+          padding: '10px 14px',
         },
       },
     },
@@ -190,9 +234,10 @@ export const adminTheme = createTheme({
       styleOverrides: {
         paper: {
           border: `1px solid ${tokens.borderSoft}`,
-          boxShadow: '0 4px 24px rgba(0, 0, 0, .12)',
+          boxShadow: mode === 'dark' ? '0 8px 30px rgba(0, 0, 0, .4)' : '0 4px 24px rgba(0, 0, 0, .12)',
         },
       },
     },
   },
-})
+  })
+}

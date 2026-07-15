@@ -116,7 +116,7 @@ export function CompactLegs({ legs, selection }) {
   )
 }
 
-export function LegsTable({ legs, title, selection }) {
+export function LegsTable({ legs, title, selection, compact = false }) {
   const sidePnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
   return (
     <div className="positions-table-wrap">
@@ -128,7 +128,7 @@ export function LegsTable({ legs, title, selection }) {
           </span>
         </div>
       )}
-      <table className="positions-table position-book-table strategy-legs-table">
+      <table className={`positions-table position-book-table strategy-legs-table${compact ? ' position-book-compact' : ''}`}>
         <thead>
           <tr>
             <th>Stock Name</th>
@@ -137,7 +137,7 @@ export function LegsTable({ legs, title, selection }) {
             <th className="num">Buy Avg</th>
             <th className="num">Sell Avg</th>
             <th className="num">LTP</th>
-            <th className="num">P&amp;L</th>
+            <th className="num col-pnl">P&amp;L</th>
           </tr>
         </thead>
         <tbody>
@@ -172,7 +172,7 @@ export function LegsTable({ legs, title, selection }) {
                       <span className="book-tag product">{compactProductTag(leg.product_type)}</span>
                     </div>
                   </td>
-                  <td className="num">
+                  <td className="num col-pnl">
                     <div className="book-qty-cell">
                       <span className={qty >= 0 ? 'up' : 'down'}>{qty.toLocaleString('en-IN')}</span>
                     </div>

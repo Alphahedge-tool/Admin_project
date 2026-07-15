@@ -3,18 +3,16 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 
-import { CssBaseline, ThemeProvider } from '@mui/material'
 import { LocalizationProvider } from '@mui/x-date-pickers'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
-import { adminTheme } from './theme.js'
+import AppThemeProvider from './AppThemeProvider.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ThemeProvider theme={adminTheme}>
-      <CssBaseline />
+    <AppThemeProvider>
       <LocalizationProvider dateAdapter={AdapterDayjs}>
         <App />
       </LocalizationProvider>
-    </ThemeProvider>
+    </AppThemeProvider>
   </StrictMode>
 )

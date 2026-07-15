@@ -403,10 +403,10 @@ export default function GetOrderBook() {
 
   return (
     <div className="trade-panel">
-      <div className="positions-view orderbook-view">
+      <div className="positions-view positions-view-compact orderbook-view book-view-production">
         <div className="positions-toolbar">
           <CompactSelect
-            title="User"
+            title="Client"
             value={userId}
             onChange={handleUserId}
             options={visibleUsers.map((user) => ({
@@ -428,8 +428,11 @@ export default function GetOrderBook() {
           />
 
           <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsSupported && !client)} type="button">
-            {loading ? 'Loading' : 'Get OrderBook'}
+            <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            {loading ? 'Loading' : 'Refresh'}
           </button>
+
+          <span className="positions-toolbar-divider" aria-hidden="true" />
 
           <span className={`orderbook-live-pill ${liveStatus}`}>
             <Radio size={13} />
@@ -450,35 +453,8 @@ export default function GetOrderBook() {
             )}
           </label>
 
-          {status && <span className="positions-status">{status}</span>}
-        </div>
-
-        {rows.length > 0 && (
-          <>
-            <div className="position-book-summary orderbook-summary">
-              <div>
-                <span>Total Orders</span>
-                <strong>{rows.length}</strong>
-                <em>{summary.buy} buy / {summary.sell} sell</em>
-              </div>
-              <div>
-                <span className="buy">Open Orders</span>
-                <strong>{summary.open}</strong>
-                <em>Pending or trigger-pending</em>
-              </div>
-              <div>
-                <span>Completed</span>
-                <strong className="up">{summary.complete}</strong>
-                <em>Fully traded orders</em>
-              </div>
-              <div>
-                <span className="sell">Rejected / Cancelled</span>
-                <strong className="down">{summary.rejected + summary.cancelled}</strong>
-                <em>{summary.rejected} rejected / {summary.cancelled} cancelled</em>
-              </div>
-            </div>
-
-            <div className="orderbook-filter-strip">
+          {rows.length > 0 && (
+            <>
               {statusFilters.map((filter) => (
                 <button
                   key={filter.value}
@@ -490,20 +466,25 @@ export default function GetOrderBook() {
                   <span>{countForFilter(summary, filter.value, rows.length)}</span>
                 </button>
               ))}
-              <button className="orderbook-refresh-chip" type="button" onClick={load} disabled={loading}>
-                <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
-              </button>
               {activeColumnFilterCount > 0 && (
                 <button className="orderbook-refresh-chip orderbook-clear-column-filters" type="button" onClick={() => setColumnFilters(defaultOrderColumnFilters)}>
                   <X size={13} /> Clear column filters
                 </button>
               )}
-            </div>
-          </>
-        )}
+              <span className="positions-toolbar-divider" aria-hidden="true" />
+              <span className="positions-toolbar-summary"><strong>{rows.length}</strong> orders</span>
+              <span className="book-toolbar-stat open"><strong>{summary.open}</strong> open</span>
+              <span className="book-toolbar-stat complete"><strong>{summary.complete}</strong> completed</span>
+              {(summary.rejected + summary.cancelled) > 0 && (
+                <span className="book-toolbar-stat failed"><strong>{summary.rejected + summary.cancelled}</strong> issues</span>
+              )}
+            </>
+          )}
+          {status && <span className="positions-toolbar-status" title={status}>{status}</span>}
+        </div>
 
         <div className="positions-table-wrap">
-          <table className="positions-table position-book-table orderbook-table">
+          <table className="positions-table position-book-table position-book-compact orderbook-table">
             <thead>
               <tr>
                 {ORDER_COLUMNS.map((column) => (

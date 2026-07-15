@@ -1,27 +1,27 @@
 :root {
   color-scheme: light;
 
-  --ao-blue: #3F5BD9;
-  --ao-blue-hover: #354CB5;
-  --ao-blue-surface: #E8ECFC;
-  --ao-blue-bg: #F1F4FD;
-  --ao-green: #008F75;
-  --ao-green-bg: #F0FAF5;
-  --ao-red: #D64D4D;
-  --ao-red-bg: #FFF2F2;
-  --ao-purple: #581DBE;
-  --ao-gold: #FF9933;
-  --ao-bold: #253040;
-  --ao-base: #425061;
-  --ao-caption: #717A89;
-  --ao-placeholder: #959FB0;
-  --ao-bg: #F5F7FA;
+  --ao-blue: #4184F3;
+  --ao-blue-hover: #2E6FE0;
+  --ao-blue-surface: #ECF3FE;
+  --ao-blue-bg: #F4F8FE;
+  --ao-green: #088F8F;
+  --ao-green-bg: #EBF8F2;
+  --ao-red: #FF5722;
+  --ao-red-bg: #FEF0EF;
+  --ao-purple: #844AEB;
+  --ao-gold: #FF8F00;
+  --ao-bold: #333333;
+  --ao-base: #444444;
+  --ao-caption: #9B9B9B;
+  --ao-placeholder: #9B9B9B;
+  --ao-bg: #F8F8F8;
   --ao-surface: #FFFFFF;
-  --ao-surface-2: #F1F4FD;
-  --ao-hover: #F5F7FA;
-  --ao-border: #DDDFE4;
-  --ao-border-soft: #EAEBF1;
-  --shadow-card: 0 1px 2px rgba(43, 47, 63, .06), 0 4px 16px rgba(43, 47, 63, .06);
+  --ao-surface-2: #FAFAFB;
+  --ao-hover: #F8F8F8;
+  --ao-border: #DDDDDD;
+  --ao-border-soft: #EEEEEE;
+  --shadow-card: 0 1px 2px rgba(43, 47, 63, .05), 0 4px 14px rgba(43, 47, 63, .05);
   --shadow-pop: 0 4px 24px rgba(0, 0, 0, .12);
   --radius: 10px;
 
@@ -30,6 +30,54 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --ao-blue: #4184F3;
+  --ao-blue-hover: #64A0FF;
+  --ao-blue-surface: #1D3150;
+  --ao-blue-bg: #17263D;
+  --ao-green: #4CAF50;
+  --ao-green-bg: #19331D;
+  --ao-red: #FF5722;
+  --ao-red-bg: #3A2018;
+  --ao-purple: #A77AF3;
+  --ao-gold: #FF8F00;
+  --ao-bold: #D8D8D8;
+  --ao-base: #C4C4C4;
+  --ao-caption: #8E8E8E;
+  --ao-placeholder: #777777;
+  --ao-bg: #111111;
+  --ao-surface: #181818;
+  --ao-surface-2: #202020;
+  --ao-hover: #292929;
+  --ao-border: #3A3A3A;
+  --ao-border-soft: #2D2D2D;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .22), 0 4px 14px rgba(0, 0, 0, .16);
+  --shadow-pop: 0 8px 30px rgba(0, 0, 0, .4);
+  --color-neutral-background: #181818;
+  --color-neutral-background-grey: #202020;
+  --color-neutral-background-hover: #292929;
+  --color-border-grey: #3A3A3A;
+  --color-neutral-border: #2D2D2D;
+  --color-text-bold: #D8D8D8;
+  --color-text-base: #C4C4C4;
+  --color-neutral-caption: #8E8E8E;
+  --color-text-muted: #777777;
+  --color-neutral-placeholder: #777777;
+  --color-text-blue: #4184F3;
+  --color-text-blue-hover: #64A0FF;
+  --color-surface-primary: #1D3150;
+  --color-background-primary: #17263D;
+  --color-success-main: #4CAF50;
+  --color-background-success: #19331D;
+  --color-error-main: #FF5722;
+  --color-background-error: #3A2018;
+  --color-icon-gold: #FF8F00;
+  --color-text-secondary: #A77AF3;
+  --color-surface-secondary: #302440;
+  --color-basket-shadow: 0 10px 30px rgba(0, 0, 0, .34);
 }
 
 * {
@@ -70,14 +118,14 @@ textarea {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #cdd2dc;
+  background: rgba(0, 0, 0, .1);
   border: 2px solid transparent;
   border-radius: 9px;
   background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #b6bdca;
+  background: rgba(0, 0, 0, .4);
   background-clip: padding-box;
 }
 
@@ -109,6 +157,16 @@ textarea {
   background: var(--ao-bg);
 }
 
+html[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .16);
+  background-clip: padding-box;
+}
+
+html[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, .34);
+  background-clip: padding-box;
+}
+
 .app-main > div {
   width: 100%;
   height: 100%;
@@ -121,6 +179,7 @@ textarea {
    edges. */
 .app-main:has(.trade-panel-tabs) {
   overflow: hidden;
+  padding: 10px;
 }
 
 .app-main > div:has(> .trade-panel-tabs) {
@@ -146,11 +205,11 @@ th {
   color: var(--ao-caption);
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: .02em;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 
 td {
   color: var(--ao-base);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }

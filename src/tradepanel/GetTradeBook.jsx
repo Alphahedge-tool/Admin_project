@@ -382,10 +382,10 @@ export default function GetTradeBook() {
 
   return (
     <div className="trade-panel">
-      <div className="positions-view orderbook-view tradebook-view">
+      <div className="positions-view positions-view-compact orderbook-view tradebook-view book-view-production">
         <div className="positions-toolbar">
           <CompactSelect
-            title="User"
+            title="Client"
             value={userId}
             onChange={handleUserId}
             options={visibleUsers.map((user) => ({
@@ -407,8 +407,11 @@ export default function GetTradeBook() {
           />
 
           <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsSupported && !client)} type="button">
-            {loading ? 'Loading' : 'Get TradeBook'}
+            <RefreshCw size={13} className={loading ? 'spin' : ''} />
+            {loading ? 'Loading' : 'Refresh'}
           </button>
+
+          <span className="positions-toolbar-divider" aria-hidden="true" />
 
           <span className={`orderbook-live-pill ${liveStatus}`} title="Auto-refreshes the trade book as orders fill">
             <Radio size={13} />
@@ -429,49 +432,25 @@ export default function GetTradeBook() {
             )}
           </label>
 
-          {status && <span className="positions-status">{status}</span>}
-        </div>
-
-        {rows.length > 0 && (
-          <>
-            <div className="position-book-summary orderbook-summary tradebook-summary">
-              <div>
-                <span>Total Trades</span>
-                <strong>{rows.length}</strong>
-                <em>{summary.buy} buy / {summary.sell} sell</em>
-              </div>
-              <div>
-                <span className="buy">Buy Quantity</span>
-                <strong>{summary.buyQty.toLocaleString('en-IN')}</strong>
-                <em>Executed buy fills</em>
-              </div>
-              <div>
-                <span className="sell">Sell Quantity</span>
-                <strong>{summary.sellQty.toLocaleString('en-IN')}</strong>
-                <em>Executed sell fills</em>
-              </div>
-              <div>
-                <span>Turnover</span>
-                <strong>{money(summary.turnover)}</strong>
-                <em>Trade value total</em>
-              </div>
-            </div>
-
-            <div className="orderbook-filter-strip">
-              <button className="orderbook-refresh-chip" type="button" onClick={load} disabled={loading}>
-                <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
-              </button>
+          {rows.length > 0 && (
+            <>
               {activeFilterCount > 0 && (
                 <button className="orderbook-refresh-chip orderbook-clear-column-filters" type="button" onClick={() => setFilters(defaultTradeFilters)}>
                   <X size={13} /> Clear filters
                 </button>
               )}
-            </div>
-          </>
-        )}
+              <span className="positions-toolbar-divider" aria-hidden="true" />
+              <span className="positions-toolbar-summary"><strong>{rows.length}</strong> trades</span>
+              <span className="book-toolbar-stat buy"><strong>{summary.buyQty.toLocaleString('en-IN')}</strong> buy qty</span>
+              <span className="book-toolbar-stat sell"><strong>{summary.sellQty.toLocaleString('en-IN')}</strong> sell qty</span>
+              <span className="book-toolbar-stat turnover">Turnover <strong>{money(summary.turnover)}</strong></span>
+            </>
+          )}
+          {status && <span className="positions-toolbar-status" title={status}>{status}</span>}
+        </div>
 
         <div className="positions-table-wrap">
-          <table className="positions-table position-book-table orderbook-table tradebook-table">
+          <table className="positions-table position-book-table position-book-compact orderbook-table tradebook-table">
             <thead>
               <tr>
                 {TRADE_COLUMNS.map((column) => (

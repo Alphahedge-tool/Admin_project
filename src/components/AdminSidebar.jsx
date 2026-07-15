@@ -22,7 +22,6 @@ import {
   PanelLeftOpen,
   RefreshCw,
   ReceiptText,
-  Rss,
   ScrollText,
   Scale,
   TrendingUp,
@@ -45,7 +44,7 @@ function AdminSidebar() {
   const isTradePanelRoute = location.pathname.startsWith('/admin/trade-panel')
 
   const NavIcon = ({ children }) => (
-    <Box sx={{ display: 'inline-flex', width: 18, height: 18, alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+    <Box sx={{ display: 'inline-flex', width: 16, height: 16, alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
       {children}
     </Box>
   )
@@ -53,43 +52,46 @@ function AdminSidebar() {
   const navSx = (path, nested = false) => {
     const active = location.pathname === path
     return {
-      minHeight: 36,
-      mx: 1,
-      my: 0.25,
-      pl: nested ? 4.5 : 1.5,
-      pr: 1,
-      gap: 1,
+      minHeight: 30,
+      mx: 0.75,
+      my: 0,
+      pl: nested ? 3.5 : 1.25,
+      pr: 0.75,
+      gap: 0.875,
       borderRadius: 1,
-      color: active ? 'primary.main' : 'text.secondary',
+      color: active ? 'primary.main' : 'var(--ao-bold)',
       bgcolor: active ? 'primary.light' : 'transparent',
       '&:hover': {
         bgcolor: active ? 'primary.light' : 'var(--ao-hover)',
-        color: active ? 'primary.main' : 'text.primary',
+        color: active ? 'primary.main' : 'var(--ao-bold)',
       },
       '& .MuiListItemText-primary': {
-        fontSize: '0.8125rem',
+        fontSize: '0.8rem',
         fontWeight: active ? 700 : 600,
+        letterSpacing: '0.01em',
       },
     }
   }
 
   const summarySx = (active) => ({
-    minHeight: 38,
-    mx: 1,
-    my: 0.25,
-    px: 1.5,
+    minHeight: 32,
+    mx: 0.75,
+    my: 0,
+    px: 1.25,
     borderRadius: 1,
     color: active ? 'primary.main' : 'text.secondary',
     bgcolor: active ? 'primary.light' : 'transparent',
     '&:hover': { bgcolor: active ? 'primary.light' : 'var(--ao-hover)' },
     '& .MuiAccordionSummary-content': {
       alignItems: 'center',
-      gap: 1,
+      gap: 0.875,
       margin: 0,
     },
     '& .MuiListItemText-primary': {
-      fontSize: '0.8125rem',
+      fontSize: '0.6875rem',
       fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
     },
   })
 
@@ -102,8 +104,8 @@ function AdminSidebar() {
   return (
     <Box
       sx={{
-        width: open ? 232 : 46,
-        minWidth: open ? 232 : 46,
+        width: open ? 202 : 44,
+        minWidth: open ? 202 : 44,
         flexShrink: 0,
         height: '100%',
         borderRight: '1px solid var(--ao-border-soft)',
@@ -138,16 +140,18 @@ function AdminSidebar() {
           display: 'flex',
           justifyContent: 'flex-end',
           alignItems: 'center',
-          px: 1,
-          pb: 0.75,
+          px: 0.5,
+          pt: 0,
+          pb: 0,
         }}
       >
         <IconButton
           size="small"
           title="Close sidebar"
           onClick={() => setOpen(false)}
+          sx={{ width: 24, height: 24 }}
         >
-          <PanelLeftClose size={17} />
+          <PanelLeftClose size={16} />
         </IconButton>
       </Box>
       <List sx={{ p: 0 }}>
@@ -195,11 +199,6 @@ function AdminSidebar() {
                 <NavIcon><Users2 size={15} /></NavIcon>
                 <ListItemText primary="Group Master" />
               </ListItemButton>
-
-              <ListItemButton component={Link} to="/admin/masters/feedmaster" sx={navSx('/admin/masters/feedmaster', true)}>
-                <NavIcon><Rss size={15} /></NavIcon>
-                <ListItemText primary="Feedmaster" />
-              </ListItemButton>
             </List>
           </AccordionDetails>
         </Accordion>
@@ -222,6 +221,11 @@ function AdminSidebar() {
               <ListItemButton component={Link} to="/admin/transactions/user-balances" sx={navSx('/admin/transactions/user-balances', true)}>
                 <NavIcon><CircleDollarSign size={15} /></NavIcon>
                 <ListItemText primary="User Balances" />
+              </ListItemButton>
+
+              <ListItemButton component={Link} to="/admin/trade-panel/positions" sx={navSx('/admin/trade-panel/positions', true)}>
+                <NavIcon><BriefcaseBusiness size={15} /></NavIcon>
+                <ListItemText primary="Get Position" />
               </ListItemButton>
 
               <ListItemButton component={Link} to="/admin/transactions/sync-net-positions" sx={navSx('/admin/transactions/sync-net-positions', true)}>
@@ -278,11 +282,6 @@ function AdminSidebar() {
               <ListItemButton component={Link} to="/admin/trade-panel/enter-trade" sx={navSx('/admin/trade-panel/enter-trade', true)}>
                 <NavIcon><BarChart3 size={15} /></NavIcon>
                 <ListItemText primary="Enter Trade" />
-              </ListItemButton>
-
-              <ListItemButton component={Link} to="/admin/trade-panel/positions" sx={navSx('/admin/trade-panel/positions', true)}>
-                <NavIcon><BriefcaseBusiness size={15} /></NavIcon>
-                <ListItemText primary="Get Position" />
               </ListItemButton>
 
               <ListItemButton component={Link} to="/admin/trade-panel/order-book" sx={navSx('/admin/trade-panel/order-book', true)}>

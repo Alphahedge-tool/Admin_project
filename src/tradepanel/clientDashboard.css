@@ -1,0 +1,783 @@
+/* Client Dashboard
+   Rebuilt around the Get Positions visual language. Shared colors remain token
+   driven, so day/night themes stay aligned without a second palette. */
+
+html[data-theme] .client-dashboard-production {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 6px 8px 14px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: var(--ao-bg);
+  color: var(--ao-base);
+  font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-head {
+  display: none;
+}
+
+/* One compact command bar, matching Get Positions. */
+html[data-theme] .client-dashboard-production .client-dashboard-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 61;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: none;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker {
+  flex: 0 1 190px;
+  min-width: 150px;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker.account {
+  flex-basis: 220px;
+  min-width: 180px;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker .positions-compact-select {
+  width: 100%;
+  gap: 5px;
+  color: var(--ao-caption);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker .positions-compact-select > span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker .position-select-trigger {
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--ao-border);
+  border-radius: 7px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 1px rgba(43, 47, 63, .03);
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker .position-select-text strong {
+  color: var(--ao-bold);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker .position-select-text em {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+html[data-theme] .client-dashboard-production .positions-status {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--ao-caption);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .orderbook-live-pill {
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-toolbar .view-toggle {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  border: 1px solid var(--ao-border);
+  border-radius: 5px;
+  background: var(--ao-surface);
+}
+
+html[data-theme] .client-dashboard-production .view-toggle-btn {
+  width: 27px;
+  height: 26px;
+  border-radius: 3px;
+  color: var(--ao-caption);
+}
+
+html[data-theme] .client-dashboard-production .view-toggle-btn.active {
+  background: var(--ao-blue);
+  color: #fff;
+}
+
+/* Strategy workspace */
+html[data-theme] .client-dashboard-production .client-strategy-strip {
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-strip-head {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 0 5px;
+  border-bottom: 1px solid var(--ao-border-soft);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-strip-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-strip-title > strong {
+  color: var(--ao-bold);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-strip-title > strong::after {
+  content: none;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-strip-head > span {
+  color: var(--ao-caption);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-strip-head .client-viewing-user {
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-strip-head .client-viewing-user strong {
+  color: var(--ao-blue);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Combined group P&L stays compact and subordinate to the strategies. */
+html[data-theme] .client-dashboard-production .client-group-pnl-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 6px;
+  margin: 7px 0;
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-card {
+  min-width: 0;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto minmax(120px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 5px 9px;
+  border: 1px solid var(--ao-border-soft);
+  border-left: 3px solid var(--ao-blue);
+  border-radius: 4px;
+  background: var(--ao-surface);
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-name,
+html[data-theme] .client-dashboard-production .client-group-pnl-value {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-name span,
+html[data-theme] .client-dashboard-production .client-group-pnl-value span {
+  color: var(--ao-caption);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-name strong {
+  overflow: hidden;
+  color: var(--ao-bold);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-meta span {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 999px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-value {
+  justify-items: end;
+  padding-left: 10px;
+  border-left: 1px solid var(--ao-border-soft);
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-value strong {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Full-width accordion containers. */
+html[data-theme] .client-dashboard-production .client-strategy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-card {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  box-shadow: none;
+  transition: border-color 120ms ease;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-card:hover,
+html[data-theme] .client-dashboard-production .client-strategy-card.expanded {
+  border-color: var(--ao-border);
+  box-shadow: none;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-summary {
+  min-height: 44px;
+  display: grid;
+  grid-template-areas: "name broker metrics";
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, auto) minmax(300px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid transparent;
+  background: var(--ao-surface);
+  cursor: pointer;
+  user-select: none;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-card.expanded .client-strategy-summary {
+  border-bottom-color: var(--ao-border-soft);
+  background: var(--ao-surface-2);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-summary:hover {
+  background: var(--ao-hover);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-summary:focus-visible {
+  outline: 2px solid var(--ao-blue-surface);
+  outline-offset: -2px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-name {
+  grid-area: name;
+  order: initial;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-name strong {
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  color: var(--ao-bold);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-expand {
+  order: -1;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 999px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-card.expanded .client-strategy-expand svg {
+  transform: rotate(180deg);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-broker {
+  grid-area: broker;
+  order: initial;
+  min-width: 0;
+  max-width: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-broker > span {
+  display: none;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-broker strong,
+html[data-theme] .client-dashboard-production .client-strategy-broker-sub {
+  min-width: 0;
+  max-width: 190px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics {
+  grid-area: metrics;
+  order: initial;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: 0;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div {
+  min-width: 72px;
+  height: 28px;
+  display: grid;
+  align-content: center;
+  gap: 0;
+  padding: 0 9px;
+  border: 0;
+  border-left: 1px solid var(--ao-border-soft);
+  border-radius: 0;
+  background: transparent;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:first-child {
+  display: grid;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics span {
+  display: block;
+  color: var(--ao-caption);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics strong,
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:nth-child(2) strong,
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child strong {
+  color: var(--ao-bold);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child strong.up {
+  color: var(--ao-green);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child strong.down {
+  color: var(--ao-red);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:nth-child(2) strong::after,
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child strong::before {
+  content: none;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child {
+  min-width: 128px;
+  border: 0;
+  border-left: 1px solid var(--ao-border-soft);
+  background: transparent;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child:has(strong.down),
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child:has(strong.up) {
+  border-color: var(--ao-border-soft);
+  background: transparent;
+}
+
+/* Expanded table: exact Get Positions rhythm. */
+html[data-theme] .client-dashboard-production .client-expanded-details {
+  display: block;
+  padding: 0;
+  border-top: 0;
+  background: var(--ao-surface);
+  animation: client-dashboard-open 130ms ease-out both;
+}
+
+html[data-theme] .client-dashboard-production .client-detail-panel {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--ao-surface);
+}
+
+html[data-theme] .client-dashboard-production .client-detail-panel-head,
+html[data-theme] .client-dashboard-production .client-panel-total {
+  display: none;
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact {
+  width: 100%;
+  min-width: 960px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th,
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td {
+  height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--ao-border-soft);
+  background: var(--ao-surface);
+  color: var(--ao-base);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th {
+  height: 36px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: inset 0 -1px 0 var(--ao-border-soft);
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(1),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(1) {
+  width: 31%;
+  padding-left: 14px;
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(2),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(2) {
+  width: 15%;
+  display: table-cell;
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(3),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(3) { width: 12%; }
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(4),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(4) { width: 10%; }
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(5),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(5) { width: 10%; }
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(6),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(6) { width: 10%; }
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(7),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(7) { width: 12%; }
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:nth-child(even) td {
+  background: var(--ao-hover);
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:hover td,
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr.position-row-short:hover td {
+  background: color-mix(in srgb, var(--ao-hover) 65%, var(--ao-surface));
+}
+
+html[data-theme="light"] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr.position-row-short td {
+  background: color-mix(in srgb, var(--ao-red) 4%, var(--ao-surface));
+}
+
+html[data-theme="dark"] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr.position-row-short td {
+  background: color-mix(in srgb, var(--ao-red) 7%, var(--ao-surface));
+}
+
+html[data-theme] .client-dashboard-production .position-symbol-line {
+  gap: 5px;
+  overflow: visible;
+}
+
+html[data-theme] .client-dashboard-production .position-symbol-line > strong {
+  flex: none;
+  color: var(--ao-bold);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: .05px;
+}
+
+html[data-theme] .client-dashboard-production .position-symbol-line .position-expiry {
+  min-width: 0;
+  min-height: 21px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 0 7px 0 5px;
+  overflow: visible;
+  border: 1px solid #bdd0ea;
+  border-radius: 3px;
+  background: #edf4fd;
+  color: #315b8a;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .position-symbol-line .position-expiry::before {
+  content: "EXP";
+  height: 13px;
+  display: inline-flex;
+  align-items: center;
+  padding-right: 5px;
+  border-right: 1px solid #c8d8ec;
+  color: var(--ao-blue);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+html[data-theme="dark"] .client-dashboard-production .position-symbol-line .position-expiry {
+  border-color: #31517e;
+  background: #1d3150;
+  color: #afcbfa;
+}
+
+html[data-theme="dark"] .client-dashboard-production .position-symbol-line .position-expiry::before {
+  border-right-color: #3c5e8b;
+  color: #82adfa;
+}
+
+html[data-theme] .client-dashboard-production .position-symbol-line .position-strike {
+  flex: none;
+  color: var(--ao-bold);
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme] .client-dashboard-production .position-symbol-line .book-tag,
+html[data-theme] .client-dashboard-production .position-symbol-line .leg-entry-tag,
+html[data-theme] .client-dashboard-production .position-symbol-line .strategy-open-tag,
+html[data-theme] .client-dashboard-production .position-symbol-line .strategy-closed-tag {
+  height: 21px;
+  display: inline-flex;
+  padding: 0 7px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+html[data-theme] .client-dashboard-production .position-symbol-line .book-tag.exchange,
+html[data-theme] .client-dashboard-production .position-symbol-line .strategy-open-tag,
+html[data-theme] .client-dashboard-production .position-symbol-line .strategy-closed-tag {
+  display: inline-flex;
+}
+
+html[data-theme] .client-dashboard-production .book-product-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table .book-qty-cell,
+html[data-theme] .client-dashboard-production .strategy-legs-table .position-pnl-value {
+  width: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme] .client-dashboard-production .strategy-legs-table .position-price,
+html[data-theme] .client-dashboard-production .strategy-legs-table .position-price-muted {
+  color: var(--ao-base);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+html[data-theme] .client-dashboard-production .strategy-exit-price {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ao-blue);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+html[data-theme] .client-dashboard-production .up { color: var(--ao-green); }
+html[data-theme] .client-dashboard-production .down { color: var(--ao-red); }
+
+/* Compact and buy/sell modes remain useful without becoming a different UI. */
+html[data-theme] .client-dashboard-production .compact-legs {
+  padding: 0 10px;
+  background: var(--ao-surface);
+}
+
+html[data-theme] .client-dashboard-production .compact-leg-row {
+  min-height: 40px;
+  padding: 5px 0;
+  border-bottom-color: var(--ao-border-soft);
+  font-size: 13px;
+}
+
+html[data-theme] .client-dashboard-production .compact-leg-head {
+  min-height: 32px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+html[data-theme] .client-dashboard-production .legs-split {
+  gap: 6px;
+  padding: 6px;
+  background: var(--ao-bg);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-empty,
+html[data-theme] .client-dashboard-production .client-detail-empty {
+  min-height: 88px;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  border: 1px dashed var(--ao-border);
+  border-radius: 4px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  font-size: 12px;
+  text-align: center;
+}
+
+@keyframes client-dashboard-open {
+  from { opacity: 0; transform: translateY(-2px); }
+}
+
+@media (max-width: 980px) {
+  html[data-theme] .client-dashboard-production .client-dashboard-toolbar {
+    overflow-x: auto;
+  }
+
+  html[data-theme] .client-dashboard-production .client-strategy-summary {
+    grid-template-areas:
+      "name metrics"
+      "broker metrics";
+    grid-template-columns: minmax(180px, 1fr) auto;
+  }
+}
+
+@media (max-width: 680px) {
+  html[data-theme] .client-dashboard-production {
+    padding-inline: 4px;
+  }
+
+  html[data-theme] .client-dashboard-production .client-strategy-summary {
+    grid-template-areas:
+      "name"
+      "broker"
+      "metrics";
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html[data-theme] .client-dashboard-production .client-strategy-metrics {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme] .client-dashboard-production .client-expanded-details {
+    animation: none;
+  }
+}

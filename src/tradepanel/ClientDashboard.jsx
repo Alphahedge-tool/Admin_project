@@ -1,23 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CircleChevronDown, AlignJustify, Table, ArrowUpDown, Radio } from 'lucide-react'
 import { apiGet } from '../config/api'
-import {
-  classifyLoginError, clientFromAccount, isAngelBroker, isAuthError, isRateLimited,
-  useAngelSessions,
-} from '../feedmaster/angelSessionStore'
-import {
-  ensureBookSession, fetchBrokerPositions, hasBookSession, isBookBroker, saveBookSession,
-  useBrokerBookClient,
-} from './brokerBookClient'
+import { isAngelBroker } from '../feedmaster/angelSessionStore'
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore'
 import { CompactSelect } from './PositionSelect'
-import { compactProductTag, expiryDate, parseTradingSymbol } from './symbolParse'
+import { BrokerMark } from './BrokerMark'
+import { expiryDate, parseTradingSymbol } from './symbolParse'
 import { legIsClosed, money, withLiveTick } from './legFormat'
 import { CompactLegs, LegsTable } from './strategyLegsView'
 import { useLiveLegFeed } from './useLiveLegFeed'
-import { orderIsFill, useFillRefresh, useUserFillRefresh } from './orderUpdates'
-import { useGroupOrderStream } from './useGroupOrderStream'
 import './tradepanel.css'
+import './clientDashboard.css'
 
 // "Every user" and "every group" are selections in their own right, not the
 // absence of one - the pickers carry them as values.
@@ -30,12 +23,6 @@ const ALL_GROUPS = 'all'
 // never handed it.
 const ALL_ACCOUNTS = 'all-accounts'
 
-// Behind the per-account order streams, the visible position books are re-checked
-// on this cadence in case a broker dropped a push (and because Zerodha has no order
-// stream here at all).
-const REFRESH_MS = 45000
-
-
 function ClientDashboard() {
   const [users, setUsers] = useState([])
   const [userId, setUserId] = useState('')
@@ -47,20 +34,8 @@ function ClientDashboard() {
   const [configLoading, setConfigLoading] = useState(false)
   const [strategies, setStrategies] = useState([])
   const [strategiesLoading, setStrategiesLoading] = useState(false)
-  const [positionRows, setPositionRows] = useState([])
-  const [positionsStatus, setPositionsStatus] = useState('')
-  const [positionsLoading, setPositionsLoading] = useState(false)
   const [expandedStrategies, setExpandedStrategies] = useState(() => new Set())
-  const [collapsedCards, setCollapsedCards] = useState(() => new Set())
-  const [view, setView] = useState('compact') // 'compact' | 'normal' | 'buysell'
-  // userId -> { loading, legs, status } for scope members who have no strategies.
-  const [overviewPositions, setOverviewPositions] = useState({})
-
-  // Every broker account in the app, already signed in at startup (StartupGate),
-  // so an overview of several users costs a position read each - not a login each.
-  const { accounts: storeAccounts } = useAngelSessions()
-  const storeAccountsRef = useRef(storeAccounts)
-  useEffect(() => { storeAccountsRef.current = storeAccounts }, [storeAccounts])
+  const [view, setView] = useState('normal') // 'compact' | 'normal' | 'buysell'
 
   const selectedGroup = useMemo(
     () => groups.find((group) => String(group.id) === String(groupId)) || null,
@@ -82,31 +57,11 @@ function ClientDashboard() {
     [users, userId],
   )
 
-  // In the overview, EVERY member of the scope gets their live Get Position book -
-  // not just the ones with no strategy. The overview is otherwise built purely from
-  // strategy cards, which left a member with none undrawn entirely (bberlia), and a
-  // member with one showing his strategies but never his open positions (NP Berlia,
-  // whose cards suppress the positions panel in overview mode).
-  // A single user with All Accounts selected is shown exactly like the group
-  // overview, only scoped to that one user: their strategies, and their positions
-  // grouped per broker account. showOverview drives every "many books at once"
-  // branch below so both paths share one code path.
+  // A single user with All Accounts selected shares the same saved-strategy
+  // overview path as All Users. No broker position book is read on this page.
   const singleAllAccounts = userId !== ALL_USERS && configId === ALL_ACCOUNTS && Boolean(selectedUser)
   const showOverview = userId === ALL_USERS || singleAllAccounts
 
-  const scopeUsers = useMemo(
-    () => {
-      if (userId === ALL_USERS) return groupUsers
-      if (singleAllAccounts) return [selectedUser]
-      return []
-    },
-    [userId, groupUsers, singleAllAccounts, selectedUser],
-  )
-
-  const overviewLegs = useMemo(
-    () => Object.values(overviewPositions).flatMap((entry) => entry.legs || []),
-    [overviewPositions],
-  )
   const selectedConfig = useMemo(
     () => configs.find((config) => String(config.id) === String(configId)),
     [configs, configId],
@@ -125,13 +80,7 @@ function ClientDashboard() {
     // dashboard. A strategy with even one still-live (or unreadable) leg stays.
     return inScope.filter((strategy) => !strategyIsExpired(strategy, now))
   }, [showOverview, strategies, selectedConfig, configId])
-  const selectedBrokerName = selectedConfig?.broker_name || ''
-  const selectedIsSupported = isBookBroker(selectedBrokerName)
-  const { client, clientError } = useBrokerBookClient(configId, selectedBrokerName)
-
-  // Live-mark every open leg on screen (saved strategy legs + matched Get
-  // Position legs) over the shared Feedmaster websocket feed - same feed the
-  // rest of Trade Panel uses.
+  // Live-mark only backend-saved strategy legs over the shared Feedmaster feed.
   //
   // The feed is ANGEL's websocket, so only Angel tokens may be subscribed to it.
   // A Kotak position carries the Angel token the backend's position router
@@ -150,105 +99,44 @@ function ClientDashboard() {
         seen.add(`${leg.exchange || 'NFO'}|${token}`)
       })
     })
-    positionRows.forEach((row) => {
-      const ref = angelFeedRef(row, selectedBrokerName)
-      if (!ref) return
-      seen.add(`${ref.exchange}|${ref.token}`)
-    })
-    // The group overview's own position books need marking to market too - they
-    // already carry the Angel token they are fed under.
-    overviewLegs.forEach((leg) => {
-      if (!leg.feed_token) return
-      seen.add(`${(leg.feed_exchange || leg.exchange || 'NFO').toUpperCase()}|${leg.feed_token}`)
-    })
     return [...seen].sort().join(',')
-  }, [brokerStrategies, positionRows, selectedBrokerName, overviewLegs])
+  }, [brokerStrategies])
 
   const { liveTicks, feedStatus } = useLiveLegFeed(legFeedKey, { subscriber: 'client-dashboard' })
 
-  // Identity keys of every leg already saved in this account's strategies.
-  const strategyLegKeys = useMemo(() => {
-    const keys = new Set()
+  // One live combined P&L per user group across every saved strategy currently
+  // in scope. This is derived from the already-loaded backend legs and their
+  // shared live ticks; it never requests a broker position book.
+  const groupPnlSummaries = useMemo(() => {
+    const userById = new Map(users.map((user) => [String(user.id), user]))
+    const groupById = new Map(groups.map((group) => [String(group.id), group]))
+    const totals = new Map()
+
     brokerStrategies.forEach((strategy) => {
-      (strategy.legs || []).forEach((leg) => {
-        const key = strategyLegIdentityKey(leg)
-        if (key) keys.add(key)
-      })
+      const owner = userById.get(String(strategy._userId || userId)) || selectedUser
+      const ownerGroupId = String(owner?.group_id || selectedGroup?.id || 'ungrouped')
+      const ownerGroup = groupById.get(ownerGroupId) || selectedGroup
+      const groupName = owner?.group_name || ownerGroup?.name || 'No Group'
+      const legs = (strategy.legs || []).map((leg) => withLiveTick(leg, liveTicks))
+      const pnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
+      const current = totals.get(ownerGroupId) || {
+        id: ownerGroupId,
+        name: groupName,
+        strategies: 0,
+        legs: 0,
+        pnl: 0,
+      }
+
+      current.strategies += 1
+      current.legs += legs.length
+      current.pnl += pnl
+      totals.set(ownerGroupId, current)
     })
-    return keys
-  }, [brokerStrategies])
 
-  // Get Position open legs that are NOT already part of any saved strategy -
-  // the extra broker positions the user hasn't grouped into a strategy yet.
-  const untrackedPositionRows = useMemo(
-    () => positionRows.filter((row) => !strategyLegKeys.has(positionIdentityKey(row))),
-    [positionRows, strategyLegKeys],
-  )
-  const livePositionLegs = useMemo(
-    () => untrackedPositionRows
-      .map((row) => positionRowToLeg(row, selectedBrokerName))
-      .map((leg) => withLiveTick(leg, liveTicks)),
-    [untrackedPositionRows, liveTicks, selectedBrokerName],
-  )
+    return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name, 'en'))
+  }, [brokerStrategies, groups, liveTicks, selectedGroup, selectedUser, userId, users])
 
-  // Each scope member's live Get Position book, keyed by the label their strategy
-  // cards are tagged with - so in the overview a card can show ITS OWN owner's open
-  // positions beside the strategy, the way the single-user view already does.
-  //
-  // Legs already saved into one of that user's strategies are left out: they are
-  // shown on the strategy card itself, and counting them on both sides would double
-  // the user's P&L inside a single view.
-  const overviewByUser = useMemo(() => {
-    const byUser = new Map()
-    scopeUsers.forEach((user) => {
-      const label = userLabel(user)
-      const userKey = String(user.id)
-      const entry = overviewPositions[userKey] || {}
-
-      const saved = new Set()
-      strategies
-        .filter((strategy) => String(strategy._userId || '') === userKey
-          || (!strategy._userId && strategy._userLabel === label))
-        .forEach((strategy) => (strategy.legs || []).forEach((leg) => {
-          const key = strategyLegIdentityKey(leg)
-          if (key) saved.add(key)
-        }))
-
-      byUser.set(label, {
-        user,
-        savedLegCount: saved.size,
-        signedIn: entry.signedIn !== false,
-        loading: Boolean(entry.loading),
-        status: entry.status || '',
-        legs: (entry.legs || [])
-          .filter((leg) => !saved.has(leg.id))
-          .map((leg) => withLiveTick(leg, liveTicks)),
-      })
-    })
-    return byUser
-  }, [scopeUsers, overviewPositions, strategies, liveTicks])
-
-  const EMPTY_BOOK = useMemo(() => ({ legs: [], loading: false, status: '' }), [])
-
-  // Members with nothing saved, who therefore get a card of their own. A user whose
-  // accounts are all signed out is left out entirely - there is no book to read, and
-  // an empty card that only says so is noise in a group overview.
-  const strategyLessScopeUsers = useMemo(
-    () => [...overviewByUser.values()]
-      .filter((book) => book.savedLegCount === 0 && (book.loading || book.signedIn))
-      .map((book) => ({ user: book.user, book })),
-    [overviewByUser],
-  )
-
-  // While the overview is still walking each user/account in scope, the live
-  // feed pill should read as "loading" rather than a hard offline state.
-  const overviewLoading = useMemo(() => (
-    showOverview && (
-      strategiesLoading
-      || positionsLoading
-      || Object.values(overviewPositions).some((entry) => entry.loading)
-    )
-  ), [showOverview, strategiesLoading, positionsLoading, overviewPositions])
+  const overviewLoading = showOverview && strategiesLoading
 
   // Only a REAL user is shared with the other Trade Panel pages. "All Users" is an
   // overview that only this page has - handing it to Get Position or Order Book,
@@ -286,109 +174,6 @@ function ClientDashboard() {
     if (value !== ALL_ACCOUNTS) saveTradeAccount({ userId, configId: value })
   }, [userId])
 
-  // Each member of the group has a broker book of their own. Read it straight from
-  // their own accounts - every one of them, since a user can hold both an Angel and
-  // a Kotak account and each has its own positions.
-  const scopeKey = useMemo(
-    () => scopeUsers.map((user) => String(user.id)).join(','),
-    [scopeUsers],
-  )
-
-  // Every signed-in account whose book is on screen right now - the overview's
-  // whole scope, or the single selected account. Every one of them is streamed:
-  // they all ride ONE order-hub SSE now (see useGroupOrderStream), so there is no
-  // per-account connection cost and no need to cap the group any more.
-  const streamAccounts = useMemo(() => {
-    const signedIn = (account) => hasBookSession(account.brokerName, clientFromAccount(account))
-    if (showOverview) {
-      const ids = new Set(scopeUsers.map((user) => String(user.id)))
-      return storeAccounts.filter((account) => ids.has(String(account.userId)) && signedIn(account))
-    }
-    if (configId && configId !== ALL_ACCOUNTS) {
-      const account = storeAccounts.find((item) => String(item.configId) === String(configId))
-      return account && signedIn(account) ? [account] : []
-    }
-    return []
-  }, [showOverview, scopeUsers, storeAccounts, configId])
-
-  // Reads one scope member's live position book across all their signed-in
-  // accounts and merges it into overviewPositions under their id. Shared by the
-  // initial load, the per-account fill stream, and the background poll.
-  const loadUserBook = useCallback(async (id) => {
-    const accounts = storeAccountsRef.current.filter((account) => account.userId === id)
-    if (!accounts.length) {
-      setOverviewPositions((current) => ({
-        ...current,
-        [id]: { loading: false, legs: [], status: '', signedIn: false },
-      }))
-      return
-    }
-    const legs = []
-    const problems = []
-    let loadedAccounts = 0
-    for (const account of accounts) {
-      try {
-        const baseClient = clientFromAccount(account)
-        const activeClient = hasBookSession(account.brokerName, baseClient)
-          ? baseClient
-          : await ensureBookSession(account.configId, account.brokerName, baseClient)
-        const body = await fetchBrokerPositions(account.brokerName, activeClient)
-        for (const row of body.positions || []) {
-          legs.push(positionRowToLeg(row, account.brokerName, account))
-        }
-        loadedAccounts += 1
-      } catch (error) {
-        problems.push(`${account.brokerName}: ${error.message || 'failed'}`)
-      }
-    }
-    setOverviewPositions((current) => ({
-      ...current,
-      [id]: {
-        loading: false,
-        legs,
-        signedIn: loadedAccounts > 0,
-        status: legs.length
-          ? ''
-          : (problems.length ? problems.join(' · ') : 'No open positions'),
-      },
-    }))
-  }, [])
-
-  // Loads the whole scope's books when the SCOPE changes (a different group or
-  // user was picked). Deliberately NOT keyed on account status: loadUserBook
-  // signs in any account that is not already live, which flips that account's
-  // status - so keying this on status made a not-yet-live account (a failed
-  // Angel login in the group is enough) blank every card back to "Loading" and
-  // re-run the load, which re-tried the login, which flipped the status again:
-  // a tight loop that flickered the positions and hammered the broker. The books
-  // stay current instead through the REFRESH_MS poll below and the per-account
-  // fill streams, both of which reload in place without blanking. Accounts are
-  // already signed in before this page renders (StartupGate), so nothing is lost
-  // by not reacting to their status here.
-  useEffect(() => {
-    if (!showOverview || !scopeKey) {
-      setOverviewPositions({})
-      return undefined
-    }
-    const ids = scopeKey.split(',')
-    setOverviewPositions(Object.fromEntries(ids.map((id) => [
-      id, { loading: true, legs: [], status: 'Loading positions...' },
-    ])))
-    let cancelled = false
-    ;(async () => {
-      for (const id of ids) {
-        if (cancelled) return
-        // Each user's books are loaded in order so the overview fills in
-        // predictably, one user at a time, instead of looking like a single
-        // stalled batch.
-        await loadUserBook(id)
-      }
-    })().catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [showOverview, scopeKey, loadUserBook])
-
   const toggleStrategyExpanded = useCallback((strategyCode) => {
     setExpandedStrategies((current) => {
       const next = new Set(current)
@@ -398,16 +183,12 @@ function ClientDashboard() {
     })
   }, [])
 
-  // A Get Position card opens by default - there is no strategy above it to read
-  // first - so it is tracked by what has been CLOSED, not by what has been opened.
-  const toggleCardCollapsed = useCallback((cardKey) => {
-    setCollapsedCards((current) => {
-      const next = new Set(current)
-      if (next.has(cardKey)) next.delete(cardKey)
-      else next.add(cardKey)
-      return next
-    })
-  }, [])
+  // Strategies load as compact horizontal containers. Opening is deliberate:
+  // changing group, user, or account closes the previous scope's cards so only
+  // the strategy the user clicks reveals its position table.
+  useEffect(() => {
+    setExpandedStrategies(new Set())
+  }, [configId, groupId, userId])
 
   useEffect(() => {
     let cancelled = false
@@ -551,156 +332,9 @@ function ClientDashboard() {
     }
   }, [userId, groupUsers])
 
-  // Holds the latest single-account loader so a fill stream or the background
-  // poll can re-fetch this account's book without clearing the rows on screen.
-  const singleLoadRef = useRef(null)
-
-  useEffect(() => {
-    let cancelled = false
-
-    // silent: a background/fill refresh. It re-fetches without blanking the table
-    // or showing "Loading..." first, so the visible rows stay put until the fresh
-    // ones replace them.
-    async function loadPositions({ silent = false } = {}) {
-      if (!silent) {
-        setPositionRows([])
-        setPositionsStatus('')
-      }
-      if (!configId || !selectedConfig) return
-
-      // Angel and Kotak both read their books through the shared broker client -
-      // this page used to be wired to Angel alone, so selecting a Kotak account
-      // switched the dropdown and then loaded nothing.
-      if (!selectedIsSupported) {
-        setPositionsStatus(`${selectedBrokerName || 'Selected broker'} positions are not supported`)
-        return
-      }
-      if (!client) {
-        setPositionsStatus(clientError || 'Loading account...')
-        return
-      }
-
-      if (!silent) {
-        setPositionsLoading(true)
-        setPositionsStatus('Loading Get Position legs...')
-      }
-      try {
-        // The account was logged in at app start and its token saved (see
-        // StartupGate), so normally there is nothing to do here.
-        let active = client
-        if (!hasBookSession(selectedBrokerName, active)) {
-          if (!silent) setPositionsStatus(`Signing in to ${selectedBrokerName}...`)
-          active = await ensureBookSession(configId, selectedBrokerName, active)
-          if (cancelled) return
-        }
-
-        if (!silent) setPositionsStatus('Loading Get Position legs...')
-        let body
-        try {
-          body = await fetchBrokerPositions(selectedBrokerName, active)
-        } catch (error) {
-          // A saved token that has since expired: one shared, deduped re-login.
-          if (!isAuthError(error)) throw error
-          if (!silent) setPositionsStatus(`${selectedBrokerName} token expired - signing in again...`)
-          active = await ensureBookSession(configId, selectedBrokerName, active, { force: true })
-          if (cancelled) return
-          body = await fetchBrokerPositions(selectedBrokerName, active)
-        }
-
-        if (body.session) saveBookSession(configId, selectedBrokerName, body.session)
-        if (cancelled) return
-
-        // Keep every leg the broker returns - including flat (netqty 0) ones,
-        // which are closed intraday but still carry realized P&L. Dropping them
-        // hid legs and under-counted the Get Position total.
-        const positions = body.positions || []
-        setPositionRows(positions)
-        setPositionsStatus(positions.length ? `${positions.length} Get Position legs` : 'No Get Position legs')
-      } catch (error) {
-        if (!cancelled) setPositionsStatus(toPositionStatus(error))
-      } finally {
-        if (!cancelled && !silent) setPositionsLoading(false)
-      }
-    }
-
-    singleLoadRef.current = loadPositions
-    loadPositions()
-    return () => {
-      cancelled = true
-    }
-  }, [configId, selectedConfig, selectedBrokerName, selectedIsSupported, client, clientError])
-
-  const refreshSelected = useCallback(() => singleLoadRef.current?.({ silent: true }), [])
-
-  // Instant leg add/close for EVERY account on screen, over one connection. The
-  // accounts on screen (Angel + Kotak; Zerodha has no order stream) are handed to
-  // the backend order hub, which holds one upstream order socket per account and
-  // pushes their fills down a single SSE - so a group of any size updates the
-  // moment a trade happens, without a browser connection per member.
-  const scheduleSelectedFill = useFillRefresh(refreshSelected)
-  const scheduleUserFill = useUserFillRefresh(loadUserBook)
-  // Which accounts have connected once, so a later reconnect is treated as a
-  // resync (refresh what was missed while down) but the first connect is not.
-  const orderConnectedRef = useRef(new Set())
-
-  const orderStreamAccounts = useMemo(
-    () => streamAccounts
-      .filter((account) => account.broker !== 'zerodha')
-      .map((account) => ({
-        configId: String(account.configId),
-        broker: account.broker,
-        userId: String(account.userId || ''),
-        client: clientFromAccount(account),
-      })),
-    [streamAccounts],
-  )
-
-  const handleOrderEvent = useCallback((message) => {
-    const { configId: eventConfigId, userId: eventUserId, type, payload } = message
-    let movedBooks = false
-    if (type === 'order') movedBooks = orderIsFill(payload)
-    else if (type === 'position') movedBooks = true
-    else if (type === 'status' && (payload?.connected || payload?.status)) {
-      // A socket coming back AFTER a drop missed whatever filled while it was
-      // down, so resync; the very first connect is already covered by the load.
-      const key = String(eventConfigId)
-      if (orderConnectedRef.current.has(key)) movedBooks = true
-      else orderConnectedRef.current.add(key)
-    }
-    if (!movedBooks) return
-    if (showOverview) scheduleUserFill(String(eventUserId))
-    else scheduleSelectedFill()
-  }, [showOverview, scheduleUserFill, scheduleSelectedFill])
-
-  useGroupOrderStream(orderStreamAccounts, handleOrderEvent, {
-    subscriber: 'client-dashboard',
-    enabled: orderStreamAccounts.length > 0,
-  })
-
-  // Behind the per-account streams, a slow re-check: a broker can drop a push, and
-  // Zerodha has no order stream here at all, so poll the visible books every 45s.
-  // Skipped while the tab is hidden - switching back re-checks anyway.
-  useEffect(() => {
-    if (showOverview) {
-      if (!scopeKey) return undefined
-      const ids = scopeKey.split(',')
-      const timer = window.setInterval(() => {
-        if (document.hidden) return
-        ids.forEach((id) => loadUserBook(id))
-      }, REFRESH_MS)
-      return () => clearInterval(timer)
-    }
-    if (!configId || configId === ALL_ACCOUNTS || !selectedConfig) return undefined
-    const timer = window.setInterval(() => {
-      if (document.hidden) return
-      refreshSelected()
-    }, REFRESH_MS)
-    return () => clearInterval(timer)
-  }, [showOverview, scopeKey, configId, selectedConfig, loadUserBook, refreshSelected])
-
   return (
     <div className="trade-panel">
-      <div className="client-dashboard-view">
+      <div className="client-dashboard-view client-dashboard-production positions-view-compact">
         <div className="client-dashboard-head">
           <div>
             <h2>Client Dashboard</h2>
@@ -855,88 +489,35 @@ function ClientDashboard() {
             </span>
           </div>
 
+          {groupPnlSummaries.length > 0 && (
+            <div className="client-group-pnl-strip" aria-label="Combined strategy P and L by group">
+              {groupPnlSummaries.map((group) => (
+                <div className="client-group-pnl-card" key={group.id}>
+                  <div className="client-group-pnl-name">
+                    <span>Group</span>
+                    <strong>{group.name}</strong>
+                  </div>
+                  <div className="client-group-pnl-meta">
+                    <span>{group.strategies} {group.strategies === 1 ? 'strategy' : 'strategies'}</span>
+                    <span>{group.legs} {group.legs === 1 ? 'leg' : 'legs'}</span>
+                  </div>
+                  <div className="client-group-pnl-value">
+                    <span>Combined P&amp;L</span>
+                    <strong className={group.pnl >= 0 ? 'up' : 'down'}>{money(group.pnl)}</strong>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {selectedConfig && !strategiesLoading && brokerStrategies.length === 0 && (
-            <div className="client-no-strategy-content">
-              <div className="client-strategy-empty">
-                No strategies tagged to {selectedConfig.broker_name || 'this broker'} {selectedConfig.account_id || ''}.
-              </div>
-              <OpenPositionsPanel
-                view={view}
-                positionLegs={livePositionLegs}
-                positionsLoading={positionsLoading}
-                positionsStatus={positionsStatus}
-              />
+            <div className="client-strategy-empty">
+              No saved strategies tagged to {selectedConfig.broker_name || 'this broker'} {selectedConfig.account_id || ''}.
             </div>
           )}
 
           {isAllUsers && !strategiesLoading && !groupUsers.length && (
             <div className="client-strategy-empty">No users in this group.</div>
-          )}
-
-          {/* Members with NO saved strategy get a card of their own - the ones WITH
-              a strategy already show their book beside it, on the strategy's card.
-              An account that never signed in has no book to show, so its user is not
-              drawn at all rather than shown as an empty shell. */}
-          {showOverview && !strategiesLoading && strategyLessScopeUsers.length > 0 && (
-            <div className="client-strategy-row">
-              {strategyLessScopeUsers.map(({ user, book }) => {
-                const openLegs = book.legs.filter((leg) => Number(leg.net_qty || 0) !== 0).length
-                const pnl = book.legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
-                const cardKey = `positions-${user.id}`
-                const expanded = !collapsedCards.has(cardKey)
-                return (
-                  <article className={`client-strategy-card${expanded ? ' expanded' : ''}`} key={cardKey}>
-                    <div className="client-strategy-summary">
-                      <div className="client-strategy-broker">
-                        <span>User</span>
-                        <strong>{userLabel(user)}</strong>
-                        <em className="client-strategy-broker-sub">Get Position</em>
-                      </div>
-                      <div className="client-strategy-name">
-                        <strong>No saved strategy</strong>
-                        {/* The same open/close control every other card has - without
-                            it this one could only ever be left open. */}
-                        <button
-                          type="button"
-                          className="client-strategy-expand"
-                          onClick={() => toggleCardCollapsed(cardKey)}
-                          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${userLabel(user)} positions`}
-                          aria-expanded={expanded}
-                        >
-                          <CircleChevronDown size={16} strokeWidth={2.2} />
-                        </button>
-                      </div>
-                      <div className="client-strategy-metrics">
-                        <div>
-                          <span>Total Positions</span>
-                          <strong>{book.legs.length}</strong>
-                        </div>
-                        <div>
-                          <span>Open Legs</span>
-                          <strong>{openLegs}</strong>
-                        </div>
-                        <div>
-                          <span>Combined P&amp;L</span>
-                          <strong className={pnl >= 0 ? 'up' : 'down'}>{money(pnl)}</strong>
-                        </div>
-                      </div>
-                    </div>
-                    {/* Same two-panel shape as every other card: saved strategies on
-                        the left (there are none), the open positions on the right. */}
-                    {expanded && (
-                      <StrategyExpandedDetails
-                        view={view}
-                        strategyLegs={[]}
-                        positionLegs={book.legs}
-                        positionsLoading={book.loading}
-                        positionsStatus={book.status}
-                        showPositions
-                      />
-                    )}
-                  </article>
-                )
-              })}
-            </div>
           )}
 
           {brokerStrategies.length > 0 && (
@@ -947,47 +528,47 @@ function ClientDashboard() {
                 // tick in real time, same as Sync Net Positions.
                 const legs = rawLegs.map((leg) => withLiveTick(leg, liveTicks))
                 const openLegs = legs.filter((leg) => !legIsClosed(leg)).length
-                // Get Position open legs NOT already in a saved strategy.
-                // Header P&L combines the saved strategy legs and the live
-                // open Get Position legs.
                 const strategyPnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
-                // In an overview each card's positions are that card owner's book
-                // (grouped per account), read from the scope's position load - not
-                // the single selected account's.
-                const ownerBook = showOverview
-                  ? (overviewByUser.get(strategy._userLabel) || EMPTY_BOOK)
-                  : { legs: livePositionLegs, loading: positionsLoading, status: positionsStatus }
-                const positionsPnl = ownerBook.legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
-                const combinedPnl = strategyPnl + positionsPnl
                 const brokerLabel = strategyBrokerLabel(strategy)
                 // strategy_code isn't unique across users (All-Users mode), so
                 // key each card on the row id instead.
                 const cardKey = String(strategy.id ?? `${strategy._userLabel || ''}::${strategy.strategy_code}`)
-                // Normal / Buy-Sell views auto-expand each card; in an overview
-                // keep them collapsed so many fit at a glance.
-                const forceExpanded = view !== 'compact' && !showOverview
-                const expanded = forceExpanded || expandedStrategies.has(cardKey)
+                // The full-width container opens its table only when clicked.
+                const expanded = expandedStrategies.has(cardKey)
                 return (
                   <article className={`client-strategy-card${expanded ? ' expanded' : ''}`} key={cardKey}>
-                    <div className="client-strategy-summary">
+                    <div
+                      className="client-strategy-summary"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={expanded}
+                      aria-label={`${expanded ? 'Collapse' : 'Expand'} ${strategy.strategy_name}`}
+                      onClick={() => toggleStrategyExpanded(cardKey)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          toggleStrategyExpanded(cardKey)
+                        }
+                      }}
+                    >
                     <div className="client-strategy-broker">
                       <span>{isAllUsers ? 'User' : 'Broker'}</span>
-                      <strong>{isAllUsers ? strategy._userLabel : (brokerLabel || selectedConfig?.broker_name || 'Broker')}</strong>
-                      {isAllUsers && brokerLabel && <em className="client-strategy-broker-sub">{brokerLabel}</em>}
+                      <strong>
+                        {!isAllUsers && <BrokerMark brokerName={strategy.broker_name || selectedConfig?.broker_name} />}
+                        {isAllUsers ? strategy._userLabel : (brokerLabel || selectedConfig?.broker_name || 'Broker')}
+                      </strong>
+                      {isAllUsers && brokerLabel && (
+                        <em className="client-strategy-broker-sub">
+                          <BrokerMark brokerName={strategy.broker_name} />
+                          {brokerLabel}
+                        </em>
+                      )}
                     </div>
                     <div className="client-strategy-name">
                       <strong>{strategy.strategy_name}</strong>
-                      {!forceExpanded && (
-                        <button
-                          type="button"
-                          className="client-strategy-expand"
-                          onClick={() => toggleStrategyExpanded(cardKey)}
-                          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${strategy.strategy_name}`}
-                          aria-expanded={expanded}
-                        >
-                          <CircleChevronDown size={16} strokeWidth={2.2} />
-                        </button>
-                      )}
+                      <span className="client-strategy-expand" aria-hidden="true">
+                        <CircleChevronDown size={16} strokeWidth={2.2} />
+                      </span>
                     </div>
                       <div className="client-strategy-metrics">
                         <div>
@@ -999,8 +580,8 @@ function ClientDashboard() {
                           <strong>{openLegs}</strong>
                         </div>
                         <div>
-                          <span>Combined P&amp;L</span>
-                          <strong className={combinedPnl >= 0 ? 'up' : 'down'}>{money(combinedPnl)}</strong>
+                          <span>Strategy P&amp;L</span>
+                          <strong className={strategyPnl >= 0 ? 'up' : 'down'}>{money(strategyPnl)}</strong>
                         </div>
                       </div>
                     </div>
@@ -1008,13 +589,10 @@ function ClientDashboard() {
                       <StrategyExpandedDetails
                         view={view}
                         strategyLegs={legs}
-                        // Saved strategy on the left, that user's open positions on
-                        // the right - in the overview those come from the card's own
-                        // owner, not from whichever account happens to be selected.
-                        positionLegs={ownerBook.legs}
-                        positionsLoading={ownerBook.loading}
-                        positionsStatus={ownerBook.status}
-                        showPositions
+                        positionLegs={[]}
+                        positionsLoading={false}
+                        positionsStatus=""
+                        showPositions={false}
                       />
                     )}
                   </article>
@@ -1034,13 +612,13 @@ function LegsByView({ view, legs }) {
   if (view === 'buysell') {
     return (
       <div className="legs-split">
-        <LegsTable title="Buy" legs={legs.filter((leg) => Number(leg.net_qty || 0) > 0)} />
-        <LegsTable title="Sell" legs={legs.filter((leg) => Number(leg.net_qty || 0) < 0)} />
+        <LegsTable compact title="Buy" legs={legs.filter((leg) => Number(leg.net_qty || 0) > 0)} />
+        <LegsTable compact title="Sell" legs={legs.filter((leg) => Number(leg.net_qty || 0) < 0)} />
       </div>
     )
   }
   if (view === 'compact') return <CompactLegs legs={legs} />
-  return <LegsTable legs={legs} />
+  return <LegsTable compact legs={legs} />
 }
 
 function StrategyExpandedDetails({ view, strategyLegs, positionLegs, positionsLoading, positionsStatus, showPositions = true }) {
@@ -1102,7 +680,10 @@ function OpenPositionsPanel({ view, positionLegs, positionsLoading, positionsSta
               <div className="client-account-group" key={group.key}>
                 <div className="client-account-group-head">
                   <div className="client-account-group-name">
-                    <span className="client-account-group-broker">{group.broker || 'Account'}</span>
+                    <span className="client-account-group-broker">
+                      <BrokerMark brokerName={group.broker} />
+                      {group.broker || 'Account'}
+                    </span>
                     {group.accountId && <em>{group.accountId}</em>}
                   </div>
                   <AccountGroupTotal legs={group.legs} />
@@ -1172,77 +753,6 @@ function LegsHeadMeta({ legs, countLabel }) {
   )
 }
 
-// The Angel token this position is marked to market with on the shared feed.
-//
-// A Kotak row carries the Angel token the backend's position router resolved for
-// it (masterFeedToken) - its own symboltoken is a KOTAK token, and Angel's feed
-// would answer that with a completely different contract's price. A Kotak row the
-// router could not map has no Angel token at all, so it gets none: no live LTP is
-// better than a wrong one. An Angel row simply IS its own token.
-function angelFeedRef(row, brokerName) {
-  const master = row.masterFeedToken || row.feedMasterToken || ''
-  if (master) {
-    return {
-      token: String(master),
-      exchange: String(row.masterFeedExchange || row.feedMasterExchange || row.exchange || 'NFO').toUpperCase(),
-    }
-  }
-  if (!isAngelBroker(brokerName)) return null
-
-  const token = row.symboltoken
-  if (token == null || token === '') return null
-  return { token: String(token), exchange: String(row.exchange || 'NFO').toUpperCase() }
-}
-
-function toPositionStatus(error) {
-  const message = String(error?.message || '')
-  if (/SmartAPI HTTP 503/i.test(message)) {
-    return 'SmartAPI is temporarily unavailable. Please retry Get Position in a moment.'
-  }
-  if (isAuthError(error) || isRateLimited(error)) {
-    const issue = classifyLoginError(error)
-    return `${issue.title}. ${issue.hint}`
-  }
-  return message || 'Failed to load Get Position legs'
-}
-
-function positionRowToLeg(row, brokerName, account = null) {
-  // symbol_token stays the BROKER's token (it is what orders and margins use);
-  // feed_token is the Angel token the row is actually subscribed under, which for
-  // a Kotak row is a different number entirely. withLiveTick() matches on the
-  // latter, so a Kotak leg finds the tick that was subscribed for it.
-  const feed = angelFeedRef(row, brokerName)
-  return {
-    // Which broker account this leg came from, so a user holding several accounts
-    // (e.g. Zerodha + Kotak) can have their positions grouped per account rather
-    // than merged into one indistinguishable list. Absent (single-account views)
-    // the panel just renders one flat list, exactly as before.
-    account_config_id: account ? String(account.configId || '') : '',
-    account_broker: account ? (account.brokerName || brokerName || '') : '',
-    account_id: account ? String(account.accountId || '') : '',
-    account_label: account ? accountLabel(account, brokerName) : '',
-    id: positionIdentityKey(row),
-    trading_symbol: row.tradingsymbol || row.symbolname || row.symbol,
-    stock_name: row.symbolname || row.name || row.symbol,
-    expiry: row.expirydate || row.expiry_date || row.expiry || row.expirationdate,
-    // Carried through so the leg is rendered from what the BROKER says, not from a
-    // guess at its symbol: Kotak's monthly form (NIFTY26JUL24100PE) is written
-    // exactly like Angel's DD-MMM-YY and parses to a strike of 100.
-    strike: row.strikeprice ?? row.strike_price ?? row.strike,
-    option_type: row.optiontype || row.option_type,
-    symbol_token: row.symboltoken,
-    feed_token: feed ? feed.token : '',
-    feed_exchange: feed ? feed.exchange : '',
-    exchange: row.exchange,
-    product_type: row.producttype || row.product_type,
-    net_qty: row.netqty,
-    buy_avg: positionBuyAvg(row),
-    sell_avg: positionSellAvg(row),
-    ltp: positionValue(row, ['ltp', 'LTP', 'lasttradedprice']),
-    pnl: positionPnl(row),
-  }
-}
-
 function comparePositionLegs(a, b) {
   const stockA = positionStockName(a)
   const stockB = positionStockName(b)
@@ -1274,96 +784,6 @@ function positionStockName(leg) {
 
 function isIndexPosition(leg) {
   return INDEX_STOCK_NAMES.has(positionStockName(leg).replace(/[\s_-]/g, ''))
-}
-
-function positionPnl(row) {
-  if (row.pnl != null && row.pnl !== '') return Number(row.pnl)
-  return Number(row.realised || 0) + Number(row.unrealised || 0)
-}
-
-function positionIdentityKey(row) {
-  return normalizedPositionIdentity({
-    token: row.symboltoken,
-    symbol: row.tradingsymbol || row.symbolname || row.symbol,
-    exchange: row.exchange,
-    product: row.producttype || row.product_type,
-    qty: row.netqty,
-  })
-}
-
-function strategyLegIdentityKey(leg) {
-  return normalizedPositionIdentity({
-    token: leg.symbol_token,
-    symbol: leg.trading_symbol,
-    exchange: leg.exchange,
-    product: leg.product_type,
-    qty: leg.net_qty,
-  })
-}
-
-function normalizedPositionIdentity({ token, symbol, exchange, product, qty }) {
-  const normalizedSymbol = String(symbol || '').trim().toUpperCase()
-  if (!normalizedSymbol) return ''
-
-  return [
-    String(token || '').trim(),
-    normalizedSymbol,
-    String(exchange || '').trim().toUpperCase(),
-    compactProductTag(product || ''),
-    String(Number(qty || 0)),
-  ].join('|')
-}
-
-function positionValue(row, keys) {
-  for (const key of keys) {
-    const value = row?.[key]
-    if (value != null && value !== '' && Number.isFinite(Number(value))) return Number(value)
-  }
-  return 0
-}
-
-function positionBuyAvg(row) {
-  const direct = positionValue(row, [
-    'totalbuyavgprice',
-    'totalBuyAvgPrice',
-    'total_buy_avg_price',
-    'buyavgprice',
-    'buyAvgPrice',
-    'buyaverageprice',
-    'buyAveragePrice',
-    'buy_avg_price',
-    'buyAvg',
-    'cfbuyavgprice',
-    'cfBuyAvgPrice',
-    'cf_buy_avg_price',
-  ])
-  if (direct) return direct
-
-  const amount = positionValue(row, ['totalbuyvalue', 'totalBuyValue', 'buyamount', 'buyAmount', 'cfbuyamount', 'cfBuyAmount', 'buy_value', 'buyValue'])
-  const qty = Math.abs(positionValue(row, ['totalbuyqty', 'totalBuyQty', 'buyqty', 'buyQty', 'buyquantity', 'buyQuantity', 'cfbuyqty', 'cfBuyQty']))
-  return amount && qty ? amount / qty : 0
-}
-
-function positionSellAvg(row) {
-  const direct = positionValue(row, [
-    'totalsellavgprice',
-    'totalSellAvgPrice',
-    'total_sell_avg_price',
-    'sellavgprice',
-    'sellAvgPrice',
-    'sellaverageprice',
-    'sellAveragePrice',
-    'sell_avg_price',
-    'sellAvg',
-    'cfsellavgprice',
-    'cfSellAvgPrice',
-    'cf_sell_avg_price',
-  ])
-  if (direct) return direct
-
-  const amount = positionValue(row, ['totalsellvalue', 'totalSellValue', 'sellamount', 'sellAmount', 'cfsellamount', 'cfSellAmount', 'sell_value', 'sellValue'])
-  const qty = Math.abs(positionValue(row, ['totalsellqty', 'totalSellQty', 'sellqty', 'sellQty', 'sellquantity', 'sellQuantity', 'cfsellqty', 'cfSellQty']))
-  return amount && qty ? amount / qty : 0
 }
 
 function strategyBrokerLabel(strategy) {
@@ -1409,15 +829,6 @@ function strategyBrokerMatchesSelected(strategy, selectedConfig, configId) {
 
 function userLabel(user) {
   return user.username || `${user.first_name || ''} ${user.last_name || ''}`.trim() || `User ${user.id}`
-}
-
-// "Zerodha · ACC123" - the broker and its account id, used as a group heading when
-// a user's positions are shown split by account.
-function accountLabel(account, brokerName) {
-  const broker = String(account?.brokerName || brokerName || '').trim()
-  const id = String(account?.accountId || '').trim()
-  if (broker && id) return `${broker} · ${id}`
-  return broker || id || 'Account'
 }
 
 // Splits position legs into one group per broker account. Legs with no account tag
