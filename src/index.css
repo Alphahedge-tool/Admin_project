@@ -1,3 +1,12 @@
+/* Tailwind v4 — utilities + theme only. Preflight (Tailwind's global reset) is
+   intentionally NOT imported: this app is already styled with MUI + the --ao-*
+   CSS system, and preflight would clash with that baseline. Add the preflight
+   line back only if you want Tailwind's full reset.
+     @import "tailwindcss/preflight.css" layer(base); */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
 :root {
   color-scheme: light;
 
