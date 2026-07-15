@@ -97,6 +97,33 @@ export function angelAutoLogin(client) {
   return brokerAutoLogin('angel', client)
 }
 
+// Zerodha auto-login. Unlike brokerAutoLogin this does NOT throw when the backend
+// answers needsLogin — the headless flow returns that (with a loginUrl) when the
+// account still needs the one-time browser "Authorize", and the caller has to see
+// it to fall back to the popup rather than treating it as a hard error.
+export async function zerodhaAutoLogin(client) {
+  const res = await fetch(brokerApiUrl('/zerodha/auto-login'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client }),
+  })
+
+  let data
+  try {
+    data = await res.json()
+  } catch {
+    throw new Error('Zerodha backend not reachable')
+  }
+
+  // A real failure carries no login fallback; only those are thrown.
+  if (!data.status && !data.needsLogin) {
+    throw new Error(data.message || 'Zerodha auto-login failed')
+  }
+
+  return data
+}
+
 async function zerodhaApi(path, { method = 'GET', query = {}, body } = {}) {
   const url = new URL(brokerApiUrl(`/zerodha${path}`), window.location.origin)
   Object.entries(query || {}).forEach(([key, value]) => {

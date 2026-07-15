@@ -245,8 +245,11 @@ export default function GetTradeBook() {
   }, [clientError]);
 
   useEffect(() => {
+    // Switching the selected user/account should cancel any older fetch so the
+    // new book cannot be overwritten by a response from the previous account.
+    loadSeqRef.current += 1;
     autoLoadedAccountRef.current = '';
-  }, [configId]);
+  }, [userId, configId]);
 
   // `options` is only ever passed internally - this is also wired straight to
   // onClick, where the first argument is a DOM event (which has no `.silent`).

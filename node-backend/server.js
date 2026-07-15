@@ -22,6 +22,7 @@ import { BrokerInstrumentManager } from './src/instruments/manager.js';
 import { mapKotakPositionToAngelFeed, mapZerodhaPositionToAngelFeed } from './src/instruments/positionRouter.js';
 import { KotakUserStream } from './src/kotakUserStream.js';
 import { KotakHsmRegistry } from './src/kotakHsmFeed.js';
+import { OrderHub } from './src/orderHub.js';
 
 const client = new Client();
 const auth = new Auth(client);
@@ -574,6 +575,143 @@ app.post('/api/angel/order-updates', async (req, res) => {
   }
 });
 
+// ── multiplexed order stream: ONE SSE for every account's fills ──────────────
+// The old /api/{broker}/order-updates endpoints stay for the single-account book
+// pages. This hub is for the Client Dashboard's group overview, where one order
+// stream per member would exhaust the browser's connection budget: the server
+// holds one upstream order socket per account and fans them all down one SSE.
+
+// One Angel account's order-status socket, shaped for the hub. Mirrors
+// /api/angel/order-updates but ends with a terminal 'end' so the hub reconnects
+// it; auth.sessionOrLogin re-logs in a dead token, so a reconnect after an expiry
+// heals itself.
+function openAngelOrderStream(account, emit) {
+  let upstream = null;
+  let keepAlive = null;
+  let closed = false;
+  (async () => {
+    try {
+      const session = await auth.sessionOrLogin(account.client);
+      if (closed) return;
+      emit('session', { status: true, session });
+      upstream = new WebSocket('wss://tns.angelone.in/smart-order-update', {
+        headers: { Authorization: `Bearer ${session.jwtToken}` },
+      });
+      upstream.on('open', () => {
+        emit('status', { status: true, connected: true, message: 'Order status stream connected' });
+        keepAlive = setInterval(() => {
+          if (upstream?.readyState !== WebSocket.OPEN) return;
+          try {
+            upstream.ping();
+            upstream.send('ping');
+          } catch {
+            // The close/error handlers below report broken connections.
+          }
+        }, 10000);
+      });
+      upstream.on('message', (raw) => {
+        const text = raw.toString();
+        if (text.toLowerCase() === 'pong') return;
+        let payload = null;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          return;
+        }
+        emit('order', payload);
+      });
+      upstream.on('close', (code) => {
+        if (keepAlive) clearInterval(keepAlive);
+        keepAlive = null;
+        if (!closed) {
+          emit('status', { status: false, connected: false, message: `Order status stream closed (${code})` });
+          emit('end', {});
+        }
+      });
+      upstream.on('error', (err) => {
+        // A ws 'error' is followed by 'close', which emits the 'end' that reconnects.
+        if (!closed) emit('error', { status: false, message: err.message || 'Order status stream error' });
+      });
+    } catch (err) {
+      if (!closed) {
+        emit('error', { status: false, message: err.message || 'Order stream unavailable' });
+        emit('end', {});
+      }
+    }
+  })();
+  return {
+    close() {
+      closed = true;
+      if (keepAlive) clearInterval(keepAlive);
+      keepAlive = null;
+      try {
+        upstream?.close(1000, 'hub closed');
+      } catch {
+        // already down
+      }
+    },
+  };
+}
+
+// One Kotak account's order/position socket. KotakUserStream already emits
+// 'status'/'order'/'position' and a terminal 'end' on drop.
+function openKotakOrderStream(account, emit) {
+  let stream = null;
+  try {
+    const session = kotak.sessionFromClient(account.client);
+    emit('session', { status: true, session });
+    stream = new KotakUserStream({ ...account.client, session }, emit).connect();
+  } catch (error) {
+    emit('error', { status: false, message: error.message || 'Kotak stream unavailable' });
+    emit('end', {});
+  }
+  return {
+    close() {
+      try {
+        stream?.close();
+      } catch {
+        // already down
+      }
+    },
+  };
+}
+
+const orderHub = new OrderHub({
+  openAngelStream: openAngelOrderStream,
+  openKotakStream: openKotakOrderStream,
+});
+
+app.post('/api/orders/accounts', h(async (req) => {
+  const b = req.body || {};
+  const streams = orderHub.setAccounts(b.subscriber || 'orders', b.accounts || []);
+  return { status: true, streams };
+}));
+
+app.get('/api/orders/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+
+  const handle = {
+    write: (ev) => {
+      if (ev.event) res.write(`event: ${ev.event}\n`);
+      res.write(`data: ${ev.data}\n\n`);
+    },
+  };
+
+  res.write('retry: 3000\n\n');
+  orderHub.addClient(handle);
+
+  const keepAlive = setInterval(() => res.write(': keep-alive\n\n'), 20000);
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    orderHub.removeClient(handle);
+  });
+});
+
 app.post('/api/angel/trade-book', h(async (req) => {
   const cc = req.body?.client || {};
   return book(client, auth, cc, '/rest/secure/angelbroking/order/v1/getTradeBook', 'trades');
@@ -748,6 +886,7 @@ server.on('error', (error) => {
 // alive after a --watch restart signal and leave the port bound just long enough
 // for the NEXT one to fail. Let go of them promptly.
 function shutdown() {
+  orderHub.closeAll();
   server.closeAllConnections?.();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500).unref();

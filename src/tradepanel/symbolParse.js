@@ -39,7 +39,7 @@ function inferOptionType(symbol) {
  */
 export function contractMeta(row = {}) {
   const symbol = String(
-    row.tradingsymbol || row.trading_symbol || row.symbolname || row.symbol || '-',
+    row.tradingsymbol || row.trading_symbol || row.symbolname || row.symbol || row.stock_name || '-',
   );
   const parsed = parseTradingSymbol(symbol);
 
@@ -53,9 +53,16 @@ export function contractMeta(row = {}) {
     row.optiontype || row.option_type || row.canonicalOptionType || '',
   ).toUpperCase();
   const stock = String(row.stock_name || row.symbolname || row.symbol_name || '').trim();
+  const stockParsed = stock ? parseTradingSymbol(stock) : null;
+  const stockLooksLikeContract = Boolean(
+    stockParsed?.expiry || stockParsed?.strike || stockParsed?.optionType,
+  );
+  const root = stock && !stockLooksLikeContract
+    ? stock
+    : (parsed.root && parsed.root !== '-' ? parsed.root : (stockParsed?.root || parsed.root));
 
   return {
-    root: stock || parsed.root,
+    root,
     expiry: expiry || parsed.expiry,
     strike: strike || parsed.strike,
     optionType: (optionType === 'CE' || optionType === 'PE') ? optionType : parsed.optionType,
@@ -97,7 +104,85 @@ export function formatExpiry(value) {
     return `${day.padStart(2, '0')} ${titleMonth(month.slice(0, 3))} ${year}`;
   }
 
+  // Month + year with no day - a monthly contract states only its month (Zerodha's
+  // "AUG2026"), the expiry day is not in the symbol. Shown as "Aug 2026".
+  const monthYear = text.match(/^([A-Za-z]{3})[-\s]?(\d{4})$/);
+  if (monthYear) {
+    const [, month, year] = monthYear;
+    return `${titleMonth(month)} ${year}`;
+  }
+
   return text;
+}
+
+const MONTHS = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+function monthIndex(name) {
+  const key = String(name || '').slice(0, 3).toLowerCase();
+  return key in MONTHS ? MONTHS[key] : null;
+}
+
+// "26" -> 2026, "2026" -> 2026. Contracts only ever quote this century.
+function fullYear(year) {
+  const n = Number(year);
+  return n < 100 ? 2000 + n : n;
+}
+
+function endOfDay(year, monthIdx, day) {
+  return new Date(year, monthIdx, day, 23, 59, 59, 999);
+}
+
+// Day 0 of the next month is the last day of this one - a monthly contract states
+// only its month, so it counts as live until the whole month is past.
+function endOfMonth(year, monthIdx) {
+  return new Date(year, monthIdx + 1, 0, 23, 59, 59, 999);
+}
+
+/**
+ * The contract's expiry as a Date at end of that day, or null if the row states
+ * no expiry we can read. Reads the same every-broker forms formatExpiry does
+ * ("14JUL2026", "28 Jul, 2026", "2026-07-14", "AUG2026"), plus the 2-digit-year
+ * "14 Jul 26" the symbol parser produces, and falls back to the trading symbol
+ * when no explicit expiry field is present. Used to hide already-expired legs.
+ */
+export function expiryDate(row = {}) {
+  const explicit = String(
+    row.expirydate || row.expiry_date || row.expiry || row.expiration_date || row.canonicalExpiry || '',
+  ).trim();
+  const text = explicit || parseTradingSymbol(
+    row.tradingsymbol || row.trading_symbol || row.symbolname || row.symbol || row.stock_name || '',
+  ).expiry;
+  if (!text) return null;
+
+  // ISO 2026-07-14
+  let m = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return endOfDay(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+  // Angel compact 14JUL2026 / 14JUL26
+  m = text.match(/^(\d{1,2})([A-Za-z]{3})(\d{2,4})$/);
+  if (m) {
+    const mi = monthIndex(m[2]);
+    if (mi != null) return endOfDay(fullYear(m[3]), mi, Number(m[1]));
+  }
+
+  // Spaced "14 Jul 2026" / "28 July, 2026" / "14 Jul 26"
+  m = text.match(/^(\d{1,2})\s+([A-Za-z]{3,})[,]?\s+(\d{2,4})$/);
+  if (m) {
+    const mi = monthIndex(m[2]);
+    if (mi != null) return endOfDay(fullYear(m[3]), mi, Number(m[1]));
+  }
+
+  // Month + year with no day: "AUG2026" / "Aug 2026" - last day of the month.
+  m = text.match(/^([A-Za-z]{3})[-\s]?(\d{2,4})$/);
+  if (m) {
+    const mi = monthIndex(m[1]);
+    if (mi != null) return endOfMonth(fullYear(m[2]), mi);
+  }
+
+  return null;
 }
 
 export function parseTradingSymbol(symbol) {

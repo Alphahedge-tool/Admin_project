@@ -2,14 +2,13 @@
 // Angel One and Kotak Neo positions share one normalized table shape.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpDown, Check, Filter, Info, Layers, Radio, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronDown, Filter, Info, Layers, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet, apiPost } from '../config/api';
-import { useFeedMasterAccount } from '../feedmaster/feedMasterStore';
 import {
   classifyLoginError, isAngelBroker, isAuthError, isRateLimited,
 } from '../feedmaster/angelSessionStore';
 import {
-  ensureBookSession, fetchBrokerPositions, hasBookSession, isBookBroker, isKotakBroker,
+  ensureBookSession, fetchBrokerPositions, hasBookSession, isBookBroker,
   saveBookSession, useBrokerBookClient,
 } from './brokerBookClient';
 import { orderIsFill, useFillRefresh, useOrderUpdates } from './orderUpdates';
@@ -17,7 +16,6 @@ import { useSharedTradeAccount, useSignedInAccounts } from './accountScope';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { compactProductTag, contractMeta } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
-import { useKotakMarketFeed } from './useKotakMarketFeed';
 import { useLiveLegFeed } from './useLiveLegFeed';
 import './tradepanel.css';
 
@@ -122,6 +120,11 @@ export default function GetPositions() {
   const [loading, setLoading] = useState(true);
   const [configLoading, setConfigLoading] = useState(false);
   const [sort, setSort] = useState({ key: 'stock', dir: 'asc' });
+  // 'expiry' groups the table under expiry-date headers (only meaningful while
+  // sorted by stock, the expiry-ordered sort); 'none' shows one flat list.
+  const [grouping, setGrouping] = useState('expiry');
+  // Expiry-group keys the user has collapsed (their rows hidden under the header).
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState(defaultPositionFilters);
   const [openFilter, setOpenFilter] = useState('');
@@ -148,22 +151,8 @@ export default function GetPositions() {
     : '';
   const selectedBrokerName = selectedConfig?.broker_name || '';
   const selectedIsAngel = isAngelBroker(selectedBrokerName);
-  const selectedIsKotak = isKotakBroker(selectedBrokerName);
   const selectedIsSupported = isBookBroker(selectedBrokerName);
   const { client, clientError } = useBrokerBookClient(configId, selectedBrokerName);
-
-  const {
-    setting: feedMasterSetting,
-    client: feedMasterClient,
-  } = useFeedMasterAccount();
-  // Is the Feedmaster an Angel account? This used to demand the saved setting's
-  // broker be the exact string 'angelone', so a Feedmaster saved as 'angel' (or
-  // by any older build) read as "not Angel", the feed key below collapsed to ''
-  // and Get Position subscribed NOTHING - frozen LTPs and an Offline pill, while
-  // Client Dashboard, which never made that check, fed the same account fine.
-  const angelMasterSelected = isAngelBroker(
-    feedMasterSetting?.broker || feedMasterClient?.broker || '',
-  ) && Boolean(feedMasterSetting?.configId || feedMasterClient?.configId);
 
   const strategyLegKeys = useMemo(
     () => buildStrategyLegKeySet(existingStrategies),
@@ -181,7 +170,6 @@ export default function GetPositions() {
   // closed for the day that filter emptied the token list, so Get Position
   // subscribed nothing at all and every LTP on screen sat frozen.
   const legFeedKey = useMemo(() => {
-    if (!angelMasterSelected) return '';
     const seen = new Set();
     positionRows.forEach((row) => {
       const master = angelMasterReference(row, selectedIsAngel);
@@ -189,41 +177,15 @@ export default function GetPositions() {
       seen.add(`${master.exchange || 'NFO'}|${master.token}`);
     });
     return [...seen].sort().join(',');
-  }, [angelMasterSelected, positionRows, selectedIsAngel]);
+  }, [positionRows, selectedIsAngel]);
 
-  // The same shared Feedmaster feed Client Dashboard runs on. Get Position used
-  // to carry its own copy of this plumbing - subscribe, SSE, tick batching - and
-  // that copy is what quietly stopped feeding. One hook, one code path, so the
-  // two pages can no longer disagree about whether the feed is up.
+  // One shared feed again: Kotak and Zerodha rows map to Angel feed tokens
+  // through `masterFeedToken`, and Angel rows use their own token directly.
   const { liveTicks, feedStatus } = useLiveLegFeed(legFeedKey, {
-    enabled: angelMasterSelected,
+    enabled: Boolean(legFeedKey),
     subscriber: 'get-positions',
   });
-
-  const kotakFeedItems = useMemo(() => {
-    // The selected Feedmaster owns LTP routing. Never mix Kotak HSM ticks into
-    // an Angel-master position set: numeric tokens are broker-specific and can
-    // collide while referring to completely different contracts.
-    if (!selectedIsKotak || angelMasterSelected) return [];
-    return positionRows
-      .filter((row) => row.symboltoken)
-      .map((row) => ({
-        segment: row.feedExchange || row.brokerExchange,
-        token: String(row.symboltoken),
-      }));
-  }, [angelMasterSelected, positionRows, selectedIsKotak]);
-  const { status: kotakFeedStatus, ticks: kotakTicks } = useKotakMarketFeed({
-    configId,
-    client,
-    enabled: selectedIsKotak && !angelMasterSelected,
-    items: kotakFeedItems,
-    subscriber: 'get-positions',
-  });
-
-  const activeTicks = useMemo(
-    () => (angelMasterSelected ? liveTicks : { ...kotakTicks, ...liveTicks }),
-    [angelMasterSelected, kotakTicks, liveTicks],
-  );
+  const activeTicks = liveTicks;
   const liveRows = useMemo(
     () => positionRows.map((row) => withLivePositionTick(row, activeTicks, selectedIsAngel)),
     [activeTicks, positionRows, selectedIsAngel],
@@ -235,12 +197,8 @@ export default function GetPositions() {
     () => positionRows.filter((row) => angelMasterReference(row, selectedIsAngel)).length,
     [positionRows, selectedIsAngel],
   );
-  const positionFeedStatus = angelMasterSelected
-    ? feedStatus
-    : selectedIsKotak ? kotakFeedStatus : feedStatus;
-  const positionFeedTitle = angelMasterSelected
-    ? `Angel Feedmaster: ${angelMappedPositionCount} of ${positionRows.length} contracts mapped`
-    : selectedIsKotak ? 'Live Kotak HSM market feed' : 'Live LTP feed (Feedmaster)';
+  const positionFeedStatus = feedStatus;
+  const positionFeedTitle = `Live LTP feed: ${angelMappedPositionCount} of ${positionRows.length} contracts mapped`;
 
   // Manual picks here should also become the shared Trade Panel selection.
   // setLoading(true) here (not just inside the effects below) closes the gap
@@ -481,7 +439,7 @@ export default function GetPositions() {
       // Whoever turned the spinner on turns it off, superseded or not.
       if (!silent) setLoading(false);
     }
-  }, [client, configId, selectedBrokerName, selectedConfig, selectedIsKotak, selectedIsSupported]);
+  }, [client, configId, selectedBrokerName, selectedConfig, selectedIsSupported]);
 
   useEffect(() => {
     loadRef.current = load;
@@ -554,17 +512,49 @@ export default function GetPositions() {
   const filterOptions = useMemo(() => buildFilterOptions(liveRows), [liveRows]);
   const searchedRows = useMemo(() => filterPositionSearchRows(liveRows, query), [liveRows, query]);
   const visibleRows = useMemo(() => sortPositionRows(filterPositionRows(searchedRows, filters), sort), [searchedRows, filters, sort]);
+  // Group under expiry headers only when the user has left grouping on AND the
+  // table is in its expiry-ordered (stock) sort; ungrouped, or sorted by another
+  // column, it is a single flat list.
   const tableRows = useMemo(
-    () => (sort.key === 'stock'
+    () => ((grouping === 'expiry' && sort.key === 'stock')
       ? groupPositionsByExpiryAndExchange(visibleRows)
       : visibleRows.map((row) => ({ type: 'row', row }))),
-    [visibleRows, sort.key],
+    [visibleRows, sort.key, grouping],
   );
+  // Every expiry-group header currently on the table, so "Collapse all" knows
+  // what to close and the Groups dropdown can reflect whether all are shut.
+  const groupKeys = useMemo(
+    () => tableRows.filter((item) => item.type === 'group').map((item) => item.key),
+    [tableRows],
+  );
+  const showGroupControls = groupKeys.length > 0;
+  const allGroupsCollapsed = showGroupControls && groupKeys.every((key) => collapsedGroups.has(key));
+  const groupView = allGroupsCollapsed ? 'collapsed' : 'expanded';
+
+  const toggleGroupCollapsed = useCallback((key) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const setAllGroupsCollapsed = useCallback((collapsed) => {
+    setCollapsedGroups(collapsed ? new Set(groupKeys) : new Set());
+  }, [groupKeys]);
+
+  // A collapsed group's rows are hidden, so they are not part of the "select all"
+  // set either - only what is actually on screen can be selected.
   const visiblePositionSelections = useMemo(() => (
     tableRows
-      .map((item, index) => (item.type === 'row' ? positionRowKey(item.row, index) : null))
+      .map((item, index) => (
+        item.type === 'row' && !collapsedGroups.has(item.groupKey)
+          ? positionRowKey(item.row, index)
+          : null
+      ))
       .filter(Boolean)
-  ), [tableRows]);
+  ), [tableRows, collapsedGroups]);
   const allVisibleSelected = visiblePositionSelections.length > 0
     && visiblePositionSelections.every((key) => selectedPositionKeys.has(key));
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
@@ -717,7 +707,7 @@ export default function GetPositions() {
 
   return (
     <div className="trade-panel">
-      <div className="positions-view">
+      <div className="positions-view positions-view-compact">
         <div className="positions-toolbar">
           <CompactSelect
             title="User"
@@ -740,6 +730,30 @@ export default function GetPositions() {
               meta: config.broker_name || 'Broker',
             }))}
           />
+
+          <CompactSelect
+            title="Group"
+            value={grouping}
+            onChange={setGrouping}
+            className="position-group-select"
+            options={[
+              { value: 'expiry', label: 'By expiry' },
+              { value: 'none', label: 'Ungrouped' },
+            ]}
+          />
+
+          {showGroupControls && (
+            <CompactSelect
+              title="Expiry groups"
+              value={groupView}
+              onChange={(value) => setAllGroupsCollapsed(value === 'collapsed')}
+              className="position-group-select"
+              options={[
+                { value: 'expanded', label: 'Expanded' },
+                { value: 'collapsed', label: 'Collapsed' },
+              ]}
+            />
+          )}
 
           <button className="positions-load-btn" onClick={load} disabled={loading || !selectedConfig || (selectedIsSupported && !client)} type="button">
             {loading ? 'Loading' : 'Get Positions'}
@@ -774,16 +788,6 @@ export default function GetPositions() {
             )}
           </label>
 
-          {visiblePositionSelections.length > 0 && (
-            <button
-              className={`positions-select-all${allVisibleSelected ? ' active' : ''}`}
-              type="button"
-              onClick={toggleVisibleSelection}
-            >
-              <Check size={14} /> {allVisibleSelected ? 'Clear all' : 'Select all'}
-            </button>
-          )}
-
           {activeFilterCount > 0 && (
             <button className="positions-clear-filters" type="button" onClick={() => setFilters(defaultPositionFilters)}>
               <X size={14} /> Clear filters
@@ -809,7 +813,7 @@ export default function GetPositions() {
         )}
 
         {positionRows.length > 0 && (
-          <div className="position-book-summary">
+          <div className="position-book-summary position-book-summary-compact">
             <div>
               <span className="buy">Long Positions</span>
               <strong>{longCount}</strong>
@@ -829,7 +833,7 @@ export default function GetPositions() {
         )}
 
         <div className="positions-table-wrap">
-          <table className="positions-table position-book-table">
+          <table className="positions-table position-book-table position-book-compact">
             <thead>
               <tr>
                 {POSITION_COLUMNS.map((column) => (
@@ -843,6 +847,9 @@ export default function GetPositions() {
                       filterOptions={filterOptions}
                       openFilter={openFilter}
                       setOpenFilter={setOpenFilter}
+                      selectAllVisible={visiblePositionSelections.length > 0}
+                      allSelected={allVisibleSelected}
+                      onToggleSelectAll={toggleVisibleSelection}
                     />
                   </th>
                 ))}
@@ -851,19 +858,29 @@ export default function GetPositions() {
             <tbody>
               {tableRows.map((item, i) => (
                 item.type === 'group' ? (
-                  <tr key={`group-${item.expiry}-${item.exchange}-${i}`} className="position-expiry-row">
+                  <tr
+                    key={`group-${item.expiry}-${item.exchange}-${i}`}
+                    className={`position-expiry-row${collapsedGroups.has(item.key) ? ' collapsed' : ''}`}
+                  >
                     <td colSpan={POSITION_COLUMNS.length}>
-                      <div className="position-expiry-row-content">
+                      <button
+                        type="button"
+                        className="position-expiry-row-content"
+                        onClick={() => toggleGroupCollapsed(item.key)}
+                        aria-expanded={!collapsedGroups.has(item.key)}
+                        title={collapsedGroups.has(item.key) ? 'Expand group' : 'Collapse group'}
+                      >
+                        <ChevronDown size={14} className="position-expiry-caret" aria-hidden="true" />
                         <span>{item.expiry}</span>
                         <small>{item.exchange}</small>
                         <small>{item.count} positions</small>
                         <strong className={item.pnl >= 0 ? 'up' : 'down'}>
                           Group P&amp;L: {money(item.pnl)}
                         </strong>
-                      </div>
+                      </button>
                     </td>
                   </tr>
-                ) : (
+                ) : collapsedGroups.has(item.groupKey) ? null : (
                   (() => {
                     const rowKey = positionRowKey(item.row, i);
                     const selected = selectedPositionKeys.has(rowKey);
@@ -1031,6 +1048,7 @@ function groupPositionsByExpiryAndExchange(rows) {
     if (group.key !== last) {
       out.push({
         type: 'group',
+        key: group.key,
         expiry: group.expiry,
         exchange: group.exchange,
         count: counts.get(group.key) || 0,
@@ -1038,7 +1056,7 @@ function groupPositionsByExpiryAndExchange(rows) {
       });
       last = group.key;
     }
-    out.push({ type: 'row', row });
+    out.push({ type: 'row', groupKey: group.key, row });
   }
   return out;
 }
@@ -1146,6 +1164,9 @@ function PositionColumnHeader({
   filterOptions,
   openFilter,
   setOpenFilter,
+  selectAllVisible = false,
+  allSelected = false,
+  onToggleSelectAll,
 }) {
   const active = columnFilterActive(column, filters);
   const sortActive = sort.key === column;
@@ -1160,6 +1181,23 @@ function PositionColumnHeader({
 
   return (
     <div className="position-col-head">
+      {/* Select-all sits in the Stock header, directly above the row checkboxes,
+          so one click ticks (or clears) every position on screen. */}
+      {column === 'stock' && selectAllVisible && (
+        <button
+          type="button"
+          className={`position-row-check position-head-check${allSelected ? ' checked' : ''}`}
+          aria-pressed={allSelected}
+          aria-label={allSelected ? 'Clear all positions' : 'Select all positions'}
+          title={allSelected ? 'Clear all' : 'Select all'}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleSelectAll?.();
+          }}
+        >
+          {allSelected && <Check size={12} strokeWidth={3} />}
+        </button>
+      )}
       <button className={`position-sort-btn${sortActive ? ' active' : ''}`} type="button" onClick={toggleSort}>
         <span>{positionLabel(column)}</span>
         <ArrowUpDown size={13} />

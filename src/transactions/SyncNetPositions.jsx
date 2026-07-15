@@ -118,6 +118,7 @@ function SyncNetPositions() {
   const [dateFilter, setDateFilter] = useState('all')
   const [selectedLegKeys, setSelectedLegKeys] = useState(() => new Set())
   const [removingLegs, setRemovingLegs] = useState(false)
+  const [clearingStrategies, setClearingStrategies] = useState(false)
   const [editingStrategyCode, setEditingStrategyCode] = useState('')
   const [editingStrategyId, setEditingStrategyId] = useState('')
   const [editingStrategyName, setEditingStrategyName] = useState('')
@@ -143,6 +144,7 @@ function SyncNetPositions() {
     ...config,
     accountId: angelAccountByConfigId.get(config.configId)?.accountId || '',
   })), [brokerConfigs, angelAccountByConfigId])
+  const bulkAccountGroups = useMemo(() => groupByUser(allAccounts), [allAccounts])
 
   const { client: feedMasterClient, handleSession: onFeedMasterSession } = useFeedMasterAccount()
   const [liveTicks, setLiveTicks] = useState({})
@@ -575,6 +577,33 @@ function SyncNetPositions() {
       setRemovingLegs(false)
     }
   }, [selectedLegKeys, loadStrategies, userId])
+
+  // Wipe every saved strategy (and all their legs) for the selected user from the
+  // backend in one call. Permanent and unlike per-leg removal there is no unsync
+  // to bring these back, so it is gated behind an explicit confirm.
+  const clearAllStrategies = useCallback(async () => {
+    if (clearingStrategies || !userId || allUsers || !strategies.length) return
+
+    const label = userLabel(selectedUser) || `user ${userId}`
+    const confirmed = window.confirm(
+      `Clear ALL ${strategies.length} ${strategies.length === 1 ? 'strategy' : 'strategies'} for ${label}?\n\n`
+      + 'This permanently deletes them and every one of their legs from the backend. It cannot be undone.',
+    )
+    if (!confirmed) return
+
+    setClearingStrategies(true)
+    try {
+      const res = await apiPost('/strategy-master/clear.php', { user_id: Number(userId) })
+      setSelectedLegKeys(new Set())
+      cancelEditStrategy()
+      await loadStrategies(userId)
+      setStatus(res.message || 'Strategies cleared')
+    } catch (error) {
+      setStatus(error.message || 'Failed to clear strategies')
+    } finally {
+      setClearingStrategies(false)
+    }
+  }, [allUsers, cancelEditStrategy, clearingStrategies, loadStrategies, selectedUser, strategies.length, userId])
 
   useEffect(() => {
     setSelectedLegKeys(new Set())
@@ -1050,6 +1079,31 @@ function SyncNetPositions() {
           </div>
         </div>
 
+        {allUsers && allAccounts.length > 0 && (
+          <div className="sync-bulk-preview" aria-label="Accounts queued for sync">
+            <div className="sync-bulk-preview-head">
+              <strong>Accounts that will sync</strong>
+              <span>{allAccounts.length} broker account{allAccounts.length === 1 ? '' : 's'}</span>
+            </div>
+
+            <div className="sync-bulk-preview-groups">
+              {bulkAccountGroups.map((group) => (
+                <div className="sync-bulk-preview-group" key={group.userId}>
+                  <div className="sync-bulk-preview-user">{group.username}</div>
+                  <div className="sync-bulk-preview-accounts">
+                    {group.accounts.map((account) => (
+                      <div className="sync-bulk-preview-account" key={account.configId}>
+                        <span className="sync-bulk-preview-account-name">{accountLabel(account)}</span>
+                        <span className="sync-bulk-preview-account-user">User {group.userId}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {progress && (
           <div
             className={`sync-progress mode-${progress.mode} ${progress.done ? 'is-done' : 'is-running'}`}
@@ -1193,11 +1247,24 @@ function SyncNetPositions() {
           <div className={`strategy-list strategy-list--${view}`}>
             <div className="strategy-list-head">
               <strong>Saved Strategies</strong>
-              <span>
-                {strategiesLoading
-                  ? 'Loading…'
-                  : `${strategies.length} ${strategies.length === 1 ? 'strategy' : 'strategies'}`}
-              </span>
+              <div className="strategy-list-head-actions">
+                <span>
+                  {strategiesLoading
+                    ? 'Loading…'
+                    : `${strategies.length} ${strategies.length === 1 ? 'strategy' : 'strategies'}`}
+                </span>
+                {!strategiesLoading && strategies.length > 0 && (
+                  <button
+                    type="button"
+                    className="positions-remove-btn strategy-clear-all-btn"
+                    onClick={clearAllStrategies}
+                    disabled={clearingStrategies}
+                    title="Delete every saved strategy for this user from the backend"
+                  >
+                    <Trash2 size={14} /> {clearingStrategies ? 'Clearing…' : 'Clear all'}
+                  </button>
+                )}
+              </div>
             </div>
 
             {!strategiesLoading && strategies.length === 0 && (

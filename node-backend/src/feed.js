@@ -36,6 +36,8 @@ export class Feed {
     this.sseClients = new Set(); // Set of { write } handles
     this.pingTimer = null;
     this.idleCloseTimer = null;
+    this.retryTimer = null;
+    this.retries = 0;
   }
 
   // ── SSE client registry ─────────────────────────────────────────────────
@@ -64,6 +66,17 @@ export class Feed {
       clearTimeout(this.idleCloseTimer);
       this.idleCloseTimer = null;
     }
+  }
+
+  #scheduleReconnect() {
+    if (this.retryTimer || this.sseClients.size === 0 || this.#totalTokens() === 0) return;
+    const delay = Math.min(1000 * (2 ** this.retries), 15000);
+    this.retries += 1;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      if (this.sseClients.size === 0 || this.#totalTokens() === 0) return;
+      this.#connect(this.creds);
+    }, delay);
   }
 
   #broadcast(ev) {
@@ -224,6 +237,14 @@ export class Feed {
   }
 
   #connect(creds) {
+    if (!creds?.jwtToken || !creds?.feedToken) {
+      this.#broadcast(this.#statusEvent(false, 'Feed error: missing credentials'));
+      return;
+    }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     const headers = {
       Authorization: creds.jwtToken, // raw JWT, no "Bearer "
       'x-api-key': creds.apiKey,
@@ -236,12 +257,14 @@ export class Feed {
       conn = new WebSocket(SMART_STREAM_URL, { headers });
     } catch (err) {
       this.#broadcast(this.#statusEvent(false, 'Feed error: ' + err.message));
+      this.#scheduleReconnect();
       return;
     }
     this.conn = conn;
     conn.binaryType = 'nodebuffer';
 
     conn.on('open', () => {
+      this.retries = 0;
       this.#broadcast(this.#statusEvent(true, 'Live feed connected'));
       this.#sendSubscribe(conn, this.#snapshot());
       this.#startPing(conn);
@@ -258,6 +281,7 @@ export class Feed {
         this.conn = null;
         this.#stopPing();
         this.#broadcast(this.#statusEvent(false, 'Live feed closed'));
+        this.#scheduleReconnect();
       }
     };
     conn.on('close', onDown);
@@ -316,6 +340,11 @@ export class Feed {
 
   #closeUpstream(reset) {
     this.#cancelIdleClose();
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    this.retries = 0;
     const conn = this.conn;
     this.conn = null;
     this.#stopPing();

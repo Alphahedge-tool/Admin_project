@@ -2436,6 +2436,12 @@ select { min-width: 96px; }
 }
 .strategy-list-head strong { color: var(--ao-bold); font-size: var(--fs-base); }
 .strategy-list-head span { color: var(--ao-caption); font-size: var(--fs-sm); }
+.strategy-list-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.strategy-clear-all-btn { align-self: center; }
 .strategy-list-empty {
   padding: 16px;
   text-align: center;
@@ -3189,6 +3195,64 @@ select { min-width: 96px; }
 }
 .client-panel-total strong.up { color: var(--ao-green); }
 .client-panel-total strong.down { color: var(--ao-red); }
+
+/* Per-account grouping inside a positions panel: a user holding several broker
+   accounts (e.g. Zerodha + Kotak) gets one labelled section per account, each
+   with its own open-leg count and P&L, instead of one merged list. */
+.client-account-group + .client-account-group {
+  border-top: 1px solid var(--ao-border-soft);
+}
+.client-account-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  padding: 5px 14px;
+  background: var(--ao-surface-2);
+}
+.client-account-group-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.client-account-group-broker {
+  color: var(--ao-bold);
+  font-size: var(--fs-sm);
+  font-weight: 850;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.client-account-group-name em {
+  flex: none;
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.client-account-group-total {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.client-account-group-open {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.client-account-group-total strong {
+  font-size: var(--fs-sm);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.client-account-group-total strong.up { color: var(--ao-green); }
+.client-account-group-total strong.down { color: var(--ao-red); }
 /* Push the view toggle to the far end of the toolbar. */
 .client-dashboard-toolbar .view-toggle {
   margin-left: auto;
@@ -3494,6 +3558,41 @@ select { min-width: 96px; }
 }
 .positions-compact-select + .positions-compact-select .position-select {
   width: 250px;
+}
+/* The Get Position group/ungroup toggle is a short two-option picker, so it stays
+   narrow instead of matching the wide user/account selectors beside it. */
+.positions-compact-select.position-group-select .position-select,
+.positions-compact-select + .positions-compact-select.position-group-select .position-select {
+  width: 140px;
+}
+
+/* Get Position: slimmer User / Account pickers - shorter triggers, tighter text
+   and narrower boxes. Scoped via .positions-view-compact so the same pickers on
+   Sync Net Positions keep their default size. The Group toggles (.position-group-
+   select) are excluded from the width cut so they keep their own compact width. */
+.positions-view-compact .positions-compact-select {
+  gap: 5px;
+  font-size: 12px;
+}
+.positions-view-compact .position-select-trigger {
+  height: 27px;
+  gap: 6px;
+  padding: 0 6px 0 8px;
+  border-radius: 7px;
+}
+.positions-view-compact .position-select-text strong {
+  font-size: 12px;
+}
+.positions-view-compact .position-select-text em {
+  max-width: 74px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+.positions-view-compact .positions-compact-select:not(.position-group-select) .position-select {
+  width: 150px;
+}
+.positions-view-compact .positions-compact-select:not(.position-group-select) + .positions-compact-select:not(.position-group-select) .position-select {
+  width: 184px;
 }
 .positions-compact-select select {
   width: 190px;
@@ -4424,6 +4523,27 @@ select { min-width: 96px; }
   width: 100%;
   min-width: 0;
 }
+/* The group header is a button so the whole expiry bar toggles its rows. */
+button.position-expiry-row-content {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.position-expiry-caret {
+  flex: none;
+  margin-right: 7px;
+  color: #8A94A6;
+  transition: transform .15s ease;
+}
+.position-expiry-row.collapsed .position-expiry-caret {
+  transform: rotate(-90deg);
+}
 .position-expiry-row span {
   display: inline-flex;
   align-items: center;
@@ -4461,6 +4581,35 @@ select { min-width: 96px; }
 }
 .position-expiry-row strong.up { color: var(--ao-green); }
 .position-expiry-row strong.down { color: var(--ao-red); }
+
+/* ── Get Position: compact ("squeezed") layout ─────────────────────────────
+   Scoped to the Get Position screen only - its table also carries
+   .position-book-compact - so the SAME shared book table used by Order Book,
+   Trade Book and the strategy-legs view keeps its roomier spacing. The combined
+   class selectors also win on specificity over the base .position-book-table
+   rules regardless of source order. */
+.positions-view.positions-view-compact {
+  padding: 4px 8px 8px;
+  gap: 8px;
+}
+.position-book-summary.position-book-summary-compact div {
+  min-height: 44px;
+  padding: 6px 16px;
+}
+.position-book-table.position-book-compact th,
+.position-book-table.position-book-compact td {
+  padding: 5px 12px;
+}
+.position-book-table.position-book-compact tbody tr {
+  height: 44px;
+}
+.position-book-table.position-book-compact th {
+  height: 32px;
+}
+.position-book-table.position-book-compact tbody tr.position-expiry-row td {
+  height: 26px;
+  padding: 3px 12px;
+}
 .position-book-table th:nth-child(1),
 .position-book-table td:nth-child(1) { width: 29%; text-align: left; }
 .position-book-table th:nth-child(2),
@@ -4532,6 +4681,12 @@ select { min-width: 96px; }
 }
 .position-row-check.checked svg {
   stroke: #FFFFFF;
+}
+/* Select-all checkbox in the Stock header - same control as the row checkboxes,
+   sitting directly above them so it reads as "tick this whole column". */
+.position-head-check {
+  flex: none;
+  margin-right: 1px;
 }
 .position-symbol-line strong {
   min-width: 0;
@@ -4762,6 +4917,28 @@ select { min-width: 96px; }
   font-size: 0.72rem;
   font-weight: 850;
   white-space: nowrap;
+}
+
+/* Get Position: slimmer, more compact status pills (Live / Auto-sync / Total P&L).
+   Scoped to this screen via .positions-view-compact so the same pills on Order
+   Book, Trade Book and the Dashboard keep their default size. */
+.positions-view-compact .orderbook-live-pill {
+  height: 19px;
+  padding: 0 6px;
+  gap: 3px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.positions-view-compact .orderbook-live-pill svg {
+  width: 10px;
+  height: 10px;
+}
+.positions-view-compact .positions-total {
+  min-height: 19px;
+  padding: 0 7px;
+  font-size: 0.7rem;
+  border-radius: 999px;
 }
 
 .orderbook-live-pill.live {
@@ -5731,6 +5908,83 @@ select { min-width: 96px; }
 .sync-progress-account.skipped .sync-progress-account-detail,
 .sync-progress-account.queued .sync-progress-account-detail { color: var(--ao-caption); }
 
+.sync-bulk-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--ao-surface) 0%, var(--ao-surface-2) 100%);
+  box-shadow: 0 6px 18px rgba(30, 41, 59, .05);
+}
+.sync-bulk-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ao-bold);
+  font-size: var(--fs-sm);
+  font-weight: 800;
+}
+.sync-bulk-preview-head span {
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.sync-bulk-preview-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.sync-bulk-preview-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 10px;
+  background: var(--ao-surface);
+}
+.sync-bulk-preview-user {
+  color: var(--ao-bold);
+  font-size: var(--fs-sm);
+  font-weight: 800;
+}
+.sync-bulk-preview-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sync-bulk-preview-account {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--ao-blue);
+  border-radius: 0 8px 8px 0;
+  background: var(--ao-surface-2);
+}
+.sync-bulk-preview-account-name {
+  min-width: 0;
+  color: var(--ao-bold);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.sync-bulk-preview-account-user {
+  flex: none;
+  color: var(--ao-caption);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 @media (max-width: 620px) {
   .sync-progress-head {
     align-items: flex-start;
@@ -5738,6 +5992,11 @@ select { min-width: 96px; }
   }
   .sync-progress-head-meta { justify-content: flex-start; }
   .sync-progress-users { grid-template-columns: 1fr; }
+  .sync-bulk-preview-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .sync-bulk-preview-groups { grid-template-columns: 1fr; }
 }
 
 /* Unsync is the destructive-ish twin of Sync, so it reads as the quieter

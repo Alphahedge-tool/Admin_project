@@ -1,6 +1,24 @@
 import crypto from 'node:crypto';
 
+import { generateTOTP } from './auth.js';
+
 const KITE_API_BASE_URL = 'https://api.kite.trade';
+const KITE_WEB = 'https://kite.zerodha.com';
+const WEB_LOGIN_URL = `${KITE_WEB}/api/login`;
+const TWOFA_URL = `${KITE_WEB}/api/twofa`;
+
+// Browser user-agent so Kite's web login doesn't treat the fetch as a bot.
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+// ZERODHA_DEBUG=1 traces the headless login hop chain. It logs URLs, statuses and
+// cookie NAMES only — never the password, the TOTP, or any cookie value.
+const DEBUG = /^(1|true|yes)$/i.test(process.env.ZERODHA_DEBUG || '');
+function debug(...args) {
+  if (DEBUG) console.log('[zerodha]', ...args);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function trim(value) {
   return String(value || '').trim();
@@ -14,6 +32,14 @@ function normalizeInput(input = {}) {
     apiSecret: trim(client.apiSecret || client.app_secret || session?.apiSecret || session?.api_secret),
     accessToken: trim(client.accessToken || client.access_token || session?.accessToken || session?.access_token),
     requestToken: trim(client.requestToken || client.request_token || session?.requestToken || session?.request_token),
+    // Headless auto-login creds. Kite's web login wants the numeric/user id, the
+    // account password and the base32 TOTP secret to mint codes on the fly.
+    userId: trim(client.userId || client.clientCode || client.account_id || session?.userId),
+    password: trim(client.password || client.pin),
+    totpSecret: trim(client.totpSecret || client.totp_secret),
+    // Auto Login on by default; `manual` skips headless and asks for the popup.
+    autoLogin: client.autoLogin !== false && client.auto_login !== false,
+    manual: client.manual === true,
     session,
   };
 }
@@ -172,76 +198,10 @@ function availableCashOf(data = {}) {
   );
 }
 
-/**
- * Zerodha's login, in the only shape Kite Connect allows.
- *
- * Kite has NO headless login - there is no PIN/TOTP endpoint to call, the user
- * has to go through kite.zerodha.com in a browser once. What can be automated is
- * everything either side of that:
- *
- *   1. a saved access token is REUSED, after checking it is still alive;
- *   2. a request token that the browser flow just produced is exchanged for one;
- *   3. and only when neither is available does this ask for the browser login,
- *      handing back the URL to open rather than throwing.
- *
- * Step 1 is what was missing: autoLogin demanded a request token every single
- * time, so a perfectly good saved token was ignored and every app start sent the
- * user back through the browser.
- */
-export async function autoLogin(input = {}) {
-  const creds = normalizeInput(input);
-
-  // 1. Reuse a saved token, if it is still good.
-  if (creds.apiKey && creds.accessToken && !creds.requestToken) {
-    try {
-      const me = await profile(input);
-      const data = me.data || {};
-      const session = mergedSession(creds, {
-        userId: trim(data.user_id || creds.session?.userId || ''),
-        userName: trim(data.user_name || creds.session?.userName || ''),
-        userShortname: trim(data.user_shortname || creds.session?.userShortname || ''),
-        broker: 'ZERODHA',
-        loginSource: 'session',
-      });
-
-      let availableMargin = 0;
-      try {
-        const funds = await margins(input);
-        availableMargin = availableCashOf(funds.data || {});
-      } catch {
-        // A funds hiccup must not discard a token the profile call just proved good.
-      }
-
-      return {
-        status: true,
-        broker: 'zerodha',
-        clientCode: session.userId || creds.apiKey,
-        availableMargin,
-        marginSource: 'kite-margins',
-        sessionSource: 'session',
-        session,
-        data,
-      };
-    } catch (error) {
-      // A dead token falls through to the browser login below. Anything else is a
-      // real failure and must not be papered over as "just log in again".
-      if (!isDeadToken(error)) throw error;
-    }
-  }
-
-  // 3. Nothing to exchange and nothing to reuse: the browser flow has to run.
-  if (!creds.requestToken) {
-    if (!creds.apiKey) throw new Error('Zerodha login needs an API key');
-    return {
-      status: false,
-      needsLogin: true,
-      broker: 'zerodha',
-      loginUrl: buildLoginUrl(creds.apiKey),
-      message: 'Zerodha needs a browser login - Kite Connect has no headless login.',
-    };
-  }
-
-  // 2. Exchange the request token the browser flow just produced.
+// exchangeRequestToken turns a one-time request_token into an access_token via
+// the official /session/token endpoint — the same call the browser popup makes.
+// `source` is recorded on the session so the UI can tell how login happened.
+async function exchangeRequestToken(creds, source = 'request-token') {
   assertLoginCreds(creds);
 
   const response = await fetch(`${KITE_API_BASE_URL}/session/token`, {
@@ -273,6 +233,7 @@ export async function autoLogin(input = {}) {
   }
 
   const data = body.data || body;
+  const now = new Date().toISOString();
   const session = {
     apiKey: creds.apiKey,
     // Deliberately NOT the API secret. This session is handed to the browser and
@@ -284,9 +245,9 @@ export async function autoLogin(input = {}) {
     userName: trim(data.user_name || ''),
     userShortname: trim(data.user_shortname || ''),
     broker: 'ZERODHA',
-    loginSource: 'request-token',
-    loginAt: new Date().toISOString(),
-    lastUsedAt: new Date().toISOString(),
+    loginSource: source,
+    loginAt: now,
+    lastUsedAt: now,
   };
 
   if (!session.accessToken) {
@@ -299,9 +260,333 @@ export async function autoLogin(input = {}) {
     clientCode: session.userId || creds.apiKey,
     availableMargin: 0,
     marginSource: 'n/a',
-    sessionSource: 'request-token',
+    sessionSource: source,
     session,
     data,
+  };
+}
+
+// --- Headless auto-login (no popup, no browser) ------------------------------
+// Kite Connect has no login endpoint, but kite.zerodha.com's own web login is a
+// plain cookie + JSON flow, so the whole thing runs on fetch(). Steps:
+//   1. GET connect/login?v=3&api_key=..  Follow the redirects; the page we land
+//      on sets the cookies and carries the sess_id Kite ties this attempt to.
+//   2. POST /api/login  {user_id, password}            -> request_id
+//   3. POST /api/twofa  {user_id, request_id, TOTP}    -> cookies now authorized
+//   4. GET the step-1 URL again with &skip_session=true. With the cookies now
+//      authorized, Kite redirects to the app's redirect_uri carrying
+//      ?request_token=.., which we pluck off the Location header.
+//   5. Exchange that request_token for an access_token — the same call the popup
+//      flow makes, so everything downstream is identical.
+
+// A minimal cookie jar. fetch() drops Set-Cookie between calls, but Kite carries
+// the whole login across cookies, so we harvest and replay them by hand.
+function cookieJar() {
+  const jar = new Map();
+  return {
+    header() {
+      return [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    },
+    names() {
+      return [...jar.keys()];
+    },
+    absorb(res) {
+      const lines =
+        typeof res.headers.getSetCookie === 'function'
+          ? res.headers.getSetCookie()
+          : [res.headers.get('set-cookie')].filter(Boolean);
+      for (const line of lines) {
+        const pair = line.split(';')[0];
+        const eq = pair.indexOf('=');
+        if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+      }
+    },
+  };
+}
+
+function jarHeaders(jar, extra = {}) {
+  const cookie = jar.header();
+  return { 'User-Agent': USER_AGENT, ...(cookie ? { Cookie: cookie } : {}), ...extra };
+}
+
+function requestTokenOf(url) {
+  try {
+    return new URL(url).searchParams.get('request_token') || '';
+  } catch {
+    return '';
+  }
+}
+
+// jarGet walks the redirect chain itself (redirect: 'manual') for two reasons:
+// fetch would not replay our cookies across hops, and we must STOP at the hop
+// carrying request_token instead of chasing it into our own /zerodha/callback
+// route — that route would exchange the token, and Kite only honours it once.
+async function jarGet(jar, startUrl, maxHops = 10) {
+  let url = startUrl;
+  for (let hop = 0; hop < maxHops; hop += 1) {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      headers: jarHeaders(jar, { Accept: 'text/html,application/xhtml+xml,*/*' }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    jar.absorb(res);
+    const location = res.headers.get('location');
+    debug(`GET ${res.status} ${url}`, location ? `-> ${location}` : '');
+    if (res.status >= 300 && res.status < 400 && location) {
+      url = new URL(location, url).toString();
+      const token = requestTokenOf(url);
+      if (token) return { url, requestToken: token };
+      continue;
+    }
+    if (res.status >= 400) throw new Error(`Zerodha login page returned HTTP ${res.status}`);
+    return { url, requestToken: requestTokenOf(url) };
+  }
+  throw new Error('Zerodha login redirected too many times');
+}
+
+async function jarPost(jar, url, form, referer) {
+  const res = await fetch(url, {
+    method: 'POST',
+    redirect: 'manual',
+    headers: jarHeaders(jar, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+      'X-Kite-Version': '3',
+      ...(referer ? { Referer: referer } : {}),
+    }),
+    body: new URLSearchParams(form),
+    signal: AbortSignal.timeout(20_000),
+  });
+  jar.absorb(res);
+  const out = await res.json().catch(() => ({}));
+  debug(`POST ${res.status} ${url} -> status=${out?.status || '?'} ${out?.message || ''}`);
+  if (!res.ok || out.status === 'error') {
+    throw new Error(out?.message || `Zerodha HTTP ${res.status}`);
+  }
+  return out;
+}
+
+const WINDOW_MS = 30_000;
+
+// nearWindowEdge reports whether `atMs` sits in the last few seconds of its 30s
+// TOTP window — the only zone where a same-window round-trip is likely to expire
+// before Kite checks it.
+function nearWindowEdge(atMs, edgeMs = 3_000) {
+  return WINDOW_MS - (atMs % WINDOW_MS) <= edgeMs;
+}
+
+function msUntilNextWindow(atMs) {
+  return WINDOW_MS - (atMs % WINDOW_MS) + 250;
+}
+
+// Kite reports a bad TOTP generically; point at the usual cause, which is a
+// secret copied from the wrong place rather than a mistyped code.
+function hintTOTPError(err) {
+  if (/totp|two.?fa/i.test(err?.message || '')) {
+    return new Error(
+      `${err.message} — check the TOTP secret is the base32 key from Kite's ` +
+        'External TOTP setup ("Can\'t scan? Copy key"), and that the server clock is in sync',
+    );
+  }
+  return err;
+}
+
+// submitTOTP sends the 2FA code, retrying once if the first was generated in the
+// dying seconds of its 30s window and could have expired in flight.
+async function submitTOTP(jar, userId, totpSecret, requestId, twofaType, referer) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const genMs = Date.now();
+    try {
+      return await jarPost(
+        jar,
+        TWOFA_URL,
+        {
+          user_id: userId,
+          request_id: requestId,
+          twofa_value: generateTOTP(totpSecret),
+          ...(twofaType ? { twofa_type: twofaType } : {}),
+        },
+        referer,
+      );
+    } catch (err) {
+      if (attempt > 0 || !nearWindowEdge(genMs)) throw hintTOTPError(err);
+      await sleep(msUntilNextWindow(genMs));
+    }
+  }
+  throw new Error('Zerodha 2FA failed');
+}
+
+// headlessLogin runs the five steps above and returns a session envelope in the
+// same shape as exchangeRequestToken, enriched with margin when available.
+async function headlessLogin(creds) {
+  if (!creds.userId || !creds.password || !creds.totpSecret) {
+    throw new Error('Zerodha auto-login needs User ID, password and TOTP secret');
+  }
+  if (!creds.apiKey || !creds.apiSecret) {
+    throw new Error('Zerodha auto-login needs API key and API secret');
+  }
+
+  const jar = cookieJar();
+
+  // 1. Land on the login page (this seeds the cookies + sess_id).
+  const entry = await jarGet(jar, buildLoginUrl(creds.apiKey));
+
+  // 2. Password -> request_id.
+  const login = await jarPost(jar, WEB_LOGIN_URL, { user_id: creds.userId, password: creds.password }, entry.url);
+  const requestId = login?.data?.request_id;
+  if (!requestId) throw new Error('Zerodha login did not return a request_id');
+
+  // 3. TOTP -> the jar's cookies are now an authorized Kite session.
+  await submitTOTP(jar, creds.userId, creds.totpSecret, requestId, login?.data?.twofa_type, entry.url);
+  debug('2FA accepted; cookies now:', jar.names().join(', '));
+
+  // 4. Replay the connect URL; skip_session=true makes Kite mint the token
+  //    instead of showing the "you are already logged in" interstitial.
+  const replay = new URL(entry.url);
+  replay.searchParams.set('skip_session', 'true');
+  const { url: landedUrl, requestToken } = await jarGet(jar, replay.toString());
+  if (!requestToken) {
+    // First-ever connection: 2FA passed but Kite parked us on the one-time app
+    // Authorize screen. That screen clears only when a human clicks Authorize
+    // once — Zerodha allows no headless path for it. Signal the UI to fall back
+    // to the browser popup; every later headless login then sails through.
+    if (/\/connect\/(authorize|finish)/.test(landedUrl || '')) {
+      const err = new Error(
+        'Zerodha needs a one-time app authorization: open the Kite login popup once and ' +
+          'click "Authorize". After that, auto-login runs headless with no popup.',
+      );
+      err.needsAuthorize = true;
+      throw err;
+    }
+    throw new Error(
+      'Zerodha login succeeded but returned no request_token — check the API key is active ' +
+        'and its redirect URL matches the one registered in the Kite developer console.',
+    );
+  }
+
+  // 5. Same exchange the popup flow performs, then enrich with margin.
+  const result = await exchangeRequestToken({ ...creds, requestToken }, 'auto-login');
+  try {
+    const funds = await margins({ apiKey: result.session.apiKey, accessToken: result.session.accessToken });
+    result.availableMargin = availableCashOf(funds.data || {});
+    result.marginSource = 'kite-margins';
+  } catch {
+    // The token is good; margins are optional for login status.
+  }
+  return result;
+}
+
+/**
+ * Zerodha's login. Kite Connect itself has no login endpoint, but three things
+ * can be automated, tried here in order:
+ *
+ *   1. a saved access token is REUSED, after checking it is still alive;
+ *   2. a request token that the browser flow just produced is exchanged for one;
+ *   3. HEADLESS login — kite.zerodha.com's web login (password + TOTP) is driven
+ *      over fetch() with a cookie jar, so no browser popup is shown. This is the
+ *      path the Broker Config auto-login switch takes.
+ *
+ * Only when none of those is possible does this ask for the browser popup,
+ * handing back the URL to open rather than throwing. The one exception is the
+ * very first connection for an app+account, where Kite demands a human click
+ * "Authorize" once — headlessLogin flags that and the popup covers it.
+ */
+export async function autoLogin(input = {}) {
+  const creds = normalizeInput(input);
+
+  // 1. Reuse a saved token, if it is still good.
+  if (creds.apiKey && creds.accessToken && !creds.requestToken) {
+    try {
+      const me = await profile(input);
+      const data = me.data || {};
+      const session = mergedSession(creds, {
+        userId: trim(data.user_id || creds.session?.userId || creds.userId || ''),
+        userName: trim(data.user_name || creds.session?.userName || ''),
+        userShortname: trim(data.user_shortname || creds.session?.userShortname || ''),
+        broker: 'ZERODHA',
+        loginSource: 'session',
+      });
+
+      let availableMargin = 0;
+      try {
+        const funds = await margins(input);
+        availableMargin = availableCashOf(funds.data || {});
+      } catch {
+        // A funds hiccup must not discard a token the profile call just proved good.
+      }
+
+      return {
+        status: true,
+        broker: 'zerodha',
+        clientCode: session.userId || creds.apiKey,
+        availableMargin,
+        marginSource: 'kite-margins',
+        sessionSource: 'session',
+        session,
+        data,
+      };
+    } catch (error) {
+      // A dead token falls through to a fresh login below. Anything else is a real
+      // failure and must not be papered over as "just log in again".
+      if (!isDeadToken(error)) throw error;
+    }
+  }
+
+  // 2. Exchange a request token the browser callback just produced.
+  if (creds.requestToken) {
+    return exchangeRequestToken(creds);
+  }
+
+  // "Browser Login" button: skip headless and hand back the Kite popup URL. The
+  // /zerodha/login-start + /zerodha/callback pair finishes the exchange.
+  if (creds.manual) {
+    if (!creds.apiKey) throw new Error('Zerodha login needs an API key');
+    return {
+      status: false,
+      needsLogin: true,
+      broker: 'zerodha',
+      loginUrl: buildLoginUrl(creds.apiKey),
+      message: 'Complete the Zerodha browser login to finish signing in.',
+    };
+  }
+
+  // 3. Headless auto-login: password + TOTP drive Kite's web login, no popup.
+  if (creds.autoLogin && creds.userId && creds.password && creds.totpSecret) {
+    try {
+      return await headlessLogin(creds);
+    } catch (error) {
+      // First-ever connection: 2FA passed but Kite is holding on the one-time app
+      // Authorize screen. Don't surface it as an error — hand back a popup URL so
+      // the user clicks Authorize once, then headless takes over from then on.
+      if (error.needsAuthorize) {
+        return {
+          status: false,
+          needsLogin: true,
+          needsAuthorize: true,
+          broker: 'zerodha',
+          message: error.message,
+          loginUrl: creds.apiKey ? buildLoginUrl(creds.apiKey) : '',
+        };
+      }
+      throw error;
+    }
+  }
+
+  // 4. Nothing to reuse, exchange or drive headlessly. Ask for the browser login,
+  //    naming what a headless login would still need so the user can fill it in.
+  if (!creds.apiKey) throw new Error('Zerodha login needs an API key');
+  const missing = [];
+  if (!creds.userId) missing.push('User ID');
+  if (!creds.password) missing.push('Password');
+  if (!creds.totpSecret) missing.push('TOTP Secret');
+  return {
+    status: false,
+    needsLogin: true,
+    broker: 'zerodha',
+    loginUrl: buildLoginUrl(creds.apiKey),
+    message: missing.length
+      ? `Add ${missing.join(', ')} for headless login, or complete the browser login.`
+      : 'Zerodha needs a browser login.',
   };
 }
 
@@ -341,6 +626,9 @@ function normalizeOrder(row = {}) {
     modified: Boolean(row.modified),
     exchange: trim(row.exchange),
     tradingsymbol: trim(row.tradingsymbol),
+    // Kite states neither strike, expiry nor option type on an order - decode them
+    // from the symbol so the Order Book renders the contract, not the raw string.
+    ...zerodhaContractFields(row.tradingsymbol, row),
     instrument_token: row.instrument_token,
     instrumenttoken: row.instrument_token,
     ordertype: statusText(row.order_type),
@@ -380,7 +668,9 @@ function normalizeTrade(row = {}) {
     exchangeorderid: row.exchange_order_id == null ? null : trim(row.exchange_order_id),
     exchange: trim(row.exchange),
     tradingsymbol: trim(row.tradingsymbol),
-    symbolname: trim(row.tradingsymbol),
+    // Kite states neither strike, expiry nor option type on a trade - decode them
+    // from the symbol so the Trade Book renders the contract, not the raw string.
+    ...zerodhaContractFields(row.tradingsymbol, row),
     instrument_token: row.instrument_token,
     instrumenttoken: row.instrument_token,
     producttype: statusText(row.product),
@@ -403,12 +693,98 @@ function normalizeTrade(row = {}) {
   };
 }
 
+const ZERODHA_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+// Zerodha's WEEKLY symbols compress the month to a single character: 1-9 for
+// Jan-Sep, then O / N / D for Oct / Nov / Dec.
+const ZERODHA_WEEKLY_MONTH = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9, O: 10, N: 11, D: 12 };
+
+// "26", 7, "21" -> "2026-07-21" (an exact calendar date the UI renders as such).
+function isoExpiry(yy, month, dd) {
+  return `20${yy}-${String(month).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+}
+
+// A MONTHLY contract's symbol carries only its month and year - the expiry day is
+// simply not in the string - so it is stated as "AUG2026", which the UI renders
+// "Aug 2026". Inventing a day (last Thursday, etc.) would be a guess, and the
+// expiry-day rules have changed more than once.
+function monthlyExpiry(yy, mmm) {
+  return `${mmm}20${yy}`;
+}
+
+/**
+ * Decode a Zerodha NFO trading symbol into its parts.
+ *
+ * Zerodha names the contract ONLY in its trading symbol and repeats none of it as
+ * separate fields on a position/order/trade row. Worse, its monthly form is
+ * genuinely ambiguous once it is a bare string - NIFTY26AUG24000PE reads equally
+ * as Angel's "26 AUG, year 24, strike 000" or Zerodha's "year 26, AUG, strike
+ * 24000" - which is exactly what put a strike of 0 and a 2024 expiry on a 2026
+ * contract. Decode it HERE, where we know it is Zerodha's grammar, and let the row
+ * state each part outright the way Angel and Kotak already do.
+ *
+ *   Future           NIFTY26AUGFUT       ROOT + YY + MMM + FUT
+ *   Monthly option   NIFTY26AUG24000PE   ROOT + YY + MMM + STRIKE + CE/PE
+ *   Weekly option    NIFTY2672124000CE   ROOT + YY + M   + DD + STRIKE + CE/PE
+ *
+ * Returns null for a plain equity symbol (RELIANCE) or anything unrecognised, so
+ * the caller leaves the row's symbol untouched.
+ */
+export function parseZerodhaContract(tradingsymbol) {
+  const text = String(tradingsymbol || '').trim().toUpperCase();
+  if (!text) return null;
+
+  // Future: ROOT + YY + MMM + FUT
+  let m = text.match(/^([A-Z&]+?)(\d{2})([A-Z]{3})FUT$/);
+  if (m && ZERODHA_MONTHS.includes(m[3])) {
+    return { name: m[1], expiry: monthlyExpiry(m[2], m[3]), strike: '', optionType: '', instrumentType: 'FUT' };
+  }
+
+  // Monthly option: ROOT + YY + MMM + STRIKE + CE/PE. The 3-letter month must be a
+  // real month, else this is a weekly whose single-char month happens to be a
+  // letter (O/N/D) - fall through to the weekly form below.
+  m = text.match(/^([A-Z&]+?)(\d{2})([A-Z]{3})(\d+)(CE|PE)$/);
+  if (m && ZERODHA_MONTHS.includes(m[3])) {
+    return { name: m[1], expiry: monthlyExpiry(m[2], m[3]), strike: Number(m[4]), optionType: m[5], instrumentType: m[5] };
+  }
+
+  // Weekly option: ROOT + YY + M + DD + STRIKE + CE/PE
+  m = text.match(/^([A-Z&]+?)(\d{2})([1-9OND])(\d{2})(\d+)(CE|PE)$/);
+  if (m) {
+    const month = ZERODHA_WEEKLY_MONTH[m[3]];
+    if (month) {
+      return { name: m[1], expiry: isoExpiry(m[2], month, m[4]), strike: Number(m[5]), optionType: m[6], instrumentType: m[6] };
+    }
+  }
+
+  return null;
+}
+
+// The root, strike, expiry and option type decoded from a Zerodha trading symbol,
+// in the shape the position, order and trade rows all carry them - so every book
+// renders a contract identically instead of each re-deriving it from the raw, and
+// always ambiguous, symbol (NIFTY26AUG24000PE). A plain equity, or anything
+// unrecognised, keeps the row's own values.
+function zerodhaContractFields(tradingsymbol, row = {}) {
+  const contract = parseZerodhaContract(tradingsymbol);
+  const name = contract ? contract.name : trim(tradingsymbol);
+  return {
+    symbolname: name,
+    stock_name: name,
+    strikeprice: contract && contract.strike !== '' ? contract.strike : (row.strikeprice ?? ''),
+    expirydate: contract ? contract.expiry : (row.expirydate || ''),
+    optiontype: contract ? contract.optionType : (row.optiontype || ''),
+    instrumenttype: contract ? contract.instrumentType : (row.instrumenttype || ''),
+  };
+}
+
 function normalizePosition(row = {}) {
   const quantity = Number(row.quantity || row.net_quantity || row.netqty || 0);
   return {
     ...row,
     tradingsymbol: trim(row.tradingsymbol),
-    symbolname: trim(row.tradingsymbol),
+    // Kite states neither strike, expiry nor option type - decode them from the
+    // symbol so "NIFTY · Aug 2026 · 24000 · PE" shows instead of the raw string.
+    ...zerodhaContractFields(row.tradingsymbol, row),
     exchange: trim(row.exchange),
     instrument_token: row.instrument_token,
     instrumenttoken: row.instrument_token,
@@ -419,7 +795,6 @@ function normalizePosition(row = {}) {
     feedExchange: trim(row.exchange),
     producttype: trim(row.product),
     product: trim(row.product),
-    stock_name: trim(row.tradingsymbol),
     quantity,
     netqty: quantity,
     netQty: quantity,

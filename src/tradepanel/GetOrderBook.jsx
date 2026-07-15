@@ -259,8 +259,11 @@ export default function GetOrderBook() {
   }, [clientError]);
 
   useEffect(() => {
+    // Any in-flight load for the old selection must be ignored once the user
+    // or account changes, otherwise a late response can repaint the old book.
+    loadSeqRef.current += 1;
     autoLoadedAccountRef.current = '';
-  }, [configId]);
+  }, [userId, configId]);
 
   // `options` is only ever passed internally - this is also wired straight to
   // onClick, where the first argument is a DOM event (which has no `.silent`).

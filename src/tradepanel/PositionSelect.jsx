@@ -4,9 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown } from 'lucide-react';
 
-export function CompactSelect({ title, value, options, onChange, disabled = false, menuMinWidth = 0 }) {
+export function CompactSelect({ title, value, options, onChange, disabled = false, menuMinWidth = 0, className = '' }) {
   return (
-    <label className="positions-compact-select">
+    <label className={`positions-compact-select${className ? ` ${className}` : ''}`}>
       <span>{title}</span>
       <PositionSelect
         value={value}

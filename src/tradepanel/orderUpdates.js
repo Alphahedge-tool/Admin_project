@@ -410,3 +410,32 @@ export function useFillRefresh(refresh, { settleMs = 700, confirmMs = 3500 } = {
     ];
   }, [clear, confirmMs, settleMs]);
 }
+
+/**
+ * Per-key variant of useFillRefresh, for a page that watches many accounts at
+ * once (the Client Dashboard's group overview). A burst of fills on ONE member
+ * refreshes only that member's book - keyed by whatever id is passed to the
+ * returned schedule(key) - and settles/confirms independently per member.
+ */
+export function useUserFillRefresh(refresh, { settleMs = 700, confirmMs = 3500 } = {}) {
+  const refreshRef = useRef(refresh);
+  const timersRef = useRef(new Map());
+
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
+  const clearAll = useCallback(() => {
+    timersRef.current.forEach((timers) => timers.forEach(clearTimeout));
+    timersRef.current.clear();
+  }, []);
+
+  useEffect(() => clearAll, [clearAll]);
+
+  return useCallback((key) => {
+    const existing = timersRef.current.get(key);
+    if (existing) existing.forEach(clearTimeout);
+    timersRef.current.set(key, [
+      window.setTimeout(() => refreshRef.current?.(key), settleMs),
+      window.setTimeout(() => refreshRef.current?.(key), confirmMs),
+    ]);
+  }, [confirmMs, settleMs]);
+}

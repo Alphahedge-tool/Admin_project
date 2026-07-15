@@ -179,6 +179,12 @@ export function clientFromAccount(account) {
       apiSecret: account.apiSecret,
       requestToken: account.requestToken,
       accessToken: session?.accessToken,
+      // Headless login creds. With these, autoLogin drives Kite's web login and
+      // never needs the browser popup (bar the one-time app Authorize). Absent,
+      // it falls back to reusing a saved token or asking for the browser login.
+      password: account.password,
+      totpSecret: account.totpSecret,
+      autoLogin: true,
       loggedIn: hasToken('zerodha', session),
       session,
     }
@@ -288,14 +294,16 @@ async function performLogin(configId, force) {
   try {
     const body = await postAutoLogin(broker, client)
 
-    // Zerodha can answer "I need you in a browser". That is not a failure to
-    // classify - it is the one step Kite Connect cannot automate - so it gets its
-    // own message and carries the URL to open, rather than a login-error guess.
+    // Zerodha can answer "I need you in a browser". Headless login covers the
+    // normal case, but the very first connection for an app+account needs a human
+    // to click Authorize once - so this gets its own message and the URL to open,
+    // rather than a login-error guess.
     if (body.needsLogin) {
       const issue = {
         code: 'browser-login',
         title: 'Browser login needed',
-        hint: 'Zerodha has no headless login. Open Users -> Broker Configuration and complete the Zerodha login once - the token then lasts until Zerodha expires it, around 6am the next day.',
+        hint: body.message
+          || 'Open Users -> Broker Configuration and complete the Zerodha login once. After that, auto-login runs headless with no popup until Zerodha expires the token, around 6am the next day.',
       }
       patchAccount(configId, {
         status: 'failed',
@@ -573,6 +581,7 @@ function credentialsOf(account) {
     account.accountId,
     account.apiKey,
     account.pin,
+    account.password,
     account.totpSecret,
     account.accessToken,
     account.mobileNumber,
@@ -637,6 +646,9 @@ async function hydrateAccount(config, user, broker) {
     alias: `${username} - ${full.account_id || configId}`,
     apiKey: full.app_key || '',
     pin: full.pin || '',
+    // Zerodha keeps the account password in its own column (Kite has no PIN);
+    // Angel/Kotak leave it blank and sign in with pin/mpin instead.
+    password: full.password || '',
     totpSecret: full.totp_secret || '',
     // One column, two meanings: app_secret is Kotak's ACCESS TOKEN and Zerodha's
     // API SECRET. Each broker reads the name it knows.

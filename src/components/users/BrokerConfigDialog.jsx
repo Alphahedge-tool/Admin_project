@@ -16,10 +16,11 @@ import {
   Alert,
   Divider,
   Switch,
-  CircularProgress
+  CircularProgress,
+  InputAdornment
 } from '@mui/material'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
-import { apiGet, apiPost, brokerAutoLogin, zerodhaLoginStart, zerodhaLoginUrl } from '../../config/api'
+import { Plus, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
+import { apiGet, apiPost, brokerAutoLogin, zerodhaAutoLogin, zerodhaLoginStart, zerodhaLoginUrl } from '../../config/api'
 import { clearSession, getSavedSession, refreshBrokerAccounts, saveSession } from '../../feedmaster/angelSessionStore'
 
 /* ============ BROKER FIELD SCHEMAS ============
@@ -97,9 +98,9 @@ const BROKER_SCHEMAS = [
     // request_token, then the backend exchanges it for an access_token.
     match: (name) => name.toLowerCase().replace(/\s/g, '').includes('zerodha')
       || name.toLowerCase().replace(/\s/g, '').includes('kite'),
-    autoLogin: false,
+    autoLogin: true,
     broker: 'zerodha',
-    note: 'Zerodha Kite Connect does not support a fully headless login. Save the API credentials here, then complete the browser login flow so the backend can exchange the request token for an access token.',
+    note: 'Zerodha Kite Connect auto-login runs headless from these 5 fields — the backend drives Kite\'s web login with the password and TOTP, no browser popup. The one exception is the very first connection for this app, where Kite needs you to click Authorize once: use "Open Login" for that, and auto-login is headless from then on.',
     fields: [
       {
         name: 'account_id',
@@ -210,6 +211,7 @@ function BrokerConfigDialog({ user, open, onClose }) {
   const [formOpen, setFormOpen] = useState(false)
 
   const [error, setError] = useState('')
+  const [visibleFields, setVisibleFields] = useState({})
 
   // Per-config auto-login state: { [cfgId]: { status, message, margin } }
   // status: 'idle' | 'loading' | 'on' | 'error'
@@ -228,6 +230,7 @@ function BrokerConfigDialog({ user, open, onClose }) {
     setFormOpen(false)
     setError('')
     setLoginState({})
+    setVisibleFields({})
     setForm(EMPTY_FORM)
   }
 
@@ -321,6 +324,14 @@ function BrokerConfigDialog({ user, open, onClose }) {
     setForm(EMPTY_FORM)
     setEditing(null)
     setError('')
+    setVisibleFields({})
+  }
+
+  const toggleFieldVisibility = (fieldName) => {
+    setVisibleFields((prev) => ({
+      ...prev,
+      [fieldName]: !prev[fieldName],
+    }))
   }
 
   const ensureBrokerRow = async () => {
@@ -436,19 +447,46 @@ function BrokerConfigDialog({ user, open, onClose }) {
     setLoginState(prev => ({ ...prev, [cfgId]: state }))
   }
 
+  // Zerodha's browser login, for the one-time app Authorize (or when a headless
+  // login can't run). MUST be called straight from a click so window.open isn't
+  // treated as an unsolicited popup and blocked - hence its own handler, opened
+  // synchronously before any await. The postMessage listener above saves the
+  // session and flips the row to 'on' once Kite redirects back.
+  const openZerodhaBrowserLogin = async (cfg) => {
+    const popup = window.open('', '_blank')
+    if (!popup) {
+      setCfgLogin(cfg.id, { status: 'error', message: 'Popup blocked. Allow popups to complete Zerodha login.' })
+      return
+    }
+    try {
+      const cfgDetails = await apiGet(`/users/broker-config/get.php?id=${cfg.id}`)
+      const apiKey = cfgDetails.data?.app_key || cfg.app_key || ''
+      const apiSecret = cfgDetails.data?.app_secret || cfg.app_secret || ''
+      if (!apiKey || !apiSecret) {
+        throw new Error('Missing Zerodha API key or API secret')
+      }
+      await zerodhaLoginStart({ configId: String(cfg.id), apiKey, apiSecret })
+      const loginUrl = await zerodhaLoginUrl(apiKey)
+      if (loginUrl?.url) {
+        popup.location.href = loginUrl.url
+        setCfgLogin(cfg.id, { status: 'loading', message: 'Complete the Zerodha login in the opened tab.' })
+        return
+      }
+      throw new Error('Zerodha login URL could not be created')
+    } catch (e) {
+      popup.close()
+      setCfgLogin(cfg.id, { status: 'error', message: e.message })
+    }
+  }
+
   const handleLoginToggle = async (cfg) => {
     const current = loginState[cfg.id]
     const cfgSchema = getBrokerSchema(cfg.broker_name)
     const broker = cfgSchema.broker || 'angel'
-    const key = sessionKey(cfg.id, broker)
 
-    // Turn OFF → drop the saved session
-    if (current?.status === 'on') {
-      localStorage.removeItem(key)
-      setCfgLogin(cfg.id, { status: 'idle' })
-      return
-    }
-
+    // Zerodha: headless login (password + TOTP) start-to-finish, so its session
+    // lives under the zerodha_session_ key and never touches Angel's. The browser
+    // popup is only the one-time app Authorize, offered via a separate button.
     if (broker === 'zerodha') {
       if (current?.status === 'on' || hasSavedZerodhaSession(cfg.id)) {
         clearSession(cfg.id, 'zerodha')
@@ -456,38 +494,63 @@ function BrokerConfigDialog({ user, open, onClose }) {
         return
       }
 
-      const popup = window.open('', '_blank')
-      if (!popup) {
-        setCfgLogin(cfg.id, { status: 'error', message: 'Popup blocked. Allow popups to complete Zerodha login.' })
-        return
-      }
-
+      setCfgLogin(cfg.id, { status: 'loading' })
       try {
-        const cfgDetails = await apiGet(`/users/broker-config/get.php?id=${cfg.id}`)
-        const apiKey = cfgDetails.data?.app_key || cfg.app_key || ''
-        const apiSecret = cfgDetails.data?.app_secret || cfg.app_secret || ''
-        if (!apiKey || !apiSecret) {
-          throw new Error('Missing Zerodha API key or API secret')
+        const res = await apiGet(`/users/broker-config/get.php?id=${cfg.id}`)
+        const c = res.data || {}
+        const missing = cfgSchema.fields
+          .filter(f => f.required && !String(c[f.name] || '').trim())
+          .map(f => f.label)
+        if (missing.length) {
+          throw new Error(`Missing credentials — edit this config and fill ${missing.join(', ')}`)
         }
-        await zerodhaLoginStart({
-          configId: String(cfg.id),
-          apiKey,
-          apiSecret,
+
+        const data = await zerodhaAutoLogin({
+          clientCode: c.account_id,
+          apiKey: c.app_key,
+          apiSecret: c.app_secret,
+          password: c.password,
+          totpSecret: c.totp_secret,
+          session: getSavedSession(cfg.id, 'zerodha'),
         })
-        const loginUrl = await zerodhaLoginUrl(apiKey)
-        if (loginUrl?.url) {
-          popup.location.href = loginUrl.url
+
+        if (data.status && data.session?.accessToken) {
+          saveSession(cfg.id, data.session, 'zerodha')
           setCfgLogin(cfg.id, {
-            status: 'loading',
-            message: 'Complete the Zerodha login in the opened tab.',
+            status: 'on',
+            message: data.sessionSource === 'session'
+              ? 'Logged in (session reused)'
+              : 'Logged in (headless TOTP login)',
+            margin: data.availableMargin,
+          })
+          refreshBrokerAccounts().catch(() => {})
+          return
+        }
+
+        // Headless couldn't finish on its own — the one-time app Authorize. Point
+        // at the browser fallback rather than auto-opening a popup, which the
+        // browser would block after this await.
+        if (data.needsLogin) {
+          setCfgLogin(cfg.id, {
+            status: 'needs-browser',
+            message: data.message || 'Click "Open Login" to authorize the app once.',
           })
           return
         }
-        throw new Error('Zerodha login URL could not be created')
+
+        throw new Error(data.message || 'Zerodha login failed')
       } catch (e) {
-        popup.close()
         setCfgLogin(cfg.id, { status: 'error', message: e.message })
       }
+      return
+    }
+
+    const key = sessionKey(cfg.id, broker)
+
+    // Turn OFF → drop the saved session
+    if (current?.status === 'on') {
+      localStorage.removeItem(key)
+      setCfgLogin(cfg.id, { status: 'idle' })
       return
     }
 
@@ -614,42 +677,37 @@ function BrokerConfigDialog({ user, open, onClose }) {
                       Logging in…
                     </Typography>
                   )}
+                  {login.status === 'needs-browser' && (
+                    <Typography fontSize="0.8rem" color="warning.main">
+                      ⚠ {login.message} Use “Open Login”.
+                    </Typography>
+                  )}
                 </Box>
 
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  {/* AUTO-LOGIN SWITCH (brokers that support it) */}
+                  {/* AUTO-LOGIN SWITCH — Angel, Kotak and now Zerodha (headless) */}
                   {cfgSchema.autoLogin && (
                     login.status === 'loading' ? (
                       <CircularProgress size={20} sx={{ mx: 1.5 }} />
                     ) : (
                       <Switch
                         size="small"
-                        checked={login.status === 'on'}
+                        checked={loginOn}
                         onChange={() => handleLoginToggle(cfg)}
                       />
                     )
                   )}
 
-                  {/* Zerodha needs a browser login, so show a visible action
-                      row instead of hiding the control entirely. */}
-                  {!cfgSchema.autoLogin && isZerodha && (
-                    login.status === 'loading' ? (
-                      <CircularProgress size={20} sx={{ mx: 1.5 }} />
-                    ) : loginOn ? (
-                      <Switch
-                        size="small"
-                        checked
-                        onChange={() => handleLoginToggle(cfg)}
-                      />
-                    ) : (
-                      <Button
-                        size="small"
-                        onClick={() => handleLoginToggle(cfg)}
-                        sx={{ mr: 0.5 }}
-                      >
-                        Open Login
-                      </Button>
-                    )
+                  {/* Zerodha's first-ever connection needs a one-time browser
+                      "Authorize"; keep it one click away until the row is on. */}
+                  {isZerodha && !loginOn && login.status !== 'loading' && (
+                    <Button
+                      size="small"
+                      onClick={() => openZerodhaBrowserLogin(cfg)}
+                      sx={{ mr: 0.5 }}
+                    >
+                      Open Login
+                    </Button>
                   )}
 
                   <IconButton size="small" onClick={() => handleEdit(cfg)}>
@@ -719,11 +777,26 @@ function BrokerConfigDialog({ user, open, onClose }) {
                         fullWidth
                         required={!!f.required}
                         label={f.label}
-                        type={f.type || 'text'}
+                        type={f.type === 'password' && visibleFields[f.name] ? 'text' : (f.type || 'text')}
                         margin="normal"
                         helperText={f.helper || ''}
                         value={form[f.name]}
                         onChange={handleChange(f.name)}
+                        InputProps={f.type === 'password' ? {
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                edge="end"
+                                size="small"
+                                onClick={() => toggleFieldVisibility(f.name)}
+                                onMouseDown={(e) => e.preventDefault()}
+                                aria-label={visibleFields[f.name] ? `Hide ${f.label}` : `Show ${f.label}`}
+                              >
+                                {visibleFields[f.name] ? <EyeOff size={16} /> : <Eye size={16} />}
+                              </IconButton>
+                            </InputAdornment>
+                          )
+                        } : undefined}
                         />
                     ))}
                     </Box>

@@ -31,6 +31,36 @@ import BrokerConfigDialog from '../components/users/BrokerConfigDialog'
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const mobileRegex = /^[0-9]{10}$/
 
+const buildDisplayName = (firstName, lastName) =>
+  [firstName, lastName].map(v => String(v || '').trim()).filter(Boolean).join(' ')
+
+const splitDisplayName = (value) => {
+  const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
+
+  return {
+    firstName: parts.shift() || '',
+    lastName: parts.join(' ')
+  }
+}
+
+const buildFallbackEmail = (username) => {
+  const safeUsername = String(username || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '.')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.|\.$/g, '')
+
+  const uniqueSuffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  return `${safeUsername || 'user'}.${uniqueSuffix}@local.invalid`
+}
+
+const buildFallbackMobile = () => {
+  const bytes = new Uint8Array(9)
+  crypto.getRandomValues(bytes)
+  return `9${Array.from(bytes, b => b % 10).join('')}`
+}
+
 function UsersPage() {
   /* ================= STATE ================= */
   const [users, setUsers] = useState([])
@@ -69,7 +99,9 @@ function UsersPage() {
 
       const normalized = res.data.map(u => ({
         id: u.id,
-        first_name: `${u.first_name} ${u.last_name}`,
+        firstName: u.first_name ?? '',
+        lastName: u.last_name ?? '',
+        first_name: buildDisplayName(u.first_name, u.last_name),
         username: u.username,
         email: u.email,
         mobile: u.mobile,
@@ -171,14 +203,15 @@ function UsersPage() {
     const e = {}
 
     if (!form.firstName.trim()) e.firstName = 'First name required'
-    if (!form.lastName.trim()) e.lastName = 'Last name required'
     if (!form.username.trim()) e.username = 'Username required'
 
-    if (!form.email.trim()) e.email = 'Email required'
-    else if (!emailRegex.test(form.email)) e.email = 'Invalid email'
+    if (form.email.trim() && !emailRegex.test(form.email.trim())) {
+      e.email = 'Invalid email'
+    }
 
-    if (!form.mobile.trim()) e.mobile = 'Mobile required'
-    else if (!mobileRegex.test(form.mobile)) e.mobile = 'Mobile must be 10 digits'
+    if (form.mobile.trim() && !mobileRegex.test(form.mobile.trim())) {
+      e.mobile = 'Mobile must be 10 digits'
+    }
 
     if (!form.segments.mf && !form.segments.equity && !form.segments.fno) {
       e.segments = 'Select at least one segment'
@@ -213,10 +246,11 @@ function UsersPage() {
   const handleEdit = (row) => {
     setEditingUser(row)
 
-    const parts = row.first_name.split(' ')
+    const parsedName = splitDisplayName(row.first_name || row.firstName || row.username)
+
     setForm({
-      firstName: parts[0],
-      lastName: parts.slice(1).join(' '),
+      firstName: row.firstName || parsedName.firstName || '',
+      lastName: row.lastName || parsedName.lastName || '',
       username: row.username,
       email: row.email,
       mobile: row.mobile,
@@ -242,12 +276,18 @@ const handleDelete = (row) => {
     setApiError('')
 
     try {
+      const trimmedFirstName = form.firstName.trim()
+      const trimmedLastName = form.lastName.trim()
+      const trimmedUsername = form.username.trim()
+      const trimmedEmail = form.email.trim()
+      const trimmedMobile = form.mobile.trim()
+
       const payload = {
-        first_name: form.firstName,
-        last_name: form.lastName,
-        username: form.username,
-        email: form.email,
-        mobile: form.mobile,
+        first_name: trimmedFirstName,
+        last_name: trimmedLastName,
+        username: trimmedUsername,
+        email: trimmedEmail || buildFallbackEmail(trimmedUsername),
+        mobile: trimmedMobile || buildFallbackMobile(),
         group_name: form.group_name || null,
         segment_mf: form.segments.mf,
         segment_equity: form.segments.equity,
@@ -290,13 +330,27 @@ const handleDelete = (row) => {
     })
   }
 
+  const openAddDialog = () => {
+    setEditingUser(null)
+    resetForm()
+    setErrors({})
+    setApiError('')
+    setOpen(true)
+  }
+
+  const closeDialog = () => {
+    setOpen(false)
+    setErrors({})
+    setApiError('')
+  }
+
   /* ================= RENDER ================= */
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* HEADER */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="h5" fontWeight={600}>Users</Typography>
-        <Button variant="contained" onClick={() => setOpen(true)}>Add User</Button>
+        <Button variant="contained" onClick={openAddDialog}>Add User</Button>
       </Box>
 
       {/* TABLE */}
@@ -314,7 +368,7 @@ const handleDelete = (row) => {
       </Paper>
 
       {/* ADD / EDIT DIALOG */}
-      <Dialog open={open} onClose={() => setOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={open} onClose={closeDialog} maxWidth="sm" fullWidth>
         <DialogTitle>{editingUser ? 'Edit User' : 'Add New User'}</DialogTitle>
 
         <DialogContent>
@@ -324,7 +378,7 @@ const handleDelete = (row) => {
             value={form.firstName} onChange={handleChange('firstName')}
             error={!!errors.firstName} helperText={errors.firstName}
           />
-          <TextField fullWidth label="Last Name" margin="normal"
+          <TextField fullWidth label="Last Name (optional)" margin="normal"
             value={form.lastName} onChange={handleChange('lastName')}
             error={!!errors.lastName} helperText={errors.lastName}
           />
@@ -332,11 +386,11 @@ const handleDelete = (row) => {
             value={form.username} onChange={handleChange('username')}
             error={!!errors.username} helperText={errors.username}
           />
-          <TextField fullWidth label="Email" margin="normal"
+          <TextField fullWidth label="Email (optional)" margin="normal"
             value={form.email} onChange={handleChange('email')}
             error={!!errors.email} helperText={errors.email}
           />
-          <TextField fullWidth label="Mobile" margin="normal"
+          <TextField fullWidth label="Mobile (optional)" margin="normal"
             value={form.mobile} onChange={handleChange('mobile')}
             error={!!errors.mobile} helperText={errors.mobile}
           />
@@ -441,7 +495,7 @@ const handleDelete = (row) => {
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={closeDialog}>Cancel</Button>
           <Button variant="contained" onClick={handleSave} disabled={saving}>Save</Button>
         </DialogActions>
       </Dialog>
