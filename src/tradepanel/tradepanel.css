@@ -4581,7 +4581,7 @@ html[data-theme="dark"] .strategy-master-check.indeterminate {
   padding: 0 8px 0 10px;
   border: 1px solid var(--ao-border);
   border-radius: 8px;
-  background: linear-gradient(180deg, #FFFFFF, #FBFCFF);
+  background: linear-gradient(180deg, var(--ao-surface), var(--ao-surface-2));
   color: var(--ao-bold);
   box-shadow: 0 1px 1px rgba(43, 47, 63, .03);
   cursor: pointer;
@@ -4589,8 +4589,8 @@ html[data-theme="dark"] .strategy-master-check.indeterminate {
   transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
 .position-select-trigger:hover {
-  border-color: #cfd3da;
-  background: #FFFFFF;
+  border-color: color-mix(in srgb, var(--ao-bold) 22%, var(--ao-border));
+  background: var(--ao-surface);
 }
 .position-select.open .position-select-trigger,
 .position-select-trigger:focus-visible {
@@ -4736,7 +4736,7 @@ html[data-theme="dark"] .strategy-master-check.indeterminate {
   white-space: nowrap;
   padding: 2px 6px;
   border-radius: 4px;
-  background: #EEF2FF;
+  background: var(--ao-blue-bg);
   color: var(--ao-blue);
   font-size: 12px;
   font-style: normal;
@@ -5471,7 +5471,7 @@ button.position-expiry-row-content {
   font-size: 13px;
 }
 .position-price {
-  color: #1f2937;
+  color: var(--ao-bold);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -6905,9 +6905,11 @@ button.position-expiry-row-content {
   margin-top: 0;
   gap: 4px;
   padding-bottom: 4px;
-  border: 1px solid var(--ao-border-soft);
-  border-radius: 4px;
+  border: 1px solid var(--ao-border);
+  border-radius: 8px;
   background: var(--ao-surface-2);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 .sync-view-production .strategy-list-head {
   min-height: 34px;
@@ -7314,11 +7316,17 @@ html[data-theme="dark"] .position-book-table th {
 }
 
 html[data-theme="dark"] .position-select-trigger,
-html[data-theme="dark"] .position-select-trigger:hover,
 html[data-theme="dark"] .position-select.compact .position-select-trigger {
-  background: var(--ao-surface);
+  background: linear-gradient(180deg, var(--ao-surface-2), var(--ao-surface));
   border-color: var(--ao-border);
   color: var(--ao-bold);
+}
+html[data-theme="dark"] .position-select-trigger:hover {
+  background: var(--ao-hover);
+  border-color: color-mix(in srgb, var(--ao-bold) 30%, var(--ao-border));
+}
+html[data-theme="dark"] .position-select-menu {
+  box-shadow: var(--shadow-pop);
 }
 
 html[data-theme="dark"] .position-book-table tbody tr:hover td,
@@ -8533,5 +8541,74 @@ html:not([data-theme="dark"]) .client-dashboard-production
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   LOADING SKELETONS (trade-panel custom tables & cards)
+   Theme-aware via --ao-* tokens: a solid bar that reads against
+   both the light and dark surfaces, with a soft highlight sweep.
+   ============================================================ */
+.tp-skeleton-bar {
+  display: block;
+  height: 11px;
+  border-radius: 999px;
+  background-color: var(--ao-border-soft);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--ao-border) 45%,
+    var(--ao-border) 55%,
+    transparent 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 220% 100%;
+  animation: tp-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.tp-skeleton-bar.sm {
+  height: 8px;
+}
+
+.tp-skeleton-row td {
+  height: 38px;
+  vertical-align: middle;
+}
+
+.tp-skeleton-cards {
+  display: grid;
+  gap: 6px;
+}
+.tp-skeleton-card {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(220px, 1fr) minmax(200px, 320px);
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--ao-surface-2), var(--ao-surface));
+}
+.tp-skeleton-card-cell {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.tp-skeleton-card-cell.metrics {
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 10px;
+}
+
+@keyframes tp-skeleton-shimmer {
+  0% { background-position: 180% 0; }
+  100% { background-position: -80% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-skeleton-bar {
+    animation: none;
+    /* Freeze the highlight over the bar so it still reads as a placeholder. */
+    background-position: 50% 0;
+  }
 }
 

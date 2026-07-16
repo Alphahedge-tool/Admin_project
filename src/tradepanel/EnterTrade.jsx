@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Crosshair, LoaderCircle, Search, X } from 'lucide-react';
 import Basket from './Basket.jsx';
+import { SkeletonRows } from './TableSkeleton';
 import { useAngelAccount } from './useAngelAccount';
 import { useFeedMasterAccount } from '../feedmaster/feedMasterStore';
 import { classifyLoginError, ensureSession } from '../feedmaster/angelSessionStore';
@@ -979,6 +980,10 @@ const OptionChainPanel = React.memo(function OptionChainPanel({
             </tr>
           </thead>
           <tbody>
+            {/* First load only: skeleton rows while the chain is being fetched
+                and nothing is on screen yet. A reload keeps the current chain
+                (chain stays set), so the live table never flashes to skeletons. */}
+            {loading && !chain && <SkeletonRows count={9} columns={9} />}
             {(chain?.strikes || []).map((strike, index) => {
               const callTick = live[chain.callTokens?.[index]];
               const putTick = live[chain.putTokens?.[index]];
@@ -1009,7 +1014,7 @@ const OptionChainPanel = React.memo(function OptionChainPanel({
                 />
               );
             })}
-            {!chain && (
+            {!chain && !loading && (
               <tr>
                 <td className="chain-empty" colSpan="9">Select expiry and load chain</td>
               </tr>

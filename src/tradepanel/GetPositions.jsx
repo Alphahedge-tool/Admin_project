@@ -5,17 +5,18 @@ import { createPortal } from 'react-dom';
 import { ArrowUpDown, Check, ChevronDown, Filter, Info, Layers, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet, apiPost } from '../config/api';
 import {
-  classifyLoginError, isAngelBroker, isAuthError, isRateLimited,
+  classifyLoginError, ensureAccountsLoaded, isAngelBroker, isAuthError, isRateLimited,
 } from '../feedmaster/angelSessionStore';
 import {
   ensureBookSession, fetchBrokerPositions, hasBookSession, isBookBroker,
   saveBookSession, useBrokerBookClient,
 } from './brokerBookClient';
 import { orderIsFill, useFillRefresh, useOrderUpdates } from './orderUpdates';
-import { useSharedTradeAccount, useSignedInAccounts } from './accountScope';
+import { useSharedTradeAccount, useAvailableAccounts } from './accountScope';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { compactProductTag, contractMeta } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
+import { SkeletonRows } from './TableSkeleton';
 import { useLiveLegFeed } from './useLiveLegFeed';
 import './tradepanel.css';
 
@@ -143,7 +144,7 @@ export default function GetPositions() {
   const loadRef = useRef(null);
   const loadSeqRef = useRef(0);
 
-  const signedIn = useSignedInAccounts();
+  const available = useAvailableAccounts();
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedUser = users.find((user) => String(user.id) === String(userId));
   const selectedUserLabel = selectedUser
@@ -227,17 +228,23 @@ export default function GetPositions() {
     onAdopt: () => setLoading(true),
   });
 
-  // Only signed-in accounts are offered. One that never logged in has no book to
-  // read, and a user with no signed-in account has nothing to show at all.
+  // Load the account list once (all configured accounts, no auto-login), so every
+  // account is offered in the pickers and the picked one can sign in on demand -
+  // the app no longer logs brokers in at startup.
+  useEffect(() => { ensureAccountsLoaded(); }, []);
+
+  // Every configured account is offered - logged in or not. Picking one that is
+  // not signed in yet signs it in on demand (see load()), which is how an account
+  // that was never logged in still shows up here and becomes usable.
   const visibleUsers = useMemo(
-    () => (signedIn.ready ? users.filter((user) => signedIn.userIds.has(String(user.id))) : users),
-    [users, signedIn],
+    () => (available.ready ? users.filter((user) => available.userIds.has(String(user.id))) : users),
+    [users, available],
   );
   const visibleConfigs = useMemo(
-    () => (signedIn.ready
-      ? configs.filter((config) => signedIn.configIds.has(String(config.id)))
+    () => (available.ready
+      ? configs.filter((config) => available.configIds.has(String(config.id)))
       : configs),
-    [configs, signedIn],
+    [configs, available],
   );
 
   // A selection that is not on screen cannot stay selected - move to one that is.
@@ -831,6 +838,13 @@ export default function GetPositions() {
               </tr>
             </thead>
             <tbody>
+              {/* First load only: skeleton rows while there's nothing on screen
+                  yet. Silent background refreshes (the timer / order stream) keep
+                  loading false and never reach here, so live rows never flash. */}
+              {loading && positionRows.length === 0 ? (
+                <SkeletonRows count={8} columns={POSITION_COLUMNS.length} />
+              ) : (
+                <>
               {tableRows.map((item, i) => (
                 item.type === 'group' ? (
                   <tr
@@ -894,6 +908,8 @@ export default function GetPositions() {
                     </div>
                   </td>
                 </tr>
+              )}
+                </>
               )}
             </tbody>
           </table>

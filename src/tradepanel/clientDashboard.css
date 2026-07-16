@@ -484,6 +484,80 @@ html[data-theme] .client-dashboard-production .client-strategy-metrics > div:las
   background: transparent;
 }
 
+/* Compact view tiles the strategy containers side by side instead of stacking
+   them full width, so many strategies are visible at once. Collapsed tiles are
+   narrow and stack their own summary (name / broker / metrics) to fit. Opening a
+   tile widens it to TWO columns so the full 7-column leg table fits without any
+   clipping, while the other strategies stay beside it. */
+/* Flexbox (not grid) so each card's width follows what it needs: mixing a
+   collapsed tile with expanded ones on a CSS grid gave uneven track widths that
+   squeezed some expanded cards until their Strategy P&L clipped. Here a collapsed
+   tile stays compact while an opened card is guaranteed at least 780px - room for
+   the whole leg table AND the full header - and grows to take the rest of its
+   row. Cards wrap, and flex-grow fills each row so there is no dead space. */
+html[data-theme] .client-dashboard-production .client-strategy-row--compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+/* An opened card claims at least 780px and the lion's share of any spare width
+   (high grow), so a collapsed neighbour beside it stays compact instead of
+   ballooning. At most two open cards fit per row on a wide screen; on a narrow
+   one an open card wraps to its own full-width row. */
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card.expanded {
+  flex: 999 1 780px;
+}
+
+/* Expanded card header: let the metrics (…, Strategy P&L) size to their content
+   and the name column absorb the slack, so the P&L never overflows the card. */
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card.expanded .client-strategy-summary {
+  grid-template-columns: minmax(150px, 1fr) minmax(0, auto) minmax(0, auto);
+}
+
+/* Collapsed tiles: stack the summary so it fits the narrow container. An expanded
+   (two-wide) tile has room for the normal horizontal summary, so it is left to
+   the base rule. */
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card:not(.expanded) .client-strategy-summary {
+  grid-template-areas:
+    "name"
+    "broker"
+    "metrics";
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card:not(.expanded) .client-strategy-metrics {
+  justify-content: space-between;
+  gap: 0;
+  margin-top: 2px;
+  padding-top: 7px;
+  border-top: 1px solid var(--ao-border-soft);
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card:not(.expanded) .client-strategy-metrics > div {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card:not(.expanded) .client-strategy-metrics > div:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card:not(.expanded) .client-strategy-metrics > div:last-child {
+  min-width: 0;
+}
+
 /* Expanded table: exact Get Positions rhythm. */
 html[data-theme] .client-dashboard-production .client-expanded-details {
   display: block;
@@ -509,8 +583,11 @@ html[data-theme] .client-dashboard-production .client-panel-total {
 
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact {
   width: 100%;
+  /* Content-sized columns (NOT table-layout:fixed) so a long contract line or an
+     "Exit <price>" pill never overflows its cell and paints over the next column.
+     The panel scrolls horizontally (overflow-x:auto) past this floor, exactly like
+     Sync Net Positions, so nothing is ever clipped or squeezed. */
   min-width: 960px;
-  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -704,6 +781,17 @@ html[data-theme] .client-dashboard-production .down { color: var(--ao-red); }
 html[data-theme] .client-dashboard-production .compact-legs {
   padding: 0 10px;
   background: var(--ao-surface);
+  /* The contract line (root + expiry + strike + option + tags) gets a wide floor
+     so the stock name is never ellipsised - the chips alone need ~330px, so a
+     narrower track squeezed "NIFTY" down to "N…". Below the grid's min-width the
+     panel scrolls instead of clipping. Seven tracks, matching the compact header. */
+  min-width: 760px;
+  grid-template-columns:
+    20px
+    minmax(380px, 3fr)
+    repeat(3, minmax(56px, 0.8fr))
+    minmax(88px, 1fr)
+    minmax(88px, 1fr);
 }
 
 html[data-theme] .client-dashboard-production .compact-leg-row {
@@ -725,6 +813,14 @@ html[data-theme] .client-dashboard-production .legs-split {
   gap: 6px;
   padding: 6px;
   background: var(--ao-bg);
+}
+
+/* Buy/Sell shows two tables side by side, so the single-table 960px floor would
+   force ~1920px and squeeze both. Drop the floor here: each table sizes to its
+   own content within its half and the panel scrolls if a side is wider, while the
+   split still stacks to one column under 900px (see base .legs-split). */
+html[data-theme] .client-dashboard-production .legs-split .strategy-legs-table.position-book-compact {
+  min-width: 0;
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-empty,

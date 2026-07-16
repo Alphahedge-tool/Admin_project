@@ -12,7 +12,8 @@ import {
   RadioGroup,
   FormControlLabel,
   Radio,
-  IconButton
+  IconButton,
+  Skeleton
 } from '@mui/material'
 import Autocomplete from '@mui/material/Autocomplete'
 import { Pencil, Trash2 } from 'lucide-react'
@@ -172,7 +173,49 @@ function UserBalances() {
             <SummaryTile label="Net" value={summary.net_investment} bold />
           </Box>
         )}
+
+        {/* A user is picked but their summary hasn't arrived yet: hold the
+            tiles' space with skeletons instead of a blank gap. */}
+        {selectedUser && !summary && (
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Skeleton variant="rounded" width={128} height={62} />
+            <Skeleton variant="rounded" width={128} height={62} />
+            <Skeleton variant="rounded" width={128} height={62} />
+          </Box>
+        )}
       </Box>
+
+      {/* Transactions table skeleton for the same first-load window. */}
+      {selectedUser && !summary && (
+        <Paper sx={{ p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Skeleton variant="text" width={130} sx={{ fontSize: '1rem' }} />
+            <Skeleton variant="rounded" width={110} height={30} />
+          </Box>
+          <table width="100%" style={{ borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <Th align="center">Date</Th>
+                <Th align="right">Added</Th>
+                <Th align="right">Withdrawn</Th>
+                <Th align="right">Net</Th>
+                <Th align="center">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <tr key={`balance-skeleton-${i}`}>
+                  <Td align="center"><Skeleton variant="text" width="70%" sx={{ mx: 'auto' }} /></Td>
+                  <Td align="right"><Skeleton variant="text" width="60%" sx={{ ml: 'auto' }} /></Td>
+                  <Td align="right"><Skeleton variant="text" width="60%" sx={{ ml: 'auto' }} /></Td>
+                  <Td align="right"><Skeleton variant="text" width="60%" sx={{ ml: 'auto' }} /></Td>
+                  <Td align="center"><Skeleton variant="text" width="40%" sx={{ mx: 'auto' }} /></Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Paper>
+      )}
 
       {selectedUser && summary && (
         <Paper sx={{ p: 2 }}>

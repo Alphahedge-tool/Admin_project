@@ -5,17 +5,18 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, Check, ClipboardList, Filter, Info, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet } from '../config/api';
 import {
-  classifyLoginError, isAuthError, isRateLimited,
+  classifyLoginError, ensureAccountsLoaded, isAuthError, isRateLimited,
 } from '../feedmaster/angelSessionStore';
 import {
   ensureBookSession, fetchBrokerBook, hasBookSession, isBookBroker, isKotakBroker,
   saveBookSession, useBrokerBookClient,
 } from './brokerBookClient';
 import { useOrderUpdates } from './orderUpdates';
-import { useSharedTradeAccount, useSignedInAccounts } from './accountScope';
+import { useSharedTradeAccount, useAvailableAccounts } from './accountScope';
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore';
 import { contractMeta, compactProductTag } from './symbolParse';
 import { CompactSelect, PositionSelect } from './PositionSelect';
+import { SkeletonRows } from './TableSkeleton';
 import './tradepanel.css';
 
 const ORDER_COLUMNS = ['order', 'side', 'type', 'qty', 'price', 'status', 'updated'];
@@ -79,7 +80,7 @@ export default function GetOrderBook() {
   const loadRef = useRef(null);
   const loadSeqRef = useRef(0);
 
-  const signedIn = useSignedInAccounts();
+  const available = useAvailableAccounts();
   const selectedConfig = configs.find((config) => String(config.id) === String(configId));
   const selectedBrokerName = selectedConfig?.broker_name || '';
   const selectedIsKotak = isKotakBroker(selectedBrokerName);
@@ -113,16 +114,23 @@ export default function GetOrderBook() {
     onAdopt: () => setLoading(true),
   });
 
-  // Only signed-in accounts are offered - one that never logged in has no book.
+  // Load the account list once (all configured accounts, no auto-login), so every
+  // account is offered in the pickers and the picked one can sign in on demand -
+  // the app no longer logs brokers in at startup.
+  useEffect(() => { ensureAccountsLoaded(); }, []);
+
+  // Every configured account is offered - logged in or not. Picking one that is
+  // not signed in yet signs it in on demand (see load()), which is how an account
+  // that was never logged in still shows up here and becomes usable.
   const visibleUsers = useMemo(
-    () => (signedIn.ready ? users.filter((user) => signedIn.userIds.has(String(user.id))) : users),
-    [users, signedIn],
+    () => (available.ready ? users.filter((user) => available.userIds.has(String(user.id))) : users),
+    [users, available],
   );
   const visibleConfigs = useMemo(
-    () => (signedIn.ready
-      ? configs.filter((config) => signedIn.configIds.has(String(config.id)))
+    () => (available.ready
+      ? configs.filter((config) => available.configIds.has(String(config.id)))
       : configs),
-    [configs, signedIn],
+    [configs, available],
   );
 
   useEffect(() => {
@@ -502,6 +510,13 @@ export default function GetOrderBook() {
               </tr>
             </thead>
             <tbody>
+              {/* First load only: skeletons while the book is empty. Silent
+                  refreshes (timer / live stream) keep loading false, so an
+                  on-screen book never flashes back to skeletons. */}
+              {loading && rows.length === 0 ? (
+                <SkeletonRows count={8} columns={ORDER_COLUMNS.length} />
+              ) : (
+                <>
               {tableRows.map((item, index) => (
                 item.type === 'group' ? (
                   <tr key={`expiry-${item.key}-${index}`} className="position-expiry-row orderbook-expiry-row">
@@ -547,6 +562,8 @@ export default function GetOrderBook() {
                     </div>
                   </td>
                 </tr>
+              )}
+                </>
               )}
             </tbody>
           </table>

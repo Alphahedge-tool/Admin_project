@@ -12,7 +12,8 @@ import {
   Pagination,
   Typography,
   InputAdornment,
-  Tooltip
+  Tooltip,
+  Skeleton
 } from '@mui/material'
 import { Pencil, Trash2, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -39,6 +40,9 @@ function DataTable({
   columns = [],
   rows = [],
   pageSize = 5,
+
+  /* LOADING */
+  loading = false,
 
   /* STATUS */
   showStatus = false,
@@ -179,7 +183,44 @@ function DataTable({
           </TableHead>
 
           <TableBody>
-            {paginatedRows.map(row => (
+            {loading && (
+              // While a fetch is in flight, mirror the real table's column count
+              // and row rhythm with skeletons so there's no empty flash or layout
+              // jump when the data lands. MUI Skeleton follows the palette mode,
+              // so it stays correct in both light and dark.
+              Array.from({ length: Math.min(pageSize, 10) }).map((_, rowIndex) => (
+                <TableRow key={`skeleton-${rowIndex}`}>
+                  {columns.map(col => (
+                    <TableCell key={col.field} align={col.align || 'left'} sx={bodyCellSx}>
+                      <Skeleton
+                        variant="text"
+                        width={col.align === 'right' || col.align === 'center' ? '55%' : '80%'}
+                        sx={{
+                          fontSize: '0.875rem',
+                          ml: col.align === 'right' ? 'auto' : 0,
+                          mx: col.align === 'center' ? 'auto' : undefined,
+                        }}
+                      />
+                    </TableCell>
+                  ))}
+                  {showStatus && (
+                    <TableCell align="center" sx={bodyCellSx}>
+                      <Skeleton variant="rounded" width={34} height={20} sx={{ mx: 'auto' }} />
+                    </TableCell>
+                  )}
+                  {showActions && (
+                    <TableCell align="center" sx={bodyCellSx}>
+                      <Box sx={{ display: 'inline-flex', gap: 0.75 }}>
+                        <Skeleton variant="circular" width={22} height={22} />
+                        <Skeleton variant="circular" width={22} height={22} />
+                      </Box>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))
+            )}
+
+            {!loading && paginatedRows.map(row => (
               <TableRow key={row.id} hover>
                 {columns.map(col => (
                   <TableCell key={col.field} align={col.align || 'left'} sx={bodyCellSx}>
@@ -230,7 +271,7 @@ function DataTable({
               </TableRow>
             ))}
 
-            {paginatedRows.length === 0 && (
+            {!loading && paginatedRows.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={

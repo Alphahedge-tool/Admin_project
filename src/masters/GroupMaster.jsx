@@ -154,6 +154,7 @@ function GroupMaster() {
         <DataTable
           columns={columns}
           rows={groups}
+          loading={loading}
           showStatus={false}
           showActions
           onEdit={handleEdit}

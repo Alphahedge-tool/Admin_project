@@ -407,6 +407,7 @@ const handleDelete = (row) => {
         <DataTable
           columns={columns}
           rows={visibleUsers}
+          loading={loading}
           showStatus
           onStatusToggle={handleStatusToggle}
           showActions

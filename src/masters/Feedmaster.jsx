@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Box,
@@ -9,6 +9,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Skeleton,
   Typography,
 } from '@mui/material'
 import { CheckCircle2, PlugZap, Save } from 'lucide-react'
@@ -18,13 +19,20 @@ import {
   getSavedFeedMaster,
   saveFeedMaster,
 } from '../feedmaster/feedMasterStore'
-import { ensureSession, useAngelSessions } from '../feedmaster/angelSessionStore'
+import { ensureAccountsLoaded, ensureSession, useAngelSessions } from '../feedmaster/angelSessionStore'
 
-// Picks WHICH logged-in account carries the shared live feed. Every account was
-// already logged in at app start (see startup/StartupGate), so this page never
-// logs anything in on its own - "Test Login" just forces a fresh token.
+// Picks WHICH account carries the shared live feed and remembers it permanently
+// (localStorage). The app no longer logs brokers in at startup, so this page
+// loads the account list itself on open (no auto-login) and "Test Login" signs
+// the chosen account in. The saved Feedmaster only ever changes when you press
+// Save or Clear here - it survives every app open and login.
 function Feedmaster() {
   const { users, accounts, phase } = useAngelSessions()
+
+  // Populate the account list without logging anything in.
+  useEffect(() => {
+    ensureAccountsLoaded()
+  }, [])
   const saved = getSavedFeedMaster()
   const [broker, setBroker] = useState(saved?.broker || 'angelone')
   const [userPick, setUserPick] = useState(saved?.userId ? String(saved.userId) : '')
@@ -121,6 +129,17 @@ function Feedmaster() {
         {status && !error && <Alert severity="info" sx={{ mb: 2 }}>{status}</Alert>}
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+          {loading ? (
+            // Until the account list finishes loading, hold the account pickers'
+            // space with skeletons instead of three empty disabled dropdowns.
+            // MUI Skeleton follows the palette mode, so it reads in both themes.
+            <>
+              <Skeleton variant="rounded" height={40} />
+              <Skeleton variant="rounded" height={40} />
+              <Skeleton variant="rounded" height={40} sx={{ gridColumn: { md: '1 / -1' } }} />
+            </>
+          ) : (
+          <>
           <FormControl fullWidth disabled={loading}>
             <InputLabel>Broker</InputLabel>
             <Select label="Broker" value={broker} onChange={(event) => setBroker(event.target.value)}>
@@ -152,6 +171,8 @@ function Feedmaster() {
               ))}
             </Select>
           </FormControl>
+          </>
+          )}
         </Box>
 
         {selectedAccount?.status === 'failed' && (

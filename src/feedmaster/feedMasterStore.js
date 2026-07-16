@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   clientFromAccount,
+  ensureAccountsLoaded,
+  ensureSession,
   saveSession,
   useAngelSessions,
 } from './angelSessionStore'
@@ -49,6 +51,25 @@ export function clearFeedMaster() {
   window.dispatchEvent(new CustomEvent(FEED_MASTER_CHANGED))
 }
 
+// Called once on every app open (right after login): loads the account list
+// WITHOUT logging anything in, then signs in ONLY the saved Feedmaster account so
+// the shared live feed is ready. This is the sole account that auto-connects -
+// every other broker still logs in lazily when a page needs it. It keeps
+// auto-connecting this same account until you pick a different one (or Clear) on
+// the Feedmaster page. Re-uses a still-valid saved token; only does a fresh login
+// when that token is dead. No-op until a Feedmaster has been saved.
+export async function connectSavedFeedMaster() {
+  const saved = getSavedFeedMaster()
+  if (!saved?.configId) return
+  await ensureAccountsLoaded()
+  try {
+    await ensureSession(String(saved.configId))
+  } catch {
+    // The Feedmaster page surfaces the exact login issue (PIN/TOTP/backend);
+    // here we just try to connect quietly and let the feed report its status.
+  }
+}
+
 // buildAngelClient is kept for callers that already hold a raw broker-config
 // row (the Feedmaster page's account picker) rather than a store account.
 export function buildAngelClient(config, user, session = null) {
@@ -67,8 +88,10 @@ export function buildAngelClient(config, user, session = null) {
   })
 }
 
-// The Feedmaster's client, already carrying the session the startup login saved.
-// Never logs in here: if the account failed at startup, `status` says why.
+// The Feedmaster's client. Because the app no longer logs every broker in at
+// startup, this hook is what keeps the saved Feedmaster signed in: it loads the
+// account list and signs the Feedmaster in on its own, so any page that carries
+// the shared feed gets a live account without depending on the app-open connect.
 export function useFeedMasterAccount() {
   const [setting, setSetting] = useState(getSavedFeedMaster)
   const { accounts, phase } = useAngelSessions()
@@ -89,6 +112,23 @@ export function useFeedMasterAccount() {
     [accounts, configId],
   )
   const client = useMemo(() => clientFromAccount(account), [account])
+
+  // Make sure the account list is loaded, so the saved Feedmaster actually
+  // exists in the store to be signed in (idempotent - deduped by the store).
+  useEffect(() => {
+    if (configId) ensureAccountsLoaded()
+  }, [configId])
+
+  // Sign the saved Feedmaster in once its account is loaded but not live yet.
+  // Only a freshly loaded ('pending') account is auto-signed-in: a 'failed' one
+  // is left alone so a bad credential can't spin in a retry loop, and a 'live'
+  // or 'logging-in' one needs nothing. Deduped by the store, so several feed
+  // pages share the one login.
+  useEffect(() => {
+    if (phase !== 'ready' || !configId) return
+    if (!account || account.status !== 'pending') return
+    ensureSession(configId).catch(() => {})
+  }, [configId, phase, account])
 
   const status = useMemo(() => {
     if (!configId) return 'No Feedmaster selected'

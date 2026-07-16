@@ -13,6 +13,7 @@ import { CompactSelect } from '../tradepanel/PositionSelect'
 import { BrokerMark } from '../tradepanel/BrokerMark'
 import { legIsClosed, money, withLiveTick } from '../tradepanel/legFormat'
 import { CompactLegs, LegsTable } from '../tradepanel/strategyLegsView'
+import { SkeletonCards } from '../tradepanel/TableSkeleton'
 import '../tradepanel/tradepanel.css'
 
 // Marks an open leg to market using that day's historical closing price
@@ -1409,6 +1410,13 @@ function SyncNetPositions() {
                 )}
               </div>
             </div>
+
+            {/* First load only: skeleton cards while nothing is on screen yet.
+                A re-load after a sync keeps the previous cards (strategies stays
+                populated), so this never flashes over existing content. */}
+            {strategiesLoading && strategies.length === 0 && (
+              <SkeletonCards count={4} />
+            )}
 
             {!strategiesLoading && strategies.length === 0 && (
               <div className="strategy-list-empty sync-strategy-empty">

@@ -107,6 +107,7 @@ const handleDelete = (row) => {
         <DataTable
           columns={columns}
           rows={brokers}
+          loading={loading}
           showStatus={false}
           showActions
           onEdit={handleEdit}

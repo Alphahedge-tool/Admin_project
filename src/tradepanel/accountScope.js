@@ -6,24 +6,26 @@ import { useAngelSessions } from '../feedmaster/angelSessionStore'
 import { useTradeAccount } from './tradeAccountStore'
 
 /**
- * The accounts that actually SIGNED IN at startup.
+ * Every configured account the store knows about - logged in or NOT.
  *
- * An account that never logged in has no book to read - offering it only leads to
- * an empty table and a login error - so it is not listed, and a user with no
- * signed-in account is not listed either.
+ * The app no longer logs every broker in at startup; a page lists all configured
+ * accounts and signs the picked one in on demand (see each page's load()). So an
+ * account that is not logged in yet must still be offered - selecting it is HOW
+ * you log it in. This used to filter to status==='live', which hid every account
+ * that had not already been logged in, leaving nothing to pick.
  */
-export function useSignedInAccounts() {
+export function useAvailableAccounts() {
   const { accounts, phase } = useAngelSessions()
 
   return useMemo(() => {
-    // While the startup logins are still running, nothing is live yet. Filtering
-    // on that would briefly empty both pickers, so hold off until it settles.
+    // Until the account list has loaded, don't filter at all - that would briefly
+    // empty both pickers. Once ready, every loaded account is offered regardless
+    // of whether its token is live yet.
     const ready = phase === 'ready'
-    const live = accounts.filter((account) => account.status === 'live')
     return {
       ready,
-      configIds: new Set(live.map((account) => String(account.configId))),
-      userIds: new Set(live.map((account) => String(account.userId))),
+      configIds: new Set(accounts.map((account) => String(account.configId))),
+      userIds: new Set(accounts.map((account) => String(account.userId))),
     }
   }, [accounts, phase])
 }

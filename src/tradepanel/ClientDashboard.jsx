@@ -8,6 +8,7 @@ import { BrokerMark } from './BrokerMark'
 import { expiryDate, parseTradingSymbol } from './symbolParse'
 import { legIsClosed, money, withLiveTick } from './legFormat'
 import { CompactLegs, LegsTable } from './strategyLegsView'
+import { SkeletonCards } from './TableSkeleton'
 import { useLiveLegFeed } from './useLiveLegFeed'
 import './tradepanel.css'
 import './clientDashboard.css'
@@ -510,6 +511,13 @@ function ClientDashboard() {
             </div>
           )}
 
+          {/* First load only: skeleton cards while there are no strategies on
+              screen yet. Switching scope keeps the previous cards until the new
+              ones arrive, so this never flashes over existing content. */}
+          {strategiesLoading && brokerStrategies.length === 0 && (
+            <SkeletonCards count={4} />
+          )}
+
           {selectedConfig && !strategiesLoading && brokerStrategies.length === 0 && (
             <div className="client-strategy-empty">
               No saved strategies tagged to {selectedConfig.broker_name || 'this broker'} {selectedConfig.account_id || ''}.
@@ -521,7 +529,7 @@ function ClientDashboard() {
           )}
 
           {brokerStrategies.length > 0 && (
-            <div className="client-strategy-row">
+            <div className={`client-strategy-row client-strategy-row--${view}`}>
               {brokerStrategies.map((strategy) => {
                 const rawLegs = strategy.legs || []
                 // Mark every open leg to the live websocket feed so LTP/P&L

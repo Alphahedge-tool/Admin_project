@@ -544,6 +544,30 @@ async function runBootstrap() {
   setState({ phase: 'ready' })
 }
 
+// Loads the users + broker accounts ONLY - it never logs anything in. This is
+// what the Feedmaster page uses so its dropdowns populate without triggering an
+// auto-login of every account (the app no longer logs brokers in at startup).
+// Accounts come back 'pending'; the page's "Test Login" signs the chosen one in.
+let accountsLoadPromise = null
+
+export function ensureAccountsLoaded({ force = false } = {}) {
+  if (accountsLoadPromise && !force) return accountsLoadPromise
+  accountsLoadPromise = (async () => {
+    setState({ phase: 'loading', error: '' })
+    try {
+      const { users, accounts } = await loadBrokerAccounts()
+      setState({ phase: 'ready', users, accounts })
+    } catch (error) {
+      // Never cache a failed load: clear the memo so the next caller (a page
+      // mount, the Feedmaster auto-connect) retries instead of being stuck with
+      // an empty account list - and, with it, no Feedmaster to sign in - forever.
+      accountsLoadPromise = null
+      setState({ phase: 'ready', error: error.message || 'Failed to load broker accounts' })
+    }
+  })()
+  return accountsLoadPromise
+}
+
 // Re-reads users and their broker configs, keeping every account already logged
 // in exactly as it is, and logs in whatever is new. This is what makes a user (or
 // a broker config) added inside the app show up without a page reload - the
