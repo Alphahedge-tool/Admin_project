@@ -17,11 +17,29 @@ import {
   Divider,
   Switch,
   CircularProgress,
-  InputAdornment
+  InputAdornment,
+  Chip
 } from '@mui/material'
 import { Plus, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
 import { apiGet, apiPost, brokerAutoLogin, zerodhaAutoLogin, zerodhaLoginStart, zerodhaLoginUrl } from '../../config/api'
 import { clearSession, getSavedSession, refreshBrokerAccounts, saveSession } from '../../feedmaster/angelSessionStore'
+import { BrokerMark } from '../../tradepanel/BrokerMark'
+
+// The connection state a broker row shows as a chip, in the app's own words.
+function brokerStatusChip({ autoLogin, status, loginOn }) {
+  if (!autoLogin) return { label: 'Manual', color: 'default' }
+  if (status === 'loading') return { label: 'Connecting', color: 'info' }
+  if (loginOn) return { label: 'Connected', color: 'success' }
+  if (status === 'error') return { label: 'Failed', color: 'error' }
+  if (status === 'needs-browser') return { label: 'Authorize', color: 'warning' }
+  return { label: 'Not connected', color: 'default' }
+}
+
+// The brokers that ship a logo (BrokerMark). Anything else shows its initial in
+// the tile so the row still reads as a branded card.
+function brokerHasLogo(name) {
+  return /angel|kotak|zerodha|kite/i.test(String(name || ''))
+}
 
 /* ============ BROKER FIELD SCHEMAS ============
    Each broker only asks for the credentials its auto-login
@@ -619,9 +637,14 @@ function BrokerConfigDialog({ user, open, onClose }) {
 
   /* ================= RENDER ================= */
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>
-        Broker Configuration{user ? ` - ${user.username}` : ''}
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Typography component="div" sx={{ fontSize: '1rem', fontWeight: 800, lineHeight: 1.2 }}>
+          Broker Logins
+        </Typography>
+        <Typography component="div" sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'text.secondary' }}>
+          {user ? user.username : 'Connect and auto-login broker accounts'}
+        </Typography>
       </DialogTitle>
 
       <DialogContent>
@@ -641,6 +664,7 @@ function BrokerConfigDialog({ user, open, onClose }) {
             const savedZerodha = hasSavedZerodhaSession(cfg.id)
             const isZerodha = /zerodha|kite/i.test(String(cfg.broker_name || ''))
             const loginOn = login.status === 'on' || (isZerodha && savedZerodha)
+            const chip = brokerStatusChip({ autoLogin: cfgSchema.autoLogin, status: login.status, loginOn })
 
             return (
               <Box
@@ -648,74 +672,88 @@ function BrokerConfigDialog({ user, open, onClose }) {
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
-                  py: 1
+                  gap: 1.25,
+                  px: 1.25,
+                  py: 1,
+                  mb: 1,
+                  border: '1px solid var(--ao-border-soft)',
+                  borderRadius: 1.5,
+                  bgcolor: 'var(--ao-surface)',
+                  transition: 'border-color .12s ease, box-shadow .12s ease',
+                  '&:hover': { borderColor: 'var(--ao-border)', boxShadow: 'var(--ao-lift)' },
                 }}
               >
-                <Box>
-                  <Typography fontWeight={600}>
+                {/* BROKER LOGO TILE — the "brokers css" (BrokerMark), so each
+                    login reads as a branded card, not a line of text. */}
+                <Box
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    flex: 'none',
+                    display: 'grid',
+                    placeItems: 'center',
+                    borderRadius: 1.25,
+                    border: '1px solid var(--ao-border-soft)',
+                    bgcolor: 'var(--ao-surface-2)',
+                    overflow: 'hidden',
+                    // The logos are wide wordmarks; show a square crop of the brand
+                    // ICON (their left edge) rather than the whole mark spilling into
+                    // the row - the broker name is already spelled out beside it.
+                    '& .broker-mark': { width: 22, height: 22, flexBasis: 22, borderRadius: '4px' },
+                    '& .broker-mark img': { height: 22, width: 'auto', maxWidth: 'none' },
+                  }}
+                >
+                  {brokerHasLogo(cfg.broker_name)
+                    ? <BrokerMark brokerName={cfg.broker_name} />
+                    : (
+                      <Typography sx={{ fontSize: '0.9rem', fontWeight: 800, color: 'text.secondary' }}>
+                        {String(cfg.broker_name || '?').trim().charAt(0).toUpperCase()}
+                      </Typography>
+                    )}
+                </Box>
+
+                {/* NAME + MASKED ACCOUNT (+ margin when connected, or a hint) */}
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography noWrap sx={{ fontSize: '0.8125rem', fontWeight: 700, color: 'text.primary', lineHeight: 1.25 }}>
                     {cfg.broker_name}
                   </Typography>
-                  <Typography fontSize="0.8rem" color="text.secondary">
-                    Account: {cfg.account_id ? '••••••' : '—'}
+                  <Typography noWrap sx={{ fontSize: '0.6875rem', color: 'text.secondary', lineHeight: 1.25 }}>
+                    {cfg.account_id ? '••••••' : 'No account id'}
+                    {loginOn && login.margin != null && ` · ₹${Number(login.margin).toLocaleString('en-IN')}`}
                   </Typography>
-
-                  {/* LOGIN STATUS LINE */}
-                  {login.status === 'on' && (
-                    <Typography fontSize="0.8rem" color="success.main">
-                      ✓ {login.message}
-                      {login.margin != null && ` — Margin: ₹${Number(login.margin).toLocaleString('en-IN')}`}
-                    </Typography>
-                  )}
                   {login.status === 'error' && (
-                    <Typography fontSize="0.8rem" color="error.main">
-                      ✗ {login.message}
-                    </Typography>
-                  )}
-                  {login.status === 'loading' && (
-                    <Typography fontSize="0.8rem" color="text.secondary">
-                      Logging in…
-                    </Typography>
+                    <Typography noWrap sx={{ fontSize: '0.6875rem', color: 'error.main', lineHeight: 1.25 }}>{login.message}</Typography>
                   )}
                   {login.status === 'needs-browser' && (
-                    <Typography fontSize="0.8rem" color="warning.main">
-                      ⚠ {login.message} Use “Open Login”.
-                    </Typography>
+                    <Typography noWrap sx={{ fontSize: '0.6875rem', color: 'warning.main', lineHeight: 1.25 }}>{login.message}</Typography>
                   )}
                 </Box>
 
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  {/* AUTO-LOGIN SWITCH — Angel, Kotak and now Zerodha (headless) */}
-                  {cfgSchema.autoLogin && (
-                    login.status === 'loading' ? (
-                      <CircularProgress size={20} sx={{ mx: 1.5 }} />
-                    ) : (
-                      <Switch
-                        size="small"
-                        checked={loginOn}
-                        onChange={() => handleLoginToggle(cfg)}
-                      />
-                    )
-                  )}
+                {/* STATUS CHIP */}
+                <Chip
+                  size="small"
+                  label={chip.label}
+                  color={chip.color}
+                  variant={chip.color === 'default' ? 'outlined' : 'filled'}
+                  sx={{ height: 20, fontSize: '0.625rem', fontWeight: 700, flex: 'none' }}
+                />
 
+                {/* CONTROLS */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flex: 'none' }}>
+                  {cfgSchema.autoLogin && (
+                    login.status === 'loading'
+                      ? <CircularProgress size={18} sx={{ mx: 1 }} />
+                      : <Switch size="small" checked={loginOn} onChange={() => handleLoginToggle(cfg)} />
+                  )}
                   {/* Zerodha's first-ever connection needs a one-time browser
                       "Authorize"; keep it one click away until the row is on. */}
                   {isZerodha && !loginOn && login.status !== 'loading' && (
-                    <Button
-                      size="small"
-                      onClick={() => openZerodhaBrowserLogin(cfg)}
-                      sx={{ mr: 0.5 }}
-                    >
+                    <Button size="small" onClick={() => openZerodhaBrowserLogin(cfg)} sx={{ minWidth: 0, px: 1 }}>
                       Open Login
                     </Button>
                   )}
-
-                  <IconButton size="small" onClick={() => handleEdit(cfg)}>
-                    <Pencil size={15} />
-                  </IconButton>
-                  <IconButton size="small" onClick={() => handleDelete(cfg)}>
-                    <Trash2 size={15} />
-                  </IconButton>
+                  <IconButton size="small" onClick={() => handleEdit(cfg)}><Pencil size={14} /></IconButton>
+                  <IconButton size="small" onClick={() => handleDelete(cfg)}><Trash2 size={14} /></IconButton>
                 </Box>
               </Box>
             )
