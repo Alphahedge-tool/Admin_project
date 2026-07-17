@@ -8,14 +8,19 @@
 //   Angel            NIFTY14JUL2622800PE   root + DD + MMM + YY + strike
 //   Kotak weekly     NIFTY2671423900PE     root + YY + M + DD + strike
 //   Kotak monthly    NIFTY26JUL24100PE     root + YY + MMM + strike   (no day!)
+//   Zerodha monthly  NIFTY26JUL24100PE     root + YY + MMM + strike   (same as Kotak)
 //
-// The Angel and Kotak-monthly forms are IMPOSSIBLE to tell apart from the string:
+// The Angel and Kotak/Zerodha-monthly forms are IMPOSSIBLE to tell apart from the string:
 // NIFTY26JUL24100PE reads equally well as "26 JUL, year 24, strike 100" (Angel's
 // grammar) or "year 26, JUL, strike 24100" (Kotak's). Reading it the first way is
 // what put a 100 strike on screen against a leg trading at 262.
 //
 // So the string is the LAST resort. Every broker also states the strike and expiry
-// outright on the row, and those are what get shown.
+// outright on the row, and those are what get shown. When neither is present (saved
+// strategy legs carry only the symbol), the row's BROKER breaks the tie: a leg on a
+// Kotak or Zerodha account is read with their year-first grammar, everything else
+// with Angel's - which is also the default when the broker is unknown, so callers
+// that never set it (and the tests) are unchanged.
 
 export function compactProductTag(value) {
   const product = String(value || '-').toUpperCase();
@@ -31,6 +36,20 @@ function inferOptionType(symbol) {
   return '';
 }
 
+// Brokers that write the 3-letter-month (monthly) contract as YEAR + month +
+// strike, with NO day - Kotak Neo AND Zerodha both do (NIFTY26JUL24000CE reads
+// year 26, JUL, strike 24000). Angel writes day + month + year + strike, so it -
+// and any unknown broker - is read the other way. Kept a plain string test so
+// this module stays free of the session-store import.
+function monthlyIsYearFirst(broker) {
+  return /kotak|zerodha|kite/i.test(String(broker || ''));
+}
+
+// The broker a row belongs to, however it is spelled across position / leg shapes.
+function rowBroker(row = {}) {
+  return row.broker_name || row.broker || row._broker || row.account_broker || '';
+}
+
 /**
  * What to display for a contract, taking the broker at its word.
  *
@@ -38,10 +57,11 @@ function inferOptionType(symbol) {
  * explicitly wins; the symbol is only parsed to fill in what it does not.
  */
 export function contractMeta(row = {}) {
+  const broker = rowBroker(row);
   const symbol = String(
     row.tradingsymbol || row.trading_symbol || row.symbolname || row.symbol || row.stock_name || '-',
   );
-  const parsed = parseTradingSymbol(symbol);
+  const parsed = parseTradingSymbol(symbol, broker);
 
   const strike = normalizeStrike(
     row.strikeprice ?? row.strike_price ?? row.strike ?? row.canonicalStrike,
@@ -53,7 +73,7 @@ export function contractMeta(row = {}) {
     row.optiontype || row.option_type || row.canonicalOptionType || '',
   ).toUpperCase();
   const stock = String(row.stock_name || row.symbolname || row.symbol_name || '').trim();
-  const stockParsed = stock ? parseTradingSymbol(stock) : null;
+  const stockParsed = stock ? parseTradingSymbol(stock, broker) : null;
   const stockLooksLikeContract = Boolean(
     stockParsed?.expiry || stockParsed?.strike || stockParsed?.optionType,
   );
@@ -154,6 +174,7 @@ export function expiryDate(row = {}) {
   ).trim();
   const text = explicit || parseTradingSymbol(
     row.tradingsymbol || row.trading_symbol || row.symbolname || row.symbol || row.stock_name || '',
+    rowBroker(row),
   ).expiry;
   if (!text) return null;
 
@@ -185,8 +206,9 @@ export function expiryDate(row = {}) {
   return null;
 }
 
-export function parseTradingSymbol(symbol) {
+export function parseTradingSymbol(symbol, broker) {
   const text = String(symbol || '-').trim();
+  const yearFirst = monthlyIsYearFirst(broker);
   const spaced = text.match(/^([A-Z]+)\s+(.+?)\s+(CE|PE)$/i);
   if (spaced) {
     const detail = spaced[2].trim();
@@ -194,13 +216,31 @@ export function parseTradingSymbol(symbol) {
     return { root: spaced[1].toUpperCase(), expiry: detail.replace(strike, '').trim(), strike, optionType: spaced[3].toUpperCase() };
   }
 
-  const datedOption = text.match(/^([A-Z]+)(\d{2})([A-Z]{3})(\d{2})(\d+(?:\.\d+)?)(CE|PE)$/i);
-  if (datedOption) {
-    const [, root, day, mon, year, strike, optionType] = datedOption;
+  // The 3-letter-month shape shared by Angel and the Kotak/Zerodha monthly. The
+  // digits either side of the month mean different things per broker, so the
+  // broker decides:
+  //   Angel            root + DD + MMM + YY + strike   NIFTY 14 JUL 26 22800 PE
+  //   Kotak/Zerodha    root + YY + MMM + strike         NIFTY 26 JUL    22350 PE (no day)
+  // Default (unknown broker) stays Angel - what every caller has always assumed.
+  const named = text.match(/^([A-Z]+)(\d{2})([A-Z]{3})(\d+(?:\.\d+)?)(CE|PE)$/i);
+  if (named) {
+    const [, root, lead, mon, tail, optionType] = named;
+    if (yearFirst) {
+      // lead = 2-digit year, tail = the whole strike, no day in the symbol. A
+      // monthly states only its month, so it shows as "Jul 2026" (formatExpiry /
+      // expiryDate already treat month-only as living to month-end).
+      return {
+        root: root.toUpperCase(),
+        expiry: `${titleMonth(mon)} 20${lead}`,
+        strike: trimStrike(tail),
+        optionType: optionType.toUpperCase(),
+      };
+    }
+    // Angel: lead = day, first two of tail = 2-digit year, remainder = strike.
     return {
       root: root.toUpperCase(),
-      expiry: `${day} ${titleMonth(mon)} ${year}`,
-      strike: trimStrike(strike),
+      expiry: `${lead} ${titleMonth(mon)} ${tail.slice(0, 2)}`,
+      strike: trimStrike(tail.slice(2)),
       optionType: optionType.toUpperCase(),
     };
   }

@@ -1434,7 +1434,13 @@ function SyncNetPositions() {
                 ? allLegs
                 : allLegs.filter((leg) => legDateKey(leg) === dateFilter)
               ).map((leg) => {
-                const derived = deriveLegForDate(leg, dateFilter)
+                // Tag the leg with its strategy's broker so the symbol parser reads
+                // a Kotak-monthly contract (year+month+strike, no day) correctly
+                // instead of with Angel's grammar.
+                const derived = {
+                  ...deriveLegForDate(leg, dateFilter),
+                  broker_name: leg.broker_name || strategy.broker_name,
+                }
                 return dateFilter === 'all'
                   ? withLiveTick(derived, liveTicks)
                   : withHistoricalLtp(derived, dateFilter, historicalLtps)

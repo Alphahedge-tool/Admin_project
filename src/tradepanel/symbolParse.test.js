@@ -30,6 +30,47 @@ test('contractMeta can derive a contract from stock_name when that is the only s
   assert.equal(parsed.optionType, 'PE');
 });
 
+test('contractMeta reads a Kotak-monthly symbol with Kotak grammar (year+month+strike, no day)', () => {
+  const parsed = contractMeta({
+    trading_symbol: 'NIFTY26JUL22350PE',
+    broker_name: 'Kotak Neo',
+  });
+
+  assert.equal(parsed.root, 'NIFTY');
+  assert.equal(parsed.expiry, 'Jul 2026'); // NOT "26 Jul 22"
+  assert.equal(parsed.strike, '22350');    // NOT "350"
+  assert.equal(parsed.optionType, 'PE');
+});
+
+test('contractMeta reads a Zerodha-monthly symbol with the same year-first grammar as Kotak', () => {
+  const parsed = contractMeta({
+    trading_symbol: 'NIFTY26JUL24000CE',
+    broker_name: 'Zerodha',
+  });
+
+  assert.equal(parsed.root, 'NIFTY');
+  assert.equal(parsed.expiry, 'Jul 2026'); // NOT "26 Jul 24"
+  assert.equal(parsed.strike, '24000');    // NOT "000"
+  assert.equal(parsed.optionType, 'CE');
+});
+
+test('contractMeta keeps the Angel reading of the same string when the broker is not Kotak', () => {
+  const parsed = contractMeta({ trading_symbol: 'NIFTY26JUL22350PE' });
+  assert.equal(parsed.expiry, '26 Jul 22');
+  assert.equal(parsed.strike, '350');
+
+  const angel = contractMeta({ trading_symbol: 'NIFTY26JUL22350PE', broker_name: 'Angel One' });
+  assert.equal(angel.expiry, '26 Jul 22');
+  assert.equal(angel.strike, '350');
+});
+
+test('expiryDate reads a Kotak-monthly symbol as living to that month-end, not a 2022 expiry', () => {
+  const d = expiryDate({ tradingsymbol: 'NIFTY26JUL22350PE', broker_name: 'Kotak Neo' });
+  assert.equal(d.getFullYear(), 2026);
+  assert.equal(d.getMonth(), 6);   // July
+  assert.equal(d.getDate(), 31);   // last day of the month
+});
+
 test('expiryDate parses the Angel compact form (14JUL2026)', () => {
   const d = expiryDate({ expiry: '14JUL2026' });
   assert.equal(d.getFullYear(), 2026);
