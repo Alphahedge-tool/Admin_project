@@ -435,6 +435,107 @@ app.post('/api/angel/charges', h(async (req) => {
   return getCharges(client, auth, { client: b.client || {}, legs: b.legs || [] });
 }));
 
+// ── Angel post-trade P&L (the ROI tracker's data source) ────────────────────
+// Angel's web "Spark" post-trade P&L endpoint (api-posttrade.angelone.in) is a
+// DIFFERENT service from SmartAPI: it authenticates with the browser session's
+// non-trade access token (sent as a cookie), not an API key. The browser can't
+// call it directly — its CORS allows only https://www.angelone.in — so the admin
+// tool proxies it here. The token is short-lived and sensitive, so it is read
+// from ANGEL_POSTTRADE_TOKEN and never stored in source.
+const POSTTRADE_PNL_URL = 'https://api-posttrade.angelone.in/v2/pnl';
+const DEFAULT_PNL_SEGMENTS = ['EQUITY', 'FNO', 'COMMODITY', 'CURRENCY'];
+
+app.post('/api/angel/posttrade-pnl', h(async (req) => {
+  const b = req.body || {};
+  // Prefer the token from the selected account's OWN Angel login (sent by the ROI
+  // tracker), so no server-side env var is needed. ANGEL_POSTTRADE_TOKEN is only a
+  // fallback. Note: the app logs in via SmartAPI, whose jwtToken is a *trade*
+  // token — Angel's post-trade API may still require a *non-trade* web token, in
+  // which case it 401s and we surface needsToken.
+  const token = String(b.access_token || '').trim() || config.angelPosttradeToken;
+  if (!token) {
+    return {
+      status: false,
+      needsToken: true,
+      message: 'No Angel session token available. Log the selected Angel account in '
+        + '(or set ANGEL_POSTTRADE_TOKEN on the server as a fallback).',
+    };
+  }
+
+  // party_code is the Angel client id of the account the user selected in the ROI
+  // tracker (read from the SQL broker_config), never a server-side constant.
+  const partyCode = String(b.party_code || '').trim();
+  if (!partyCode) {
+    return { status: false, message: 'party_code (the Angel client id of the selected account) is required.' };
+  }
+  const payload = {
+    party_code: partyCode,
+    start_date: b.start_date,
+    end_date: b.end_date,
+    segments: Array.isArray(b.segments) && b.segments.length ? b.segments : DEFAULT_PNL_SEGMENTS,
+  };
+  if (!payload.start_date || !payload.end_date) {
+    return { status: false, message: 'start_date and end_date are required (YYYY-MM-DD).' };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  let resp;
+  try {
+    resp = await fetch(POSTTRADE_PNL_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: '*/*',
+        'app-version': 'sparkweb1',
+        applicationname: 'Spark-Web',
+        origin: 'https://www.angelone.in',
+        referer: 'https://www.angelone.in/',
+        'x-tokentype': 'non_trade_access_token',
+        'x-deviceid': config.angelPosttradeDeviceId,
+        'x-requestid': crypto.randomUUID(),
+        cookie: `prod_non_trade_access_token=${token}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const rawText = await resp.text();
+  let out;
+  try { out = rawText ? JSON.parse(rawText) : {}; } catch { out = { raw: rawText }; }
+
+  // A 401/403 here almost always means the non-trade token has expired — surface
+  // that clearly so the frontend can prompt for a fresh one rather than showing a
+  // generic 500.
+  if (resp.status === 401 || resp.status === 403) {
+    return {
+      status: false,
+      needsToken: true,
+      httpStatus: resp.status,
+      message: 'Angel rejected the post-trade token (expired or invalid). Refresh '
+        + 'ANGEL_POSTTRADE_TOKEN with a current session token.',
+    };
+  }
+  if (resp.status < 200 || resp.status >= 300) {
+    const err = new Error((out && (out.message || out.error)) || `Angel post-trade HTTP ${resp.status}`);
+    err.status = resp.status;
+    throw err;
+  }
+
+  // `data` is Angel's raw body, returned untouched so the ROI UI can be built
+  // against the real field names once we see them.
+  return {
+    status: true,
+    party_code: payload.party_code,
+    range: { start: payload.start_date, end: payload.end_date },
+    segments: payload.segments,
+    data: out,
+  };
+}));
+
 app.post('/api/angel/place-basket', h(async (req) => {
   const b = req.body || {};
   return placeBasket(client, auth, { client: b.client || {}, legs: b.legs || [] });

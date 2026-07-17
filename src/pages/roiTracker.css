@@ -1,0 +1,427 @@
+/* ROI Tracker — Angel post-trade P&L. Built on the app's --ao-* token system so
+   it reads identically in light and dark without a second palette. */
+
+.roi-tracker {
+  --roi-line: color-mix(in srgb, var(--ao-border-soft) 78%, transparent);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px;
+  color: var(--ao-base);
+  font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ── Command bar ─────────────────────────────────────────────────────────── */
+.roi-tracker .roi-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--roi-line);
+  border-radius: 10px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 2px rgba(23, 43, 77, .05), 0 2px 6px rgba(23, 43, 77, .05);
+}
+
+.roi-tracker .roi-picker { flex: 0 1 210px; min-width: 170px; }
+.roi-tracker .roi-picker.account { flex-basis: 230px; }
+
+/* The CompactSelect renders [label][.position-select] with a FIXED-width inner
+   box (190/250px) that can't shrink, so inside the flexible toolbar it overflowed
+   and collided with the next control. Make the whole picker fill its slot and let
+   the trigger shrink with it instead. */
+.roi-tracker .roi-picker .positions-compact-select {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  gap: 7px;
+}
+.roi-tracker .roi-picker .positions-compact-select > span {
+  flex: none;
+  color: var(--ao-caption);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.roi-tracker .roi-picker .position-select {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.roi-tracker .roi-picker .position-select-trigger {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--roi-line);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+  box-shadow: none;
+}
+
+/* Native date fields, dressed to match the pickers. */
+.roi-tracker .roi-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--roi-line);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+}
+.roi-tracker .roi-date span {
+  color: var(--ao-caption);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.roi-tracker .roi-date input {
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--ao-bold);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.roi-tracker .roi-date input::-webkit-calendar-picker-indicator { opacity: .5; cursor: pointer; }
+
+/* Segment toggles — one accent, filled when on, quiet when off. */
+.roi-tracker .roi-segments {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--roi-line);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+}
+.roi-tracker .roi-segment {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ao-caption);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+.roi-tracker .roi-segment:hover { color: var(--ao-base); }
+.roi-tracker .roi-segment.on {
+  background: var(--ao-blue);
+  color: #fff;
+}
+
+.roi-tracker .roi-load-btn {
+  height: 30px;
+  min-width: 108px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ao-blue);
+  color: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ao-blue) 40%, transparent);
+  transition: background 120ms ease, opacity 120ms ease;
+}
+.roi-tracker .roi-load-btn:hover:not(:disabled) { background: var(--ao-blue-hover); }
+.roi-tracker .roi-load-btn:disabled { opacity: .5; cursor: not-allowed; }
+.roi-tracker .roi-load-btn .spin { animation: roi-spin .8s linear infinite; }
+@keyframes roi-spin { to { transform: rotate(360deg); } }
+
+/* ── Selected account header ─────────────────────────────────────────────── */
+.roi-tracker .roi-account-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+}
+.roi-tracker .roi-account-broker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ao-caption);
+  font-size: 12px;
+  font-weight: 600;
+}
+.roi-tracker .roi-account-head > strong {
+  color: var(--ao-bold);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+.roi-tracker .roi-account-range {
+  color: var(--ao-caption);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Empty & notice states ───────────────────────────────────────────────── */
+.roi-tracker .roi-empty {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 24px;
+  border: 1px dashed var(--ao-border);
+  border-radius: 12px;
+  background: var(--ao-surface);
+  color: var(--ao-caption);
+  text-align: center;
+}
+.roi-tracker .roi-empty.subtle { min-height: 120px; border-style: solid; border-color: var(--roi-line); }
+.roi-tracker .roi-empty p { max-width: 460px; margin: 0; font-size: 13px; line-height: 1.5; }
+.roi-tracker .roi-empty strong { color: var(--ao-bold); }
+.roi-tracker .roi-empty-broker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ao-bold);
+  font-weight: 700;
+}
+
+.roi-tracker .roi-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--roi-line);
+  border-radius: 10px;
+  background: var(--ao-surface);
+}
+.roi-tracker .roi-notice strong { display: block; color: var(--ao-bold); font-size: 13px; }
+.roi-tracker .roi-notice p { margin: 2px 0 0; color: var(--ao-caption); font-size: 12.5px; line-height: 1.45; }
+.roi-tracker .roi-notice.warn { border-left: 3px solid var(--ao-gold); }
+.roi-tracker .roi-notice.warn svg { color: var(--ao-gold); }
+.roi-tracker .roi-notice.error { border-left: 3px solid var(--ao-red); }
+.roi-tracker .roi-notice.error svg { color: var(--ao-red); }
+
+/* ── ROI report ──────────────────────────────────────────────────────────── */
+.roi-tracker .roi-report {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Shared up/down colouring (P&L is the one place green/red is used). */
+.roi-tracker .up { color: var(--ao-green); }
+.roi-tracker .down { color: var(--ao-red); }
+
+/* Hero KPI cards. */
+.roi-tracker .roi-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.roi-tracker .roi-hero-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--roi-line);
+  border-radius: 12px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 2px rgba(23, 43, 77, .05), 0 2px 6px rgba(23, 43, 77, .05);
+}
+/* The headline ROI card gets a tinted P&L-coloured wash and a solid rail. */
+.roi-tracker .roi-hero-card.primary {
+  border-left: 3px solid var(--ao-blue);
+}
+.roi-tracker .roi-hero-card.primary.up {
+  border-left-color: var(--ao-green);
+  background: color-mix(in srgb, var(--ao-green) 6%, var(--ao-surface));
+}
+.roi-tracker .roi-hero-card.primary.down {
+  border-left-color: var(--ao-red);
+  background: color-mix(in srgb, var(--ao-red) 6%, var(--ao-surface));
+}
+.roi-tracker .roi-hero-label {
+  color: var(--ao-caption);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.roi-tracker .roi-hero-value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+.roi-tracker .roi-hero-card.primary .roi-hero-value { font-size: 30px; }
+.roi-tracker .roi-hero-card.up .roi-hero-value { color: var(--ao-green); }
+.roi-tracker .roi-hero-card.down .roi-hero-value { color: var(--ao-red); }
+.roi-tracker .roi-hero-value.neutral { color: var(--ao-bold); }
+.roi-tracker .roi-hero-value.charges { color: var(--ao-bold); }
+.roi-tracker .roi-hero-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ao-caption);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Secondary KPI strip — hairline-divided stats, no pills. */
+.roi-tracker .roi-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  padding: 10px 4px;
+  border: 1px solid var(--roi-line);
+  border-radius: 12px;
+  background: var(--ao-surface);
+}
+.roi-tracker .roi-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 18px;
+  border-left: 1px solid var(--roi-line);
+}
+.roi-tracker .roi-stat:first-child { border-left: 0; }
+.roi-tracker .roi-stat em {
+  font-style: normal;
+  color: var(--ao-caption);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.roi-tracker .roi-stat b {
+  color: var(--ao-bold);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+/* Per-segment ROI cards. */
+.roi-tracker .roi-segblock {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.roi-tracker .roi-segcard {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  border: 1px solid var(--roi-line);
+  border-radius: 12px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 2px rgba(23, 43, 77, .05), 0 2px 6px rgba(23, 43, 77, .05);
+}
+.roi-tracker .roi-segcard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.roi-tracker .roi-segcard-head strong { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.roi-tracker .roi-segcard-net {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.roi-tracker .roi-segcard-net span { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.roi-tracker .roi-segcard-net em { font-style: normal; color: var(--ao-caption); font-size: 11px; }
+.roi-tracker .roi-segbar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--ao-surface-2);
+  overflow: hidden;
+}
+.roi-tracker .roi-segbar span { display: block; height: 100%; border-radius: 999px; background: var(--ao-blue); }
+.roi-tracker .roi-segcard-foot { color: var(--ao-caption); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+
+/* Segment tag chip — one radius/size across the report. */
+.roi-tracker .roi-segtag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.roi-tracker .roi-segtag.sm { height: 18px; font-size: 9.5px; }
+
+/* Per-symbol table — institutional: hairline rows, uppercase head, tabular nums. */
+.roi-tracker .roi-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--roi-line);
+  border-radius: 12px;
+  background: var(--ao-surface);
+  box-shadow: 0 1px 2px rgba(23, 43, 77, .05), 0 2px 6px rgba(23, 43, 77, .05);
+}
+.roi-tracker .roi-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.roi-tracker .roi-table th,
+.roi-tracker .roi-table td {
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--roi-line);
+  text-align: left;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.roi-tracker .roi-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 34px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  box-shadow: inset 0 -1px 0 var(--roi-line);
+}
+.roi-tracker .roi-table td { color: var(--ao-base); }
+.roi-tracker .roi-table td.num,
+.roi-tracker .roi-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.roi-tracker .roi-table td.strong { font-weight: 700; }
+.roi-tracker .roi-table td.muted { color: var(--ao-caption); }
+.roi-tracker .roi-table td.up { color: var(--ao-green); }
+.roi-tracker .roi-table td.down { color: var(--ao-red); }
+.roi-tracker .roi-table .roi-sym {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--ao-bold);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.roi-tracker .roi-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--ao-surface-2) 55%, var(--ao-surface));
+}
+.roi-tracker .roi-table tbody tr:hover td { background: var(--ao-hover); }

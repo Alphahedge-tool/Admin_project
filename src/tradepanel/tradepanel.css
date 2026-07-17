@@ -8685,3 +8685,218 @@ html:not([data-theme="dark"]) .client-dashboard-production
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Get Position — premium pass
+   Scoped to .get-positions-view so Order Book, Trade Book and the dashboard's
+   embedded tables (which all share .positions-view-compact) are left untouched.
+   Same design language as the Client Dashboard: one accent, one soft hairline,
+   slightly tighter pills, quieter borders. Colours on the pills stay owned by
+   the existing light/dark rules - only their dimensions change here. */
+.get-positions-view {
+  --gp-accent: var(--ao-blue);
+  --gp-accent-soft: color-mix(in srgb, var(--gp-accent) 10%, transparent);
+  --gp-line: color-mix(in srgb, var(--ao-border-soft) 78%, transparent);
+}
+html[data-theme="dark"] .get-positions-view {
+  --gp-line: color-mix(in srgb, var(--ao-border-soft) 88%, transparent);
+}
+
+/* ── Pills, a touch smaller across the board ──────────────────────────────── */
+
+/* Per-contract expiry chip. The 3-class root prefix clears the "final" all-books
+   rule (and its dark counterpart) so only Get Position shrinks. */
+.positions-view.positions-view-compact.get-positions-view .position-symbol-line .position-expiry,
+.positions-view.positions-view-compact.get-positions-view .compact-leg-symbol .position-expiry {
+  min-height: 19px;
+  gap: 4px;
+  padding: 0 6px 0 4px;
+  font-size: 11px;
+}
+.positions-view.positions-view-compact.get-positions-view .position-symbol-line .position-expiry::before,
+.positions-view.positions-view-compact.get-positions-view .compact-leg-symbol .position-expiry::before {
+  height: 12px;
+  padding-right: 4px;
+  font-size: 7.5px;
+}
+
+/* LONG / SHORT, product and PE/CE tags inside the rows. */
+.get-positions-view .position-book-compact .book-tag {
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+/* Live-feed pill in the toolbar. */
+.get-positions-view .orderbook-live-pill {
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+/* Account chip inside the picker trigger — tie it to the one accent. */
+.get-positions-view .position-select-text em {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--gp-accent-soft);
+  color: var(--gp-accent);
+  font-size: 10px;
+}
+
+/* ── Toolbar & controls — quieter borders, filled soft fields ─────────────── */
+.get-positions-view .positions-toolbar,
+.get-positions-view .positions-status-strip {
+  border-bottom-color: var(--gp-line);
+}
+.get-positions-view .positions-toolbar-tools {
+  border-left-color: var(--gp-line);
+}
+.get-positions-view .positions-toolbar-divider {
+  background: var(--gp-line);
+}
+/* The pickers become filled soft fields instead of hard outlined pills: the
+   surface-2 fill carries the control, so the border drops to a hairline. Also a
+   touch shorter than the default 32px. */
+.get-positions-view .position-select-trigger {
+  height: 28px;
+  border: 1px solid var(--gp-line);
+  border-radius: 7px;
+  background: var(--ao-surface-2);
+  box-shadow: none;
+}
+.get-positions-view .position-select-trigger:hover {
+  border-color: var(--ao-border);
+  background: var(--ao-surface);
+}
+
+/* ── Toolbar pills, each reduced a step ───────────────────────────────────── */
+/* Tighten the bar itself so the shorter controls sit in less dead space. */
+.get-positions-view .positions-toolbar {
+  min-height: 44px;
+  gap: 8px;
+}
+
+/* Refresh button. */
+.get-positions-view .positions-load-btn {
+  height: 28px;
+  min-width: 80px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+/* Search field — narrower now, and it no longer greedily grows to fill the bar
+   (flex-grow 0) so the freed space goes to the P&L stat on the right. */
+.get-positions-view .positions-search {
+  height: 28px;
+  border-radius: 7px;
+  flex: 0 1 170px;
+  min-width: 120px;
+  max-width: 190px;
+}
+.get-positions-view .positions-search input {
+  height: 26px;
+  font-size: 12.5px;
+}
+
+/* Selection pills (shown when rows are ticked): count + Add Group / Save / Clear. */
+.get-positions-view .positions-toolbar .positions-selection-count {
+  font-size: 11px;
+}
+.get-positions-view .positions-toolbar .positions-group-btn,
+.get-positions-view .positions-toolbar .positions-selection-clear {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+}
+
+/* Clear-filters pill — outlined by default; drop it to a hairline and shrink. */
+.get-positions-view .positions-clear-filters {
+  height: 24px;
+  padding: 0 8px;
+  border-color: var(--gp-line);
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+
+/* Positions count stays a quiet read-out. */
+.get-positions-view .positions-toolbar-summary {
+  font-size: 11px;
+}
+.get-positions-view .positions-toolbar-status {
+  font-size: 10.5px;
+}
+
+/* Total P&L becomes the toolbar's hero stat: a filled KPI chip whose green/red
+   fill (the one place that colour is reserved for) makes the day's number the
+   first thing the eye lands on. The muted "P&L" label sits above the tabular
+   figure inside the same chip. */
+.get-positions-view .positions-toolbar-pnl {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.get-positions-view .positions-toolbar-pnl strong {
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+}
+.get-positions-view .positions-toolbar-pnl.up {
+  background: var(--ao-green-bg);
+  border-color: color-mix(in srgb, var(--ao-green) 22%, transparent);
+  color: color-mix(in srgb, var(--ao-green) 78%, var(--ao-caption));
+}
+.get-positions-view .positions-toolbar-pnl.up strong { color: var(--ao-green); }
+.get-positions-view .positions-toolbar-pnl.down {
+  background: var(--ao-red-bg);
+  border-color: color-mix(in srgb, var(--ao-red) 22%, transparent);
+  color: color-mix(in srgb, var(--ao-red) 78%, var(--ao-caption));
+}
+.get-positions-view .positions-toolbar-pnl.down strong { color: var(--ao-red); }
+
+/* Live-market and Auto-sync stay as small, quiet status badges so they support
+   the P&L stat rather than compete with it: fully pill-shaped and tight. Their
+   per-status colour (live green / connecting amber / offline grey) is left to
+   the existing status rules so the indicator still reads at a glance. */
+.get-positions-view .orderbook-live-pill {
+  gap: 4px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* Shorten the two vertical dividers to match the lower control height. */
+.get-positions-view .positions-toolbar-divider {
+  height: 20px;
+}
+
+/* ── Table — institutional header, softer separators & zebra ──────────────── */
+.get-positions-view .position-book-table.position-book-compact th {
+  height: 34px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  box-shadow: inset 0 -1px 0 var(--gp-line);
+}
+.get-positions-view .position-book-table.position-book-compact td {
+  border-bottom-color: var(--gp-line);
+}
+/* Zebra is a whisper, not a stripe (matches the Client Dashboard). The 5-class
+   selector clears the shared even-row rule earlier in the file. */
+.get-positions-view .position-book-table.position-book-compact tbody tr:not(.position-expiry-row):nth-child(even) td {
+  background: color-mix(in srgb, var(--ao-surface-2) 55%, var(--ao-surface));
+}
+

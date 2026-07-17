@@ -221,4 +221,33 @@ export function zerodhaCancelOrder(variety, orderId, query) {
   return zerodhaApi(`/orders/${encodeURIComponent(variety || 'regular')}/${encodeURIComponent(orderId)}`, { method: 'DELETE', query })
 }
 
+// Angel post-trade P&L (the ROI tracker). Hits the Node backend proxy, which adds
+// the Angel session token server-side and calls Angel's Spark post-trade API. The
+// party_code is the selected Angel account's client id (from the SQL broker
+// config). A missing/expired server token comes back as needsToken so the caller
+// can prompt for a refresh rather than showing a generic failure.
+export async function angelPosttradePnl(body) {
+  const res = await fetch(brokerApiUrl('/angel/posttrade-pnl'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  })
+
+  let data
+  try {
+    data = await res.json()
+  } catch {
+    throw new Error('Broker backend not reachable')
+  }
+
+  if (!data.status) {
+    const err = new Error(data.message || 'Angel P&L request failed')
+    err.needsToken = Boolean(data.needsToken)
+    throw err
+  }
+
+  return data
+}
+
 export { API_BASE_URL, BROKER_API_BASE_URL }

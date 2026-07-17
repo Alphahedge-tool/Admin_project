@@ -7,10 +7,29 @@ html[data-theme] .client-dashboard-production {
      read as separate surfaces that lift off the page rather than blending into
      it. Tinted a hair toward the blue accent for a calmer, less clinical grey.
      Scoped as variables so this can be promoted app-wide from one place. */
-  --dash-canvas: #ECEEF3;
+  --dash-canvas: #EDEFF4;
   --dash-card: var(--ao-surface);
   --dash-shadow: 0 1px 2px rgba(23, 43, 77, .05), 0 2px 6px rgba(23, 43, 77, .05);
-  --dash-shadow-lift: 0 2px 5px rgba(23, 43, 77, .07), 0 8px 20px rgba(23, 43, 77, .08);
+  --dash-shadow-lift: 0 2px 6px rgba(23, 43, 77, .06), 0 10px 24px rgba(23, 43, 77, .08);
+
+  /* One accent for the whole surface. Every accented element (active toggle,
+     group bar, margin chip, focus ring) resolves to THIS, so promoting the
+     dashboard to a muted teal later is a one-line change here. */
+  --dash-accent: var(--ao-blue);
+  --dash-accent-soft: color-mix(in srgb, var(--dash-accent) 10%, transparent);
+  --dash-accent-line: color-mix(in srgb, var(--dash-accent) 26%, transparent);
+
+  /* A single hairline for separators. Softer than --ao-border-soft so the grid
+     reads on spacing and surface contrast, not boxed divisions. */
+  --dash-line: color-mix(in srgb, var(--ao-border-soft) 78%, transparent);
+
+  /* One chip system. Every pill - EXP, PE/CE, OPEN, LONG/SHORT, KPI - shares
+     this height, radius and padding so nothing sits at a rogue size. */
+  --chip-h: 22px;
+  --chip-radius: 6px;
+  --chip-pad: 0 8px;
+  --chip-fs: 11px;
+  --chip-fw: 600;
 
   width: 100%;
   max-width: 100%;
@@ -32,6 +51,7 @@ html[data-theme="dark"] .client-dashboard-production {
   --dash-canvas: #0F1113;
   --dash-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 2px 8px rgba(0, 0, 0, .26);
   --dash-shadow-lift: 0 4px 10px rgba(0, 0, 0, .34), 0 12px 28px rgba(0, 0, 0, .4);
+  --dash-line: color-mix(in srgb, var(--ao-border-soft) 85%, transparent);
 }
 
 html[data-theme] .client-dashboard-production .client-dashboard-head {
@@ -47,9 +67,9 @@ html[data-theme] .client-dashboard-production .client-dashboard-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--ao-border-soft);
-  border-radius: 4px;
+  padding: 7px 12px;
+  border: 1px solid var(--dash-line);
+  border-radius: 10px;
   background: var(--ao-surface);
   box-shadow: var(--dash-shadow);
 }
@@ -81,11 +101,20 @@ html[data-theme] .client-dashboard-production .client-dashboard-picker .position
 
 html[data-theme] .client-dashboard-production .client-dashboard-picker .position-select-trigger {
   height: 32px;
-  padding: 0 9px;
-  border: 1px solid var(--ao-border);
-  border-radius: 7px;
+  padding: 0 10px;
+  /* Filled, soft-bordered field rather than a hard outlined pill: on a white
+     toolbar the fill (surface-2) carries the control, so the border can drop to
+     the faintest hairline and stop competing with the accent. */
+  border: 1px solid var(--dash-line);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
+  box-shadow: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+html[data-theme] .client-dashboard-production .client-dashboard-picker .position-select-trigger:hover {
+  border-color: var(--ao-border);
   background: var(--ao-surface);
-  box-shadow: 0 1px 1px rgba(43, 47, 63, .03);
 }
 
 html[data-theme] .client-dashboard-production .client-dashboard-picker .position-select-text strong {
@@ -98,10 +127,11 @@ html[data-theme] .client-dashboard-production .client-dashboard-picker .position
 html[data-theme] .client-dashboard-production .client-dashboard-picker .position-select-text em {
   padding: 1px 6px;
   border-radius: 5px;
-  background: var(--ao-blue-bg);
-  color: var(--ao-blue);
+  background: var(--dash-accent-soft);
+  color: var(--dash-accent);
   font-size: 10.5px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   text-transform: none;
 }
 
@@ -129,22 +159,28 @@ html[data-theme] .client-dashboard-production .client-dashboard-toolbar .view-to
   align-items: center;
   gap: 2px;
   margin-left: auto;
-  padding: 2px;
-  border: 1px solid var(--ao-border);
-  border-radius: 5px;
-  background: var(--ao-surface);
+  padding: 3px;
+  border: 1px solid var(--dash-line);
+  border-radius: 8px;
+  background: var(--ao-surface-2);
 }
 
 html[data-theme] .client-dashboard-production .view-toggle-btn {
-  width: 27px;
+  width: 28px;
   height: 26px;
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ao-caption);
+  transition: color 120ms ease, background 120ms ease;
+}
+
+html[data-theme] .client-dashboard-production .view-toggle-btn:hover:not(.active) {
+  color: var(--ao-base);
 }
 
 html[data-theme] .client-dashboard-production .view-toggle-btn.active {
-  background: var(--ao-blue);
+  background: var(--dash-accent);
   color: #fff;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--dash-accent) 40%, transparent);
 }
 
 /* Strategy workspace */
@@ -160,14 +196,14 @@ html[data-theme] .client-dashboard-production .client-strategy-strip {
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-strip-head {
-  min-height: 34px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin: 0;
-  padding: 0 5px;
-  border-bottom: 1px solid var(--ao-border-soft);
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--dash-line);
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-strip-title {
@@ -179,8 +215,9 @@ html[data-theme] .client-dashboard-production .client-strategy-strip-title {
 
 html[data-theme] .client-dashboard-production .client-strategy-strip-title > strong {
   color: var(--ao-bold);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.01em;
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-strip-title > strong::after {
@@ -194,25 +231,25 @@ html[data-theme] .client-dashboard-production .client-strategy-strip-head > span
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-strip-head .client-viewing-user {
-  height: 22px;
+  height: var(--chip-h);
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 7px;
-  border: 1px solid var(--ao-border-soft);
-  border-radius: 4px;
-  background: var(--ao-surface);
+  padding: var(--chip-pad);
+  border: 0;
+  border-radius: var(--chip-radius);
+  background: var(--ao-surface-2);
   color: var(--ao-caption);
   font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: .02em;
+  font-weight: 700;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-strip-head .client-viewing-user strong {
-  color: var(--ao-blue);
+  color: var(--dash-accent);
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -220,22 +257,25 @@ html[data-theme] .client-dashboard-production .client-strategy-strip-head .clien
 /* Combined group P&L stays compact and subordinate to the strategies. */
 html[data-theme] .client-dashboard-production .client-group-pnl-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 6px;
-  margin: 7px 0;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  margin: 12px 0 4px;
 }
 
 html[data-theme] .client-dashboard-production .client-group-pnl-card {
   min-width: 0;
-  min-height: 42px;
+  min-height: 52px;
   display: grid;
   grid-template-columns: minmax(100px, 1fr) auto minmax(120px, auto);
   align-items: center;
-  gap: 10px;
-  padding: 5px 9px;
-  border: 1px solid var(--ao-border-soft);
-  border-left: 3px solid var(--ao-blue);
-  border-radius: 4px;
+  gap: 12px;
+  padding: 10px 14px 10px 15px;
+  /* A group is a module, so it gets a stronger surface block and a solid accent
+     rail rather than a boxed outline. The hairline stays only to seat the card
+     on the canvas; the left rail carries the identity. */
+  border: 1px solid var(--dash-line);
+  border-left: 3px solid var(--dash-accent);
+  border-radius: 10px;
   background: var(--ao-surface);
   box-shadow: var(--dash-shadow);
 }
@@ -251,75 +291,99 @@ html[data-theme] .client-dashboard-production .client-group-pnl-name span,
 html[data-theme] .client-dashboard-production .client-group-pnl-value span {
   color: var(--ao-caption);
   font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: .04em;
+  font-weight: 700;
+  letter-spacing: .06em;
   text-transform: uppercase;
 }
 
 html[data-theme] .client-dashboard-production .client-group-pnl-name strong {
   overflow: hidden;
   color: var(--ao-bold);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 html[data-theme] .client-dashboard-production .client-group-pnl-meta {
   display: flex;
-  align-items: center;
-  gap: 5px;
+  align-items: stretch;
+  gap: 0;
 }
 
-/* Group summary chips: a muted label (Strategies / Legs / Open) followed by its
-   value, so the count reads as a labelled figure rather than a bare number. */
+/* No pills. Each figure is a clean stacked stat - a tiny uppercase label over a
+   tabular value - separated by hairline rules. This is the KPI-strip pattern
+   premium fintech dashboards use in place of badge chips: the numbers read as a
+   quiet, aligned data row rather than a cluster of competing pills. */
 html[data-theme] .client-dashboard-production .client-group-chip {
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 9px;
-  border: 1px solid var(--ao-border-soft);
-  border-radius: 4px;
-  background: var(--ao-surface-2);
+  min-width: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 16px;
+  border: 0;
+  border-left: 1px solid var(--dash-line);
+  border-radius: 0;
+  background: none;
   color: var(--ao-bold);
-  font-size: 12.5px;
+  font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -.01em;
   white-space: nowrap;
+}
+
+/* First stat needs no leading divider and sits tight to the group name. */
+html[data-theme] .client-dashboard-production .client-group-chip:first-child {
+  padding-left: 2px;
+  border-left: 0;
 }
 
 html[data-theme] .client-dashboard-production .client-group-chip em {
   font-style: normal;
   color: var(--ao-caption);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .03em;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  line-height: 1.1;
   text-transform: uppercase;
 }
 
-/* Margin deployed is a rupee figure, not a count - give it the blue accent that
-   ties it to the group's left border so it stands apart from the tallies. */
+/* Margin is the one currency figure in the strip - tint the value with the
+   accent so it stands apart from the plain counts, no badge needed. */
 html[data-theme] .client-dashboard-production .client-group-chip.margin {
-  color: var(--ao-blue);
-  background: color-mix(in srgb, var(--ao-blue) 9%, transparent);
-  border-color: color-mix(in srgb, var(--ao-blue) 30%, transparent);
+  color: var(--dash-accent);
+  background: none;
 }
 
 html[data-theme] .client-dashboard-production .client-group-chip.margin em {
-  color: color-mix(in srgb, var(--ao-blue) 78%, var(--ao-caption));
+  color: color-mix(in srgb, var(--dash-accent) 70%, var(--ao-caption));
 }
 
+/* Combined P&L is the module's headline: a large, colour-led figure set apart by
+   a divider, so the group's money reads first. */
 html[data-theme] .client-dashboard-production .client-group-pnl-value {
   justify-items: end;
-  padding-left: 10px;
-  border-left: 1px solid var(--ao-border-soft);
+  gap: 2px;
+  padding-left: 16px;
+  border-left: 1px solid var(--dash-line);
+}
+
+html[data-theme] .client-dashboard-production .client-group-pnl-value span {
+  font-size: 9px;
+  letter-spacing: .06em;
 }
 
 html[data-theme] .client-dashboard-production .client-group-pnl-value strong {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 19px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+  line-height: 1.05;
   white-space: nowrap;
 }
 
@@ -337,8 +401,8 @@ html[data-theme] .client-dashboard-production .client-strategy-card {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--ao-border-soft);
-  border-radius: 4px;
+  border: 1px solid var(--dash-line);
+  border-radius: 10px;
   background: var(--ao-surface);
   box-shadow: var(--dash-shadow);
   transition: border-color 120ms ease, box-shadow 120ms ease;
@@ -365,7 +429,7 @@ html[data-theme] .client-dashboard-production .client-strategy-summary {
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-card.expanded .client-strategy-summary {
-  border-bottom-color: var(--ao-border-soft);
+  border-bottom-color: var(--dash-line);
   background: var(--ao-surface-2);
 }
 
@@ -374,7 +438,7 @@ html[data-theme] .client-dashboard-production .client-strategy-summary:hover {
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-summary:focus-visible {
-  outline: 2px solid var(--ao-blue-surface);
+  outline: 2px solid var(--dash-accent);
   outline-offset: -2px;
 }
 
@@ -394,9 +458,10 @@ html[data-theme] .client-dashboard-production .client-strategy-name strong {
   max-width: none;
   overflow: hidden;
   color: var(--ao-bold);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 700;
   line-height: 1.2;
+  letter-spacing: -.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -408,7 +473,7 @@ html[data-theme] .client-dashboard-production .client-strategy-expand {
   flex: 0 0 20px;
   display: inline-grid;
   place-items: center;
-  border: 1px solid var(--ao-border-soft);
+  border: 1px solid var(--dash-line);
   border-radius: 999px;
   background: var(--ao-surface);
   color: var(--ao-caption);
@@ -436,22 +501,51 @@ html[data-theme] .client-dashboard-production .client-strategy-broker strong,
 html[data-theme] .client-dashboard-production .client-strategy-broker-sub {
   min-width: 0;
   max-width: 190px;
-  height: 22px;
+  height: var(--chip-h);
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 0 7px;
+  padding: 0 9px;
   overflow: hidden;
-  border: 1px solid var(--ao-border-soft);
-  border-radius: 4px;
-  background: var(--ao-surface);
-  color: var(--ao-caption);
+  border: 1px solid transparent;
+  border-radius: var(--chip-radius);
+  background: var(--ao-surface-2);
+  color: var(--ao-base);
   font-size: 10.5px;
   font-style: normal;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Give the two identity chips their own noticeable colour so WHO (the user) and
+   WHERE (the broker account) read apart at a glance, both clear of the green/red
+   kept for P&L. Violet for the user, accent-blue for the broker. */
+
+/* User chip: the lead <strong> is the person only when a broker sub-chip sits
+   beside it (the All-Users overview), so key off that. */
+html[data-theme] .client-dashboard-production .client-strategy-broker:has(.client-strategy-broker-sub) > strong {
+  background: color-mix(in srgb, var(--ao-purple) 13%, transparent);
+  border-color: color-mix(in srgb, var(--ao-purple) 28%, transparent);
+  color: var(--ao-purple);
+}
+
+/* Broker chip: the sub-chip in the overview, and the lead <strong> in the
+   single-account view where there is no sub-chip - both are the broker. */
+html[data-theme] .client-dashboard-production .client-strategy-broker-sub,
+html[data-theme] .client-dashboard-production .client-strategy-broker:not(:has(.client-strategy-broker-sub)) > strong {
+  background: var(--dash-accent-soft);
+  border-color: var(--dash-accent-line);
+  color: var(--dash-accent);
+}
+
+/* The broker logo keeps its own brand colour; only nudge it to sit cleanly
+   inside the tinted chip. */
+html[data-theme] .client-dashboard-production .client-strategy-broker strong .broker-mark,
+html[data-theme] .client-dashboard-production .client-strategy-broker-sub .broker-mark {
+  display: inline-flex;
+  flex: none;
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-metrics {
@@ -466,15 +560,19 @@ html[data-theme] .client-dashboard-production .client-strategy-metrics {
 
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div {
   min-width: 72px;
-  height: 28px;
+  height: 30px;
   display: grid;
   align-content: center;
-  gap: 0;
-  padding: 0 9px;
+  justify-items: end;
+  gap: 1px;
+  padding: 0 10px;
   border: 0;
-  border-left: 1px solid var(--ao-border-soft);
+  border-left: 1px solid var(--dash-line);
   border-radius: 0;
   background: transparent;
+  /* Numbers read as a right-aligned column, so P&L, margin and counts line up
+     on their last digit rather than drifting under their labels. */
+  text-align: right;
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div:first-child {
@@ -484,9 +582,9 @@ html[data-theme] .client-dashboard-production .client-strategy-metrics > div:fir
 html[data-theme] .client-dashboard-production .client-strategy-metrics span {
   display: block;
   color: var(--ao-caption);
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: .04em;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .05em;
   line-height: 1.15;
   text-transform: uppercase;
 }
@@ -495,8 +593,8 @@ html[data-theme] .client-dashboard-production .client-strategy-metrics strong,
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div:nth-child(2) strong,
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child strong {
   color: var(--ao-bold);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 700;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
 }
@@ -517,13 +615,17 @@ html[data-theme] .client-dashboard-production .client-strategy-metrics > div:las
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child {
   min-width: 128px;
   border: 0;
-  border-left: 1px solid var(--ao-border-soft);
+  border-left: 1px solid var(--dash-line);
   background: transparent;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child strong {
+  font-size: 14.5px;
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child:has(strong.down),
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child:has(strong.up) {
-  border-color: var(--ao-border-soft);
+  border-color: var(--dash-line);
   background: transparent;
 }
 
@@ -595,7 +697,7 @@ html[data-theme] .client-dashboard-production .client-strategy-row--compact .cli
   gap: 0;
   margin-top: 2px;
   padding-top: 7px;
-  border-top: 1px solid var(--ao-border-soft);
+  border-top: 1px solid var(--dash-line);
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-row--compact .client-strategy-card:not(.expanded) .client-strategy-metrics > div {
@@ -651,7 +753,7 @@ html[data-theme] .client-dashboard-production .strategy-legs-table.position-book
   height: 42px;
   padding: 0 14px;
   border: 0;
-  border-bottom: 1px solid var(--ao-border-soft);
+  border-bottom: 1px solid var(--dash-line);
   background: var(--ao-surface);
   color: var(--ao-base);
   font-family: inherit;
@@ -661,14 +763,23 @@ html[data-theme] .client-dashboard-production .strategy-legs-table.position-book
 }
 
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th {
-  height: 36px;
-  background: var(--ao-surface-2);
+  height: 34px;
+  background: var(--ao-surface);
   color: var(--ao-caption);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-  box-shadow: inset 0 -1px 0 var(--ao-border-soft);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  box-shadow: inset 0 -1px 0 var(--dash-line);
+}
+
+/* Numeric columns (qty, avg, LTP, P&L) read as right-aligned tabular columns so
+   figures line up on their last digit; the contract name stays left and the
+   product tag stays centred. */
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(n + 3),
+html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(n + 3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(1),
@@ -694,21 +805,23 @@ html[data-theme] .client-dashboard-production .strategy-legs-table.position-book
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact th:nth-child(7),
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact td:nth-child(7) { width: 12%; }
 
+/* Zebra is a whisper, not a stripe: a faint surface-2 wash so rows separate on
+   rhythm rather than banded fills. */
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:nth-child(even) td {
-  background: var(--ao-hover);
+  background: color-mix(in srgb, var(--ao-surface-2) 55%, var(--ao-surface));
 }
 
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr:hover td,
 html[data-theme] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr.position-row-short:hover td {
-  background: color-mix(in srgb, var(--ao-hover) 65%, var(--ao-surface));
+  background: var(--ao-hover);
 }
 
 html[data-theme="light"] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr.position-row-short td {
-  background: color-mix(in srgb, var(--ao-red) 4%, var(--ao-surface));
+  background: color-mix(in srgb, var(--ao-red) 3%, var(--ao-surface));
 }
 
 html[data-theme="dark"] .client-dashboard-production .strategy-legs-table.position-book-compact tbody tr.position-row-short td {
-  background: color-mix(in srgb, var(--ao-red) 7%, var(--ao-surface));
+  background: color-mix(in srgb, var(--ao-red) 6%, var(--ao-surface));
 }
 
 html[data-theme] .client-dashboard-production .position-symbol-line {
@@ -727,15 +840,15 @@ html[data-theme] .client-dashboard-production .position-symbol-line > strong {
 
 html[data-theme] .client-dashboard-production .position-symbol-line .position-expiry {
   min-width: 0;
-  min-height: 21px;
+  min-height: var(--chip-h);
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex: none;
-  padding: 0 7px 0 5px;
+  padding: 0 8px 0 6px;
   overflow: visible;
-  border: 1px solid #bdd0ea;
-  border-radius: 3px;
+  border: 0;
+  border-radius: var(--chip-radius);
   background: #edf4fd;
   color: #315b8a;
   font-size: 11.5px;
@@ -780,10 +893,11 @@ html[data-theme] .client-dashboard-production .position-symbol-line .book-tag,
 html[data-theme] .client-dashboard-production .position-symbol-line .leg-entry-tag,
 html[data-theme] .client-dashboard-production .position-symbol-line .strategy-open-tag,
 html[data-theme] .client-dashboard-production .position-symbol-line .strategy-closed-tag {
-  height: 21px;
+  height: var(--chip-h);
   display: inline-flex;
-  padding: 0 7px;
-  border-radius: 3px;
+  align-items: center;
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
   font-size: 10.5px;
   font-weight: 600;
 }
@@ -792,6 +906,16 @@ html[data-theme] .client-dashboard-production .position-symbol-line .book-tag.ex
 html[data-theme] .client-dashboard-production .position-symbol-line .strategy-open-tag,
 html[data-theme] .client-dashboard-production .position-symbol-line .strategy-closed-tag {
   display: inline-flex;
+}
+
+/* The LONG/SHORT (qty cell) and product tags live outside the symbol line, so
+   pull them onto the same chip standard as EXP / PE / CE / OPEN. */
+html[data-theme] .client-dashboard-production .client-detail-panel .book-tag {
+  height: var(--chip-h);
+  padding: var(--chip-pad);
+  border-radius: var(--chip-radius);
+  font-size: 10.5px;
+  font-weight: 600;
 }
 
 html[data-theme] .client-dashboard-production .book-product-cell {
@@ -823,7 +947,7 @@ html[data-theme] .client-dashboard-production .strategy-exit-price {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--ao-blue);
+  color: var(--dash-accent);
   font-size: 13px;
   font-weight: 600;
   box-shadow: none;
@@ -852,16 +976,19 @@ html[data-theme] .client-dashboard-production .compact-legs {
 html[data-theme] .client-dashboard-production .compact-leg-row {
   min-height: 40px;
   padding: 5px 0;
-  border-bottom-color: var(--ao-border-soft);
+  border-bottom-color: var(--dash-line);
   font-size: 13px;
 }
 
 html[data-theme] .client-dashboard-production .compact-leg-head {
   min-height: 32px;
-  background: var(--ao-surface-2);
+  background: var(--ao-surface);
   color: var(--ao-caption);
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  box-shadow: inset 0 -1px 0 var(--dash-line);
 }
 
 html[data-theme] .client-dashboard-production .legs-split {

@@ -13,6 +13,7 @@ import UserBalances from './transactions/UserBalances'
 import SyncNetPositions from './transactions/SyncNetPositions'
 import { apiGet } from './config/api'
 import NetPositionsReport from './pages/NetPositionsReport'
+import RoiTracker from './pages/RoiTracker'
 import TradePanelTabs from './tradepanel/TradePanelTabs'
 import TradePanelStandalone from './tradepanel/TradePanelStandalone'
 import { connectSavedFeedMaster } from './feedmaster/feedMasterStore'
@@ -87,6 +88,7 @@ function App() {
               <Route path="masters/feedmaster" element={<Feedmaster />} />
                <Route path="transactions/user-balances" element={<UserBalances />} />
                <Route path="transactions/sync-net-positions" element={<SyncNetPositions />}/>
+               <Route path="reports" element={<RoiTracker />} />
 
                {/* TRADE PANEL - one persistent element for all four tabs, so
                    switching between them never unmounts/re-fetches (see

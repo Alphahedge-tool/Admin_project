@@ -43,4 +43,16 @@ export const config = {
   publicIP: process.env.ANGEL_PUBLIC_IP || ip,
   macAddress: process.env.ANGEL_MAC_ADDRESS || '',
   feedDebug: process.env.FEED_DEBUG === '1',
+
+  // Angel "Spark" web post-trade P&L (the ROI tracker's data source). This API is
+  // separate from SmartAPI and authenticates with the browser session's non-trade
+  // access token — a short-lived, sensitive credential, so it comes ONLY from the
+  // environment and is never committed to source.
+  //
+  // The party_code (client id) is NOT hardcoded: it is resolved per request from
+  // the Angel broker account the user picks in the ROI tracker (sourced from the
+  // SQL broker_config table), so this stays empty. The device id is not secret.
+  angelPosttradeToken: process.env.ANGEL_POSTTRADE_TOKEN || '',
+  angelPosttradeDeviceId:
+    process.env.ANGEL_POSTTRADE_DEVICE_ID || '026eed0d-67dd-586f-b2c5-b94ce137530c',
 };

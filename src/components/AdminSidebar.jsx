@@ -300,7 +300,7 @@ function AdminSidebar() {
           </AccordionDetails>
         </Accordion>
 
-        <ListItemButton disabled sx={{ ...navSx('/admin/reports'), opacity: .48 }}>
+        <ListItemButton component={Link} to="/admin/reports" sx={navSx('/admin/reports')}>
           <NavIcon><FileText size={16} /></NavIcon>
           <ListItemText primary="Reports" />
         </ListItemButton>
