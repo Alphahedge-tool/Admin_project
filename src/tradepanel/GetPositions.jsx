@@ -2,7 +2,7 @@
 // Angel One and Kotak Neo positions share one normalized table shape.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowUpDown, Check, ChevronDown, Filter, Info, Layers, Radio, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowUpDown, BookmarkPlus, Check, ChevronDown, Filter, Info, Layers, Radio, RefreshCw, Search, X } from 'lucide-react';
 import { apiGet, apiPost } from '../config/api';
 import {
   classifyLoginError, ensureAccountsLoaded, isAngelBroker, isAuthError, isRateLimited,
@@ -134,6 +134,7 @@ export default function GetPositions() {
   const [strategyName, setStrategyName] = useState('');
   const [strategyError, setStrategyError] = useState('');
   const [savingStrategy, setSavingStrategy] = useState(false);
+  const [savingOpenPositions, setSavingOpenPositions] = useState(false);
   const [existingStrategies, setExistingStrategies] = useState([]);
   const [strategyMode, setStrategyMode] = useState('new'); // 'new' | 'existing'
   const [selectedStrategyCode, setSelectedStrategyCode] = useState('');
@@ -721,6 +722,51 @@ export default function GetPositions() {
     }
   }, [configId, loadExistingStrategies, selectedBrokerName, selectedConfig, strategyMode, selectedStrategyCode, strategyName, userId, selectedLegs]);
 
+  // Dump the selected positions into the backend open_positions table, tagged
+  // with the user and the broker account they came from, so they can be mapped
+  // back to their source later. Separate from "Add Group": that saves them as a
+  // managed strategy, this just captures the raw selection.
+  const saveOpenPositions = useCallback(async () => {
+    if (!userId) {
+      setStatus('Select a user first');
+      return;
+    }
+    if (!selectedConfig) {
+      setStatus('Select an account first');
+      return;
+    }
+    if (!selectedLegs.length) return;
+
+    const legs = selectedLegs.map((row) => ({
+      symbol_token: row.symboltoken ?? '',
+      trading_symbol: row.tradingsymbol ?? row.symbolname ?? row.symbol ?? '',
+      exchange: row.exchange ?? '',
+      product_type: row.producttype ?? row.product_type ?? '',
+      net_qty: Number(row.netqty ?? 0),
+      buy_avg: positionBuyAvg(row),
+      sell_avg: positionSellAvg(row),
+      ltp: positionValue(row, ['ltp', 'LTP', 'lasttradedprice']),
+      pnl: pnlOf(row),
+    }));
+
+    setSavingOpenPositions(true);
+    try {
+      const res = await apiPost('/open-positions/create.php', {
+        user_id: Number(userId),
+        broker_config_id: Number(configId || 0) || null,
+        broker_name: selectedBrokerName || selectedConfig?.broker_name || '',
+        broker_account_id: selectedConfig?.account_id || '',
+        legs,
+      });
+      setStatus(res.message || 'Open positions saved');
+      setSelectedPositionKeys(new Set());
+    } catch (error) {
+      setStatus(error.message || 'Failed to save open positions');
+    } finally {
+      setSavingOpenPositions(false);
+    }
+  }, [userId, configId, selectedConfig, selectedBrokerName, selectedLegs]);
+
   return (
     <div className="trade-panel">
       <div className="positions-view positions-view-compact get-positions-view">
@@ -755,6 +801,15 @@ export default function GetPositions() {
               <span className="positions-selection-count">{selectedCount} selected</span>
               <button type="button" className="positions-group-btn" onClick={openStrategyDialog}>
                 <Layers size={13} /> Add Group
+              </button>
+              <button
+                type="button"
+                className="positions-group-btn"
+                onClick={saveOpenPositions}
+                disabled={savingOpenPositions || !selectedConfig}
+                title="Save the selected positions to the Open Positions table, tagged by user and broker account"
+              >
+                <BookmarkPlus size={13} /> {savingOpenPositions ? 'Saving…' : 'Save Open Positions'}
               </button>
               <button type="button" className="positions-selection-clear" onClick={() => setSelectedPositionKeys(new Set())}>
                 Clear
