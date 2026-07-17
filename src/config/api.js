@@ -1,9 +1,14 @@
 const API_BASE_URL = '/api'
 
-// Broker backend base URL. Leave empty to use the current origin and Vite's
-// dev proxy / reverse proxy in front of it, or set VITE_BROKER_API_BASE_URL
-// when the Node backend lives on a separate host.
-const BROKER_API_BASE_URL = (import.meta.env.VITE_BROKER_API_BASE_URL || 'http://127.0.0.1:3001').replace(/\/$/, '')
+// Broker backend base URL. Default is EMPTY = same-origin, so broker calls go to
+// `/api/...` and ride the Vite dev proxy / reverse proxy (see vite.config.js)
+// exactly like the Angel/Kotak calls do. This is what makes the app work over the
+// network: a hardcoded http://127.0.0.1:3001 would point a *remote* user's browser
+// at their OWN machine, so their Zerodha auto-login (and every broker call) would
+// silently fail. Set VITE_BROKER_API_BASE_URL only when the Node backend lives on
+// a separate host reachable directly by the browser. Uses ?? (not ||) so an
+// explicit empty value is honoured rather than falling back to a hardcoded host.
+const BROKER_API_BASE_URL = (import.meta.env.VITE_BROKER_API_BASE_URL ?? '').replace(/\/$/, '')
 
 function brokerApiUrl(path) {
   return `${BROKER_API_BASE_URL}/api${path}`
