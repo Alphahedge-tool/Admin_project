@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CircleChevronDown, AlignJustify, Table, ArrowUpDown, Radio } from 'lucide-react'
 import { apiGet } from '../config/api'
-import { isAngelBroker } from '../feedmaster/angelSessionStore'
+import { ensureAccountsLoaded, isAngelBroker } from '../feedmaster/angelSessionStore'
 import { getSavedTradeAccount, saveTradeAccount } from './tradeAccountStore'
 import { CompactSelect } from './PositionSelect'
 import { BrokerMark } from './BrokerMark'
@@ -10,6 +10,7 @@ import { legIsClosed, money, withLiveTick } from './legFormat'
 import { CompactLegs, LegsTable } from './strategyLegsView'
 import { SkeletonCards } from './TableSkeleton'
 import { useLiveLegFeed } from './useLiveLegFeed'
+import { strategyCardKey, useStrategyMargins } from './useStrategyMargins'
 import './tradepanel.css'
 import './clientDashboard.css'
 
@@ -24,7 +25,7 @@ const ALL_GROUPS = 'all'
 // never handed it.
 const ALL_ACCOUNTS = 'all-accounts'
 
-function ClientDashboard() {
+function ClientDashboard({ active = true }) {
   const [users, setUsers] = useState([])
   const [userId, setUserId] = useState('')
   const [groups, setGroups] = useState([])
@@ -105,6 +106,17 @@ function ClientDashboard() {
 
   const { liveTicks, feedStatus } = useLiveLegFeed(legFeedKey, { subscriber: 'client-dashboard' })
 
+  // "Margin deployed" per strategy, from Angel's batch margin calculator. Only
+  // Angel accounts are priced, and only while THIS is the visible tab - the four
+  // Trade Panel tabs are all mounted at once, so an ungated fetch would log in
+  // every account and price every strategy the moment any tab is opened. In the
+  // single-account view a strategy may predate broker tagging, so the selected
+  // account id fills in as the fallback.
+  const strategyMargins = useStrategyMargins(brokerStrategies, {
+    fallbackConfigId: showOverview ? '' : configId,
+    active,
+  })
+
   // One live combined P&L per user group across every saved strategy currently
   // in scope. This is derived from the already-loaded backend legs and their
   // shared live ticks; it never requests a broker position book.
@@ -119,23 +131,31 @@ function ClientDashboard() {
       const ownerGroup = groupById.get(ownerGroupId) || selectedGroup
       const groupName = owner?.group_name || ownerGroup?.name || 'No Group'
       const legs = (strategy.legs || []).map((leg) => withLiveTick(leg, liveTicks))
+      const openLegs = legs.filter((leg) => !legIsClosed(leg)).length
       const pnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
+      const marginState = strategyMargins[strategyCardKey(strategy)]
       const current = totals.get(ownerGroupId) || {
         id: ownerGroupId,
         name: groupName,
         strategies: 0,
         legs: 0,
+        openLegs: 0,
         pnl: 0,
+        margin: 0,
       }
 
       current.strategies += 1
       current.legs += legs.length
+      current.openLegs += openLegs
       current.pnl += pnl
+      // Only settled margins roll into the group total, so a still-loading (or
+      // Angel-unavailable) strategy leaves it reading low rather than wrong.
+      if (marginState?.status === 'ready') current.margin += Number(marginState.value || 0)
       totals.set(ownerGroupId, current)
     })
 
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name, 'en'))
-  }, [brokerStrategies, groups, liveTicks, selectedGroup, selectedUser, userId, users])
+  }, [brokerStrategies, groups, liveTicks, selectedGroup, selectedUser, strategyMargins, userId, users])
 
   const overviewLoading = showOverview && strategiesLoading
 
@@ -190,6 +210,13 @@ function ClientDashboard() {
   useEffect(() => {
     setExpandedStrategies(new Set())
   }, [configId, groupId, userId])
+
+  // Hydrate the broker session store (accounts + saved tokens) so the margin
+  // hook can resolve each strategy's Angel account and its session. Deduped, so
+  // sharing it with the sibling book pages costs nothing.
+  useEffect(() => {
+    ensureAccountsLoaded()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -499,8 +526,23 @@ function ClientDashboard() {
                     <strong>{group.name}</strong>
                   </div>
                   <div className="client-group-pnl-meta">
-                    <span>{group.strategies} {group.strategies === 1 ? 'strategy' : 'strategies'}</span>
-                    <span>{group.legs} {group.legs === 1 ? 'leg' : 'legs'}</span>
+                    <span className="client-group-chip">
+                      <em>{group.strategies === 1 ? 'Strategy' : 'Strategies'}</em>{group.strategies}
+                    </span>
+                    <span className="client-group-chip">
+                      <em>Legs</em>{group.legs}
+                    </span>
+                    <span className="client-group-chip">
+                      <em>Open</em>{group.openLegs}
+                    </span>
+                    {group.margin > 0 && (
+                      <span
+                        className="client-group-chip margin"
+                        title="Angel margin deployed across this group's strategies"
+                      >
+                        <em>Margin</em>{money(group.margin)}
+                      </span>
+                    )}
                   </div>
                   <div className="client-group-pnl-value">
                     <span>Combined P&amp;L</span>
@@ -533,14 +575,22 @@ function ClientDashboard() {
               {brokerStrategies.map((strategy) => {
                 const rawLegs = strategy.legs || []
                 // Mark every open leg to the live websocket feed so LTP/P&L
-                // tick in real time, same as Sync Net Positions.
-                const legs = rawLegs.map((leg) => withLiveTick(leg, liveTicks))
+                // tick in real time, same as Sync Net Positions. Tag each leg with
+                // the strategy's broker so the symbol parser reads a Kotak-monthly
+                // contract with Kotak's grammar (year+month+strike, no day) instead
+                // of Angel's - otherwise NIFTY26JUL22350PE shows "26 Jul 22 / 350".
+                const legs = rawLegs.map((leg) => withLiveTick(
+                  { ...leg, broker_name: leg.broker_name || strategy.broker_name },
+                  liveTicks,
+                ))
                 const openLegs = legs.filter((leg) => !legIsClosed(leg)).length
                 const strategyPnl = legs.reduce((sum, leg) => sum + Number(leg.pnl || 0), 0)
                 const brokerLabel = strategyBrokerLabel(strategy)
                 // strategy_code isn't unique across users (All-Users mode), so
-                // key each card on the row id instead.
-                const cardKey = String(strategy.id ?? `${strategy._userLabel || ''}::${strategy.strategy_code}`)
+                // key each card on the row id instead. Shared with the margin hook
+                // so a card and its margin agree on the key.
+                const cardKey = strategyCardKey(strategy)
+                const marginState = strategyMargins[cardKey]
                 // The full-width container opens its table only when clicked.
                 const expanded = expandedStrategies.has(cardKey)
                 return (
@@ -586,6 +636,10 @@ function ClientDashboard() {
                         <div>
                           <span>Open Legs</span>
                           <strong>{openLegs}</strong>
+                        </div>
+                        <div className="client-metric-margin">
+                          <span>Margin Deployed</span>
+                          <MarginMetric state={marginState} />
                         </div>
                         <div>
                           <span>Strategy P&amp;L</span>
@@ -736,6 +790,39 @@ function PanelTotal({ legs, label = 'Total P&L' }) {
       <strong className={total >= 0 ? 'up' : 'down'}>{money(total)}</strong>
     </div>
   )
+}
+
+// The "Margin Deployed" figure on a strategy card. Angel's batch calculator is
+// the source; a strategy on a non-Angel account (or one still resolving its
+// account) has no state and reads as a muted dash. A failed price keeps the dash
+// but carries the reason as a tooltip rather than shouting an error on the card.
+function MarginMetric({ state }) {
+  if (!state) {
+    return <strong className="client-metric-pending" title="Margin is priced for Angel accounts">—</strong>
+  }
+  if (state.status === 'loading') {
+    return <strong className="client-metric-pending">…</strong>
+  }
+  if (state.status === 'error') {
+    return <strong className="client-metric-pending" title={state.message}>—</strong>
+  }
+  return <strong title={marginBreakdown(state.components)}>{money(state.value)}</strong>
+}
+
+// A one-line SPAN/exposure/premium breakdown for the margin tooltip, from
+// Angel's marginComponents. Only the parts that are present and non-zero show.
+function marginBreakdown(components) {
+  if (!components) return 'Margin deployed'
+  const parts = [
+    ['SPAN', components.spanMargin],
+    ['Exposure', components.exposureMargin],
+    ['Option premium', components.totOptionsPremium ?? components.netPremium],
+    ['Benefit', components.marginBenefit],
+  ]
+  const shown = parts
+    .filter(([, value]) => Number(value || 0) !== 0)
+    .map(([label, value]) => `${label} ${money(value)}`)
+  return shown.length ? shown.join(' · ') : 'Margin deployed'
 }
 
 // Long/Short breakdown shown in a leg panel's header: how many legs are long

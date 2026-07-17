@@ -45,7 +45,10 @@ export default function TradePanelTabs() {
             previous element={null} route) */}
       </div>
       <div className="trade-panel-tab" hidden={activeTab !== 'client-dashboard'}>
-        <ClientDashboard />
+        {/* `active` gates the per-strategy margin fetch: every tab is mounted at
+            once, so without it the dashboard would price (and log in) every
+            account the moment any Trade Panel tab is opened. */}
+        <ClientDashboard active={activeTab === 'client-dashboard'} />
       </div>
       <div className="trade-panel-tab" hidden={activeTab !== 'positions'}>
         <GetPositions />

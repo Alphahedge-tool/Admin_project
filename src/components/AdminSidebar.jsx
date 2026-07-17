@@ -110,6 +110,9 @@ function AdminSidebar() {
         height: '100%',
         borderRight: '1px solid var(--ao-border-soft)',
         background: 'var(--ao-surface)',
+        // Soft right-edge lift so the white rail reads as a raised surface over
+        // the grey canvas, not just a bordered column.
+        boxShadow: '1px 0 3px rgba(23, 43, 77, .04)',
         zIndex: 20,
         overflow: 'hidden',
       }}

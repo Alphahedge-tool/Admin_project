@@ -11,7 +11,9 @@ const lightTokens = {
   base: '#444444',
   caption: '#9B9B9B',
   placeholder: '#9B9B9B',
-  bg: '#F8F8F8',
+  // Subtle cool grey canvas (matches --ao-bg); paper/surface stays white so
+  // cards lift off it.
+  bg: '#ECEEF3',
   surface: '#FFFFFF',
   surface2: '#FAFAFB',
   hover: '#F8F8F8',
@@ -30,7 +32,7 @@ const darkTokens = {
   base: '#C4C4C4',
   caption: '#8E8E8E',
   placeholder: '#777777',
-  bg: '#111111',
+  bg: '#0F1113',
   surface: '#181818',
   surface2: '#202020',
   hover: '#292929',
@@ -94,7 +96,11 @@ export const createAdminTheme = (mode = 'light') => {
         root: {
           backgroundImage: 'none',
           borderRadius: 8,
-          boxShadow: mode === 'dark' ? '0 1px 2px rgba(0, 0, 0, .22), 0 4px 14px rgba(0, 0, 0, .16)' : '0 1px 2px rgba(43, 47, 63, .05), 0 4px 14px rgba(43, 47, 63, .05)',
+          // Matches --ao-lift: a soft, navy-tinted card lift so Paper surfaces
+          // (page cards, tables, dialogs) float on the grey canvas.
+          boxShadow: mode === 'dark'
+            ? '0 1px 2px rgba(0, 0, 0, .3), 0 2px 8px rgba(0, 0, 0, .26)'
+            : '0 1px 2px rgba(23, 43, 77, .05), 0 2px 8px rgba(23, 43, 77, .06)',
         },
       },
     },

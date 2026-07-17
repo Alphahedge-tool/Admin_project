@@ -24,7 +24,10 @@
   --ao-base: #444444;
   --ao-caption: #9B9B9B;
   --ao-placeholder: #9B9B9B;
-  --ao-bg: #F8F8F8;
+  /* Page canvas: a subtle cool grey (not near-white) so white surfaces read as
+     separate cards that lift off the page. Tinted a hair toward the blue accent
+     for a calmer, less clinical grey. --ao-surface stays pure white. */
+  --ao-bg: #ECEEF3;
   --ao-surface: #FFFFFF;
   --ao-surface-2: #FAFAFB;
   --ao-hover: #F8F8F8;
@@ -32,6 +35,16 @@
   --ao-border-soft: #EEEEEE;
   --shadow-card: 0 1px 2px rgba(43, 47, 63, .05), 0 4px 14px rgba(43, 47, 63, .05);
   --shadow-pop: 0 4px 24px rgba(0, 0, 0, .12);
+  /* Card lift used app-wide on white surfaces sitting on the grey canvas. Navy-
+     tinted rather than flat black - reads softer and more premium. */
+  --ao-lift: 0 1px 2px rgba(23, 43, 77, .05), 0 2px 6px rgba(23, 43, 77, .05);
+  --ao-lift-hover: 0 2px 5px rgba(23, 43, 77, .07), 0 8px 20px rgba(23, 43, 77, .08);
+  /* Accent for combined group headers (Get Position / Order Book / Trade Book /
+     Sync). Blue in light; dark mode flips it to teal for a distinct, more
+     professional look on the dark canvas. --group-chip-fg is the text on the
+     filled accent chip, tuned for contrast against each theme's accent. */
+  --group-accent: var(--ao-blue);
+  --group-chip-fg: #FFFFFF;
   --radius: 10px;
 
   font-family: Roboto, ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
@@ -57,7 +70,7 @@ html[data-theme="dark"] {
   --ao-base: #C4C4C4;
   --ao-caption: #8E8E8E;
   --ao-placeholder: #777777;
-  --ao-bg: #111111;
+  --ao-bg: #0F1113;
   --ao-surface: #181818;
   --ao-surface-2: #202020;
   --ao-hover: #292929;
@@ -65,6 +78,13 @@ html[data-theme="dark"] {
   --ao-border-soft: #2D2D2D;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .22), 0 4px 14px rgba(0, 0, 0, .16);
   --shadow-pop: 0 8px 30px rgba(0, 0, 0, .4);
+  --ao-lift: 0 1px 2px rgba(0, 0, 0, .3), 0 2px 8px rgba(0, 0, 0, .26);
+  --ao-lift-hover: 0 4px 10px rgba(0, 0, 0, .34), 0 12px 28px rgba(0, 0, 0, .4);
+  /* Teal accent for group headers in dark mode - distinct from the light blue,
+     reads clean and professional on the dark surface. Deep teal-ink text keeps
+     the filled expiry chip legible. */
+  --group-accent: #2FBFAE;
+  --group-chip-fg: #06231F;
   --color-neutral-background: #181818;
   --color-neutral-background-grey: #202020;
   --color-neutral-background-hover: #292929;

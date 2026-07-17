@@ -3,6 +3,15 @@
    driven, so day/night themes stay aligned without a second palette. */
 
 html[data-theme] .client-dashboard-production {
+  /* A subtle cool grey canvas (not the near-white --ao-bg) so the white cards
+     read as separate surfaces that lift off the page rather than blending into
+     it. Tinted a hair toward the blue accent for a calmer, less clinical grey.
+     Scoped as variables so this can be promoted app-wide from one place. */
+  --dash-canvas: #ECEEF3;
+  --dash-card: var(--ao-surface);
+  --dash-shadow: 0 1px 2px rgba(23, 43, 77, .05), 0 2px 6px rgba(23, 43, 77, .05);
+  --dash-shadow-lift: 0 2px 5px rgba(23, 43, 77, .07), 0 8px 20px rgba(23, 43, 77, .08);
+
   width: 100%;
   max-width: 100%;
   height: 100%;
@@ -12,9 +21,17 @@ html[data-theme] .client-dashboard-production {
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  background: var(--ao-bg);
+  background: var(--dash-canvas);
   color: var(--ao-base);
   font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Dark mode already separates #111 canvas from #181818 cards, but nudge the
+   canvas a touch cooler/deeper so the same "cards float" read carries over. */
+html[data-theme="dark"] .client-dashboard-production {
+  --dash-canvas: #0F1113;
+  --dash-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 2px 8px rgba(0, 0, 0, .26);
+  --dash-shadow-lift: 0 4px 10px rgba(0, 0, 0, .34), 0 12px 28px rgba(0, 0, 0, .4);
 }
 
 html[data-theme] .client-dashboard-production .client-dashboard-head {
@@ -34,7 +51,7 @@ html[data-theme] .client-dashboard-production .client-dashboard-toolbar {
   border: 1px solid var(--ao-border-soft);
   border-radius: 4px;
   background: var(--ao-surface);
-  box-shadow: none;
+  box-shadow: var(--dash-shadow);
 }
 
 html[data-theme] .client-dashboard-production .client-dashboard-picker {
@@ -220,6 +237,7 @@ html[data-theme] .client-dashboard-production .client-group-pnl-card {
   border-left: 3px solid var(--ao-blue);
   border-radius: 4px;
   background: var(--ao-surface);
+  box-shadow: var(--dash-shadow);
 }
 
 html[data-theme] .client-dashboard-production .client-group-pnl-name,
@@ -253,18 +271,43 @@ html[data-theme] .client-dashboard-production .client-group-pnl-meta {
   gap: 5px;
 }
 
-html[data-theme] .client-dashboard-production .client-group-pnl-meta span {
-  height: 20px;
+/* Group summary chips: a muted label (Strategies / Legs / Open) followed by its
+   value, so the count reads as a labelled figure rather than a bare number. */
+html[data-theme] .client-dashboard-production .client-group-chip {
+  height: 24px;
   display: inline-flex;
   align-items: center;
-  padding: 0 7px;
+  gap: 6px;
+  padding: 0 9px;
   border: 1px solid var(--ao-border-soft);
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--ao-surface-2);
-  color: var(--ao-caption);
-  font-size: 10px;
-  font-weight: 500;
+  color: var(--ao-bold);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+html[data-theme] .client-dashboard-production .client-group-chip em {
+  font-style: normal;
+  color: var(--ao-caption);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+/* Margin deployed is a rupee figure, not a count - give it the blue accent that
+   ties it to the group's left border so it stands apart from the tallies. */
+html[data-theme] .client-dashboard-production .client-group-chip.margin {
+  color: var(--ao-blue);
+  background: color-mix(in srgb, var(--ao-blue) 9%, transparent);
+  border-color: color-mix(in srgb, var(--ao-blue) 30%, transparent);
+}
+
+html[data-theme] .client-dashboard-production .client-group-chip.margin em {
+  color: color-mix(in srgb, var(--ao-blue) 78%, var(--ao-caption));
 }
 
 html[data-theme] .client-dashboard-production .client-group-pnl-value {
@@ -297,14 +340,14 @@ html[data-theme] .client-dashboard-production .client-strategy-card {
   border: 1px solid var(--ao-border-soft);
   border-radius: 4px;
   background: var(--ao-surface);
-  box-shadow: none;
-  transition: border-color 120ms ease;
+  box-shadow: var(--dash-shadow);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-card:hover,
 html[data-theme] .client-dashboard-production .client-strategy-card.expanded {
   border-color: var(--ao-border);
-  box-shadow: none;
+  box-shadow: var(--dash-shadow-lift);
 }
 
 html[data-theme] .client-dashboard-production .client-strategy-summary {
@@ -482,6 +525,18 @@ html[data-theme] .client-dashboard-production .client-strategy-metrics > div:las
 html[data-theme] .client-dashboard-production .client-strategy-metrics > div:last-child:has(strong.up) {
   border-color: var(--ao-border-soft);
   background: transparent;
+}
+
+/* "Margin Deployed" sits before Strategy P&L so P&L keeps its :last-child
+   colouring. Give it room for a full currency figure and mute the
+   loading/unavailable dash. */
+html[data-theme] .client-dashboard-production .client-strategy-metrics > div.client-metric-margin {
+  min-width: 118px;
+}
+
+html[data-theme] .client-dashboard-production .client-strategy-metrics strong.client-metric-pending {
+  color: var(--ao-caption);
+  font-weight: 600;
 }
 
 /* Compact view tiles the strategy containers side by side instead of stacking
