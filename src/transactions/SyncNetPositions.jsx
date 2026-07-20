@@ -1071,6 +1071,7 @@ function SyncNetPositions() {
         <div className="positions-toolbar">
           <CompactSelect
             title="Group"
+            icon="group"
             value={groupId}
             onChange={handleGroupId}
             disabled={Boolean(running) || !groups.length}
@@ -1086,6 +1087,8 @@ function SyncNetPositions() {
 
           <CompactSelect
             title="Client"
+            icon="user"
+            menuMinWidth={240}
             value={userId}
             onChange={handleUserId}
             disabled={Boolean(running)}

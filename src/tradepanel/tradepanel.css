@@ -4684,15 +4684,109 @@ html[data-theme="dark"] .strategy-master-check.indeterminate {
   left: 0;
   right: 0;
   z-index: 3200;
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
   max-height: 260px;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 6px;
   border: 1px solid var(--ao-border);
   border-radius: 9px;
   background: var(--ao-surface);
   box-shadow: 0 10px 28px rgba(43, 47, 63, .14);
+}
+/* Only the options scroll; the search row stays pinned so it never slides out
+   of reach on a long client list. */
+.position-select-list {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  /* Required, not cosmetic: overflow-y:auto makes overflow-x compute from
+     `visible` to `auto`, so the fractional width the portal measures off
+     getBoundingClientRect was enough to raise a horizontal bar. Long labels
+     ellipsis instead. */
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ao-border) transparent;
+}
+.position-select-list::-webkit-scrollbar {
+  width: 8px;
+}
+.position-select-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.position-select-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--ao-border);
+}
+.position-select-list::-webkit-scrollbar-thumb:hover {
+  background: var(--ao-caption);
+}
+.position-select-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  height: 32px;
+  border: 1px solid var(--ao-border-soft);
+  border-radius: 7px;
+  background: var(--ao-surface-2);
+  color: var(--ao-caption);
+}
+.position-select-search:focus-within {
+  border-color: var(--ao-blue);
+  box-shadow: 0 0 0 3px var(--ao-blue-surface);
+}
+.position-select-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ao-bold);
+  font-size: 13px;
+  font-weight: 600;
+}
+.position-select-search input::placeholder {
+  color: var(--ao-placeholder);
+  font-weight: 500;
+}
+.position-select-search-count {
+  flex: none;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ao-caption);
+  font-variant-numeric: tabular-nums;
+}
+/* Stands in for a broker logo on client/group options, so every row in the menu
+   starts on the same visual column instead of text butting against the edge. */
+.position-select-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.position-select-option.active .position-select-avatar {
+  background: var(--ao-blue);
+  color: #fff;
+}
+.position-select-empty {
+  margin: 0;
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ao-caption);
 }
 .position-select-menu-portal {
   top: auto;
@@ -4706,6 +4800,7 @@ html[data-theme="dark"] .strategy-master-check.indeterminate {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  min-width: 0;
   min-height: 34px;
   padding: 7px 8px;
   border: 0;
@@ -4715,7 +4810,8 @@ html[data-theme="dark"] .strategy-master-check.indeterminate {
   text-align: left;
   cursor: pointer;
 }
-.position-select-option:hover {
+.position-select-option:hover,
+.position-select-option.highlighted {
   background: var(--ao-hover);
 }
 .position-select-option.active {

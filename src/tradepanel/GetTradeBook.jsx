@@ -394,6 +394,8 @@ export default function GetTradeBook() {
         <div className="positions-toolbar">
           <CompactSelect
             title="Client"
+            icon="user"
+            menuMinWidth={240}
             value={userId}
             onChange={handleUserId}
             options={visibleUsers.map((user) => ({

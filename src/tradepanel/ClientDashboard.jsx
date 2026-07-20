@@ -373,6 +373,7 @@ function ClientDashboard({ active = true }) {
           <div className="client-dashboard-picker">
             <CompactSelect
               title="Group"
+              icon="group"
               value={groupId}
               onChange={handleGroupId}
               disabled={!groups.length}
@@ -391,6 +392,7 @@ function ClientDashboard({ active = true }) {
           <div className="client-dashboard-picker">
             <CompactSelect
               title="User"
+              icon="user"
               value={userId}
               onChange={handleUserId}
               menuMinWidth={360}
