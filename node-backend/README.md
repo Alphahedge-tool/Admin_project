@@ -35,6 +35,7 @@ a user first (with the auto-login fields filled in).
 - `POST /api/angel/margin`, `POST /api/angel/charges`, `POST /api/angel/place-basket`
 - `POST /api/angel/order-book`, `POST /api/angel/trade-book`
 - `POST /api/angel/subscribe`, `POST /api/angel/basket-tokens`, `GET /api/angel/stream` (SSE live feed)
+- `POST /api/zerodha/basket-margin` (Kite `/margins/basket`; same `{ client, legs }` contract as `/api/angel/margin`)
 
 ## Env (all optional)
 

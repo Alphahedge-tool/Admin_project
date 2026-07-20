@@ -606,6 +606,111 @@ export function holdingsAuctions(input = {}) {
   return kiteRequest('/portfolio/holdings/auctions', { method: 'GET', input });
 }
 
+// ── basket margin ────────────────────────────────────────────────────────────
+// Kite's margin product codes. The shared leg shape speaks Angel's vocabulary
+// (the calculator was wired for Angel first), so translate rather than assume.
+function kiteProduct(value, exchange) {
+  const v = String(value || '').toUpperCase();
+  const derivative = ['NFO', 'BFO', 'MCX', 'CDS', 'BCD'].includes(String(exchange || '').toUpperCase());
+  switch (v) {
+    case 'MIS':
+    case 'INTRADAY':
+      return 'MIS';
+    case 'CNC':
+    case 'DELIVERY':
+      return derivative ? 'NRML' : 'CNC';
+    case 'NRML':
+    case 'CF':
+    case 'CARRYFORWARD':
+    default:
+      return derivative ? 'NRML' : 'CNC';
+  }
+}
+
+// One shared leg -> one Kite basket order. Kite identifies an instrument by
+// `tradingsymbol`, NOT by Angel's numeric token, so a leg with no symbol cannot
+// be priced here and is dropped rather than sent as a blank symbol.
+function kiteMarginOrder(leg) {
+  const symbol = trim(leg.symbol || leg.tradingsymbol || leg.trading_symbol);
+  if (!symbol) return null;
+
+  const quantity = Math.trunc((Number(leg.qty) || 0) * Math.max(Number(leg.lotSize) || 0, 1));
+  if (quantity <= 0) return null;
+
+  const exchange = trim(leg.exchange) || 'NFO';
+  const orderType = String(leg.orderType || 'MARKET').toUpperCase() === 'LIMIT' ? 'LIMIT' : 'MARKET';
+
+  return {
+    exchange,
+    tradingsymbol: symbol,
+    transaction_type: String(leg.tradeType || '').toUpperCase() === 'SELL' ? 'SELL' : 'BUY',
+    variety: 'regular',
+    product: kiteProduct(leg.productType, exchange),
+    order_type: orderType,
+    // MARKET orders price at the touch, so a price would be ignored; sending 0
+    // is what Kite's own examples do.
+    quantity,
+    price: orderType === 'LIMIT' ? Number(leg.price) || 0 : 0,
+    trigger_price: 0,
+  };
+}
+
+// Prices a whole strategy in one call via Kite's /margins/basket, which nets the
+// hedge benefit across the legs the way a real F&O basket is margined.
+//
+// consider_positions is deliberately FALSE. The legs handed here ARE the user's
+// open positions, so asking Kite to consider positions too would net the basket
+// against itself and report a near-zero *incremental* margin. What the dashboard
+// asks is "what does this strategy block", which is the basket priced standalone
+// - and it matches how Angel's batch calculator answers, so the two brokers'
+// numbers stay comparable on the same screen.
+export async function basketMargin(input = {}, legs = []) {
+  const orders = [];
+  for (const leg of legs || []) {
+    const order = kiteMarginOrder(leg);
+    if (order) orders.push(order);
+    if (orders.length >= 50) break;
+  }
+
+  if (!orders.length) {
+    return {
+      status: true, broker: 'zerodha', totalMarginRequired: 0, marginComponents: null, empty: true,
+    };
+  }
+
+  const result = await kiteRequest('/margins/basket', {
+    method: 'POST',
+    input,
+    body: orders,
+    query: { consider_positions: 'false' },
+  });
+
+  // `final` is the basket AFTER the spread benefit - the margin actually
+  // blocked. `initial` is the same basket priced leg-by-leg with no offset, so
+  // the difference is the hedge benefit worth surfacing in the tooltip.
+  const data = result.data || {};
+  const final = data.final || {};
+  const initial = data.initial || {};
+  const benefit = Number(initial.total || 0) - Number(final.total || 0);
+
+  return {
+    status: true,
+    broker: 'zerodha',
+    session: result.session,
+    totalMarginRequired: Number(final.total || 0),
+    // Keyed the way Angel names these, so the dashboard's existing breakdown
+    // tooltip reads both brokers without branching.
+    marginComponents: {
+      spanMargin: Number(final.span || 0),
+      exposureMargin: Number(final.exposure || 0),
+      netPremium: Number(final.option_premium || 0),
+      marginBenefit: benefit > 0 ? benefit : 0,
+    },
+    positionCount: orders.length,
+    raw: data,
+  };
+}
+
 function normalizeOrder(row = {}) {
   return {
     ...row,

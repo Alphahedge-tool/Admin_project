@@ -440,6 +440,96 @@ function marginRequest(order = {}) {
   return required;
 }
 
+// Kotak's product codes. The shared leg shape speaks Angel's vocabulary, and
+// marginRequest() passes `prod` through untouched, so 'CARRYFORWARD' would reach
+// Kotak verbatim and be rejected - the translation has to happen here.
+function kotakProduct(value, exchange) {
+  const v = String(value || '').toUpperCase();
+  const derivative = ['NFO', 'BFO', 'MCX', 'CDS'].includes(String(exchange || '').toUpperCase());
+  switch (v) {
+    case 'MIS':
+    case 'INTRADAY':
+      return 'MIS';
+    case 'CNC':
+    case 'DELIVERY':
+      return derivative ? 'NRML' : 'CNC';
+    case 'NRML':
+    case 'CF':
+    case 'CARRYFORWARD':
+    default:
+      return derivative ? 'NRML' : 'CNC';
+  }
+}
+
+// Prices a whole strategy for Kotak.
+//
+// IMPORTANT - this is a GROSS figure, not a netted one. Angel and Kite both
+// expose a basket calculator that offsets a hedge across the legs and returns
+// the margin actually blocked. Kotak's /quick/user/check-margin prices ONE order
+// at a time and has no basket equivalent, so the only thing available is to
+// price each leg alone and add them up. For a hedged spread that OVERSTATES the
+// margin - a bought leg that would have offset a sold one instead contributes
+// its own margin on top. The result therefore carries netted:false so the
+// caller can label it as an estimate rather than pass it off as a real figure.
+export async function basketMargin(input = {}, legs = []) {
+  const orders = [];
+  for (const leg of legs || []) {
+    const token = String(leg.token || leg.symbolToken || leg.symbol_token || '').trim();
+    if (!token) continue;
+    const quantity = Math.trunc((Number(leg.qty) || 0) * Math.max(Number(leg.lotSize) || 0, 1));
+    if (quantity <= 0) continue;
+
+    const exchange = String(leg.exchange || '').trim() || 'NFO';
+    const isLimit = String(leg.orderType || 'MARKET').toUpperCase() === 'LIMIT';
+    orders.push({
+      token,
+      exchange,
+      qty: quantity,
+      // Kotak's own note: market orders must send prc "0".
+      prc: isLimit ? Number(leg.price) || 0 : 0,
+      prcTp: isLimit ? 'LIMIT' : 'MARKET',
+      prod: kotakProduct(leg.productType, exchange),
+      trnsTp: leg.tradeType,
+    });
+    if (orders.length >= 50) break;
+  }
+
+  if (!orders.length) {
+    return {
+      status: true, broker: 'kotak', totalMarginRequired: 0, marginComponents: null, netted: false, empty: true,
+    };
+  }
+
+  // Sequential on purpose: Kotak rate-limits, and each call reuses the one
+  // session rather than racing several logins.
+  let total = 0;
+  let session;
+  const priced = [];
+  for (const order of orders) {
+    const result = await checkMargin(input, order);
+    session = result.session || session;
+    // ordMrgn is "margin required for THIS order". reqdMrgn/totMrgnUsd are
+    // account-level totals that already include margin used elsewhere, so
+    // summing those across legs would multiply the account's existing usage.
+    const value = Number(result.margin?.orderMargin || 0);
+    total += value;
+    priced.push({ token: order.token, margin: value });
+  }
+
+  return {
+    status: true,
+    broker: 'kotak',
+    session,
+    totalMarginRequired: total,
+    // No SPAN/exposure split is available from this endpoint, and no hedge
+    // benefit exists to report, so there is nothing honest to put here.
+    marginComponents: null,
+    netted: false,
+    positionCount: orders.length,
+    legs: priced,
+  };
+}
+
 export async function checkMargin(input, order = {}) {
   const jData = marginRequest(order);
   const result = await requestReport(input, '/quick/user/check-margin', { method: 'POST', jData });

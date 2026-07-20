@@ -291,6 +291,14 @@ app.get('/api/zerodha/portfolio/positions', h(async (req) => (
   })
 )));
 
+// Mirrors /api/angel/margin: same { client, legs } request, same
+// { totalMarginRequired, marginComponents } answer, so the dashboard prices an
+// Angel and a Zerodha strategy through one code path.
+app.post('/api/zerodha/basket-margin', h(async (req) => {
+  const b = req.body || {};
+  return zerodha.basketMargin(b.client || {}, b.legs || []);
+}));
+
 app.post('/api/zerodha/order-book', h(async (req) => zerodha.orderBook(req.body || req.query || {})));
 app.post('/api/zerodha/trade-book', h(async (req) => zerodha.tradeBook(req.body || req.query || {})));
 
@@ -847,6 +855,15 @@ app.post('/api/kotak/limits', h(async (req) => {
 app.post('/api/kotak/check-margin', h(async (req) => {
   const body = req.body || {};
   return kotak.checkMargin(body.client || {}, body.order || body);
+}));
+
+// Same { client, legs } contract as the Angel and Zerodha margin routes, so the
+// dashboard prices all three brokers through one code path. Note the answer
+// carries netted:false - Kotak has no basket calculator, so this is a per-leg
+// sum with no hedge benefit. See kotak.basketMargin.
+app.post('/api/kotak/basket-margin', h(async (req) => {
+  const b = req.body || {};
+  return kotak.basketMargin(b.client || {}, b.legs || []);
 }));
 
 app.post('/api/kotak/feed/sync', h(async (req) => {
