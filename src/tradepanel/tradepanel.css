@@ -2437,6 +2437,27 @@ select { min-width: 96px; }
   font-size: var(--fs-sm);
   color: var(--ao-red);
 }
+/* Neutral, not a warning: the action is correct and allowed. Used when moving
+   legs into a group tagged to a different broker, which is supported - the legs
+   keep their own account - but leaves the group holding more than one broker. */
+.strategy-dialog-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--ao-border);
+  border-radius: 7px;
+  background: var(--ao-surface-2);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--ao-base);
+}
+.strategy-dialog-note svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ao-blue);
+}
 .strategy-dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -4931,11 +4952,38 @@ html[data-theme="dark"] .strategy-master-check.indeterminate {
   color: #6f7785;
   text-align: left;
 }
+/* Holds the group checkbox next to the (button) collapse bar, which cannot
+   contain it - see the markup note in GetPositions. */
+.position-expiry-row-bar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
 .position-expiry-row-content {
   display: flex;
   align-items: center;
   width: 100%;
   min-width: 0;
+}
+/* Broker logo on an account-grouped header, so a client's Angel and Kotak books
+   are told apart at a glance rather than by reading the account id.
+   .broker-mark is a fixed square that CROPS a wide logo down to its icon, so the
+   image must keep width:auto - pinning both dimensions squashes the whole
+   wordmark into the square and it renders as a smear. */
+.position-group-broker.broker-mark {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  margin-right: 8px;
+}
+.position-group-broker.broker-mark img {
+  width: auto;
+  height: 17px;
+}
+.position-group-broker.broker-mark--zerodha img {
+  width: 100%;
+  height: auto;
 }
 /* The group header is a button so the whole expiry bar toggles its rows. */
 button.position-expiry-row-content {
@@ -4986,6 +5034,43 @@ button.position-expiry-row-content {
   background: #FFFFFF;
   border: 1px solid #DDE3EF;
   color: #536179;
+}
+/* Long / short / flat chips on a group header. `.position-expiry-row span` gives
+   every nested span the white title pill, so this has to opt out by hand -
+   otherwise the wrapper draws a second pill around the chips. */
+.position-expiry-row .position-group-mix {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: auto;
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.position-expiry-row .position-group-mix em {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+.position-expiry-row .position-group-mix .is-long {
+  background: var(--ao-green-bg);
+  color: var(--ao-green);
+}
+.position-expiry-row .position-group-mix .is-short {
+  background: var(--ao-red-bg);
+  color: var(--ao-red);
+}
+.position-expiry-row .position-group-mix .is-flat {
+  background: #EEF2F8;
+  color: #8A94A6;
 }
 .position-expiry-row strong {
   margin-left: auto;
@@ -5478,6 +5563,68 @@ html[data-theme] .get-positions-view .position-expiry-row small:first-of-type {
 .position-head-check {
   flex: none;
   margin-right: 1px;
+}
+/* Owner of a row in Get Position's group scope: the broker mark, then the client
+   over its account id. Only rendered when several accounts share the table. */
+.position-account-cell {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.position-account-cell .broker-mark {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+/* Cropped, not squashed - see the note on .position-group-broker. */
+.position-account-cell .broker-mark img {
+  width: auto;
+  height: 18px;
+}
+.position-account-cell .broker-mark--zerodha img {
+  width: 100%;
+  height: auto;
+}
+.position-account-cell-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.25;
+}
+.position-account-cell-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--ao-bold);
+}
+.position-account-cell-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ao-caption);
+}
+
+/* Ticks every leg under one expiry-group header. Sits in the group bar, left of
+   the caret, so it lines up with the row checkboxes underneath it. */
+.position-group-check {
+  flex: none;
+  margin-right: 9px;
+}
+/* Some but not all of the group's legs are ticked. Distinct from checked so a
+   partial group is never mistaken for a full one. */
+.position-row-check.partial {
+  border-color: var(--ao-blue);
+  background: var(--ao-blue-surface);
+  color: var(--ao-blue);
+}
+.position-row-check.partial svg {
+  stroke: var(--ao-blue);
 }
 .position-symbol-line strong {
   min-width: 0;
@@ -7502,6 +7649,17 @@ html[data-theme="dark"] .book-view-production .orderbook-symbol-line .position-e
   color: #AFCBFA;
 }
 
+/* The rule above paints every nested span as the blue title pill, so the chip
+   wrapper has to opt out in dark too - same reason as in light. */
+html[data-theme="dark"] .position-expiry-row .position-group-mix {
+  background: none;
+  border-color: transparent;
+}
+html[data-theme="dark"] .position-expiry-row .position-group-mix .is-flat {
+  background: #24304A;
+  color: #8FA0BE;
+}
+
 html[data-theme="dark"] .book-view-production .orderbook-symbol-line strong,
 html[data-theme="dark"] .book-view-production .orderbook-symbol-line .position-strike {
   color: var(--ao-bold);
@@ -8996,3 +9154,290 @@ html[data-theme="dark"] .get-positions-view {
   background: color-mix(in srgb, var(--ao-surface-2) 55%, var(--ao-surface));
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Get Position — group scope (8 columns) and the group header bar
+   ══════════════════════════════════════════════════════════════════════════
+   The shared book table is table-layout: fixed and declares its widths
+   POSITIONALLY (th:nth-child(1..7)), which is exactly seven columns adding up
+   to 100%. Group scope inserts Client/Account as column 2, so every width slid
+   one place along - Client/Account took the centred product width, the price
+   columns took each other's - and column 8 (P&L) was left with the 0% that
+   remained. On a fixed layout that is a zero-width column: the group read's P&L
+   was clipped out of existence, which is what made the grouped table unreadable.
+   These rules key on the COLUMN (.col-*, emitted by GetPositions) instead of
+   its index, so the 8-column read has its own honest set. Scoped to
+   .get-positions-view + .position-book-grouped so Order Book, Trade Book and the
+   dashboard's embedded tables keep the positional rules they were written for. */
+.get-positions-view .position-book-table.position-book-grouped th.col-stock,
+.get-positions-view .position-book-table.position-book-grouped td.col-stock { width: 26%; text-align: left; }
+.get-positions-view .position-book-table.position-book-grouped th.col-account,
+.get-positions-view .position-book-table.position-book-grouped td.col-account { width: 13%; text-align: left; }
+.get-positions-view .position-book-table.position-book-grouped th.col-product,
+.get-positions-view .position-book-table.position-book-grouped td.col-product { width: 11%; text-align: center; }
+.get-positions-view .position-book-table.position-book-grouped th.col-netQty,
+.get-positions-view .position-book-table.position-book-grouped td.col-netQty { width: 9.5%; text-align: right; }
+.get-positions-view .position-book-table.position-book-grouped th.col-buyAvg,
+.get-positions-view .position-book-table.position-book-grouped td.col-buyAvg,
+.get-positions-view .position-book-table.position-book-grouped th.col-sellAvg,
+.get-positions-view .position-book-table.position-book-grouped td.col-sellAvg { width: 10%; text-align: right; }
+.get-positions-view .position-book-table.position-book-grouped th.col-ltp,
+.get-positions-view .position-book-table.position-book-grouped td.col-ltp { width: 9.5%; text-align: right; }
+.get-positions-view .position-book-table.position-book-grouped th.col-pnl,
+.get-positions-view .position-book-table.position-book-grouped td.col-pnl { width: 11%; text-align: right; }
+
+/* The header controls are aligned positionally too (column 2 centres itself),
+   so they need the same treatment: the owner column reads left like a label,
+   the product column centres like the tags under it. */
+.get-positions-view .position-book-grouped th.col-account .position-col-head,
+.get-positions-view .position-book-grouped th.col-account .position-sort-btn {
+  justify-content: flex-start;
+}
+.get-positions-view .position-book-grouped th.col-product .position-col-head,
+.get-positions-view .position-book-grouped th.col-product .position-sort-btn {
+  justify-content: center;
+}
+
+/* ── The group header bar ─────────────────────────────────────────────────
+   Identity on the left (broker, client, account), the shape of the book in the
+   middle, and the subtotal in the P&L column itself - see the markup note in
+   GetPositions. Everything left of the subtotal has to be able to shrink: the
+   cell clips its overflow, so a long client name silently ate the counts. */
+.get-positions-view .position-book-table.position-book-compact tbody tr.position-expiry-row td {
+  height: 32px;
+}
+/* The blanket `.position-expiry-row span` chip rule paints EVERY nested span as
+   the accent pill - including the broker logo's wrapper, which rendered as a
+   coloured blob with the logo squashed inside it. It is an image, not a chip. */
+html[data-theme] .get-positions-view .position-expiry-row .position-group-broker.broker-mark {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-right: 9px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-broker.broker-mark img {
+  width: auto;
+  height: 18px;
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-broker.broker-mark--zerodha img {
+  width: 100%;
+  height: auto;
+}
+/* Client (or expiry) - the one thing the eye should land on first. inline-block
+   rather than the inherited inline-flex, so the text can actually ellipsis. */
+html[data-theme] .get-positions-view .position-expiry-row .position-group-name {
+  display: inline-block;
+  min-width: 0;
+  max-width: 240px;
+  height: 19px;
+  padding: 0 8px;
+  /* 5px, not the inherited 999px pill: the chips in the rows underneath are
+     squared off, and a header that speaks their language reads as their
+     summary rather than as decoration. */
+  border-radius: 5px;
+  line-height: 19px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Broker · account id underneath it, in the quieter accent tint. */
+html[data-theme] .get-positions-view .position-expiry-row small.position-group-sub {
+  display: inline-block;
+  min-width: 0;
+  max-width: 220px;
+  height: 19px;
+  /* Tight against the name: the two are one identity, not two facts. */
+  margin-left: 6px;
+  padding: 0 7px;
+  border-radius: 5px;
+  line-height: 17px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Long / short / flat and the count travel together on the right, next to the
+   subtotal, so the bar reads identity → shape → money. */
+html[data-theme] .get-positions-view .position-expiry-row .position-group-mix {
+  flex: none;
+  margin-left: auto;
+  padding-left: 10px;
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-mix em {
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+html[data-theme] .get-positions-view .position-expiry-row small.position-group-count {
+  flex: none;
+  height: auto;
+  margin-left: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ao-caption);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The subtotal cell: no accent edge (that belongs to the bar's left border
+   only), and the number sits directly over the column it totals. */
+html[data-theme] .get-positions-view .position-book-table.position-book-compact tbody tr.position-expiry-row td.position-group-total {
+  border-left: 0;
+  padding-left: 0;
+  text-align: right;
+}
+.get-positions-view .position-expiry-row .position-group-pnl {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .1px;
+}
+.get-positions-view .position-expiry-row-content:hover .position-expiry-caret {
+  opacity: .7;
+}
+
+/* ── Both headers stay on screen while the book scrolls ───────────────────
+   The column header was already position: sticky but never given an offset, so
+   it never actually stuck. With several accounts on one table that matters
+   twice over: past the first screenful the reader had neither the column names
+   nor the name of the account whose rows they were reading. The group bar sticks
+   directly under the column header (34px, its height on this screen) and the
+   next group slides it away, so the row on screen always says whose book it is. */
+.get-positions-view .position-book-table.position-book-compact th {
+  top: 0;
+  z-index: 5;
+}
+html[data-theme] .get-positions-view .position-book-table.position-book-compact tbody tr.position-expiry-row td {
+  position: sticky;
+  top: 34px;
+  z-index: 3;
+}
+
+/* ── What the group is holding: underlying + expiries ─────────────────────
+   A client-grouped header names a PERSON, so without this the bar never says
+   the book is NIFTY, or which series it sits in - the reader had to expand the
+   group and read the rows. Same chip language as the contract rows underneath:
+   the underlying in the row's own ink, the expiry in the blue EXP tag. The
+   wrapper opts out of the blanket `.position-expiry-row span` pill, exactly as
+   .position-group-mix does. */
+html[data-theme] .get-positions-view .position-expiry-row .position-group-contracts {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: auto;
+  min-width: 0;
+  margin-left: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  overflow: hidden;
+}
+/* A hairline between who the group is and what it holds. One divider, not two -
+   the auto margin before the counts already separates the stats. */
+html[data-theme] .get-positions-view .position-expiry-row .position-group-contracts::before {
+  content: "";
+  flex: none;
+  width: 1px;
+  height: 12px;
+  margin-right: 5px;
+  background: color-mix(in srgb, var(--group-accent) 28%, transparent);
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-contracts em {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-root {
+  border: 1px solid var(--gp-line);
+  background: var(--ao-surface);
+  color: var(--ao-bold);
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-exp {
+  padding: 0 6px 0 5px;
+  border: 1px solid color-mix(in srgb, var(--ao-blue) 28%, var(--ao-border));
+  background: var(--ao-blue-bg);
+  color: var(--ao-blue);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-exp::before {
+  content: "EXP";
+  margin-right: 5px;
+  padding-right: 5px;
+  border-right: 1px solid color-mix(in srgb, var(--ao-blue) 25%, var(--ao-border));
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+html[data-theme] .get-positions-view .position-expiry-row .position-group-more {
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--ao-caption) 14%, transparent);
+  color: var(--ao-caption);
+  font-weight: 600;
+}
+
+/* ── Toolbar pickers: the VALUE leads, the meta chip gives way ─────────────
+   The trigger paints [mark] [meta] [value] in that order, and the meta chip was
+   flex: none inside a fixed-width box - so when the toolbar filled up, the only
+   thing that could shrink was the value. The Client picker read "All of ..."
+   while "3 clients" beside it sat at full width, and the Group picker was down
+   to "G...". A picker exists to say what is selected, so the value gets the
+   room and the meta is what truncates.
+   Widths become content-sized between a floor and a ceiling: "Ungrouped" and
+   "Expanded" stop reserving the room a client name needs, which is where the
+   space for the long values comes from. Scoped to Get Position - the same
+   pickers on Sync Net Positions keep their fixed widths. */
+.get-positions-view .positions-compact-select .position-select,
+.get-positions-view .positions-compact-select:not(.position-group-select) .position-select,
+.get-positions-view .positions-compact-select:not(.position-group-select) + .positions-compact-select:not(.position-group-select) .position-select,
+.get-positions-view .positions-compact-select.position-group-select .position-select {
+  width: auto;
+  min-width: 88px;
+  max-width: 208px;
+}
+/* The pickers may now give ground on a narrow window instead of pushing the
+   status pills off the end of a non-wrapping toolbar. */
+.get-positions-view .positions-compact-select {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.get-positions-view .position-select-text strong {
+  flex: 1 1 auto;
+}
+.get-positions-view .position-select-text em {
+  flex: 0 5 auto;
+  min-width: 0;
+  max-width: 88px;
+}
+
+/* The whole group bar is a button, so it should look like one under the
+   pointer. The group row's own background out-specifies the table's hover rule
+   (deliberately - a sticky header must stay opaque), which left the one clickable
+   row on the table as the only one with no hover state at all. */
+html[data-theme] .get-positions-view .position-book-table.position-book-compact tbody tr.position-expiry-row:hover td {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--group-accent) 18%, var(--ao-surface)),
+    color-mix(in srgb, var(--group-accent) 11%, var(--ao-surface)));
+}

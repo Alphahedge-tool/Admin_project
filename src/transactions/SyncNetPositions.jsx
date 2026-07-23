@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
-  AlignJustify, ArrowUpDown, Check, ChevronDown, History, Info, Minus, Pencil, Radio, RefreshCw, RotateCcw, Table, Trash2, X,
+  AlignJustify, ArrowRightLeft, ArrowUpDown, Check, ChevronDown, History, Info, Layers, Minus, Pencil, Radio, RefreshCw, RotateCcw, Table, Trash2, X,
 } from 'lucide-react'
 import { apiGet, apiPost } from '../config/api'
 import { useFeedMasterAccount } from '../feedmaster/feedMasterStore'
@@ -9,7 +10,7 @@ import {
 } from '../feedmaster/angelSessionStore'
 import { releaseFeedTokens } from '../tradepanel/feedTokens'
 import { getSavedTradeAccount, saveTradeAccount } from '../tradepanel/tradeAccountStore'
-import { CompactSelect } from '../tradepanel/PositionSelect'
+import { CompactSelect, PositionSelect } from '../tradepanel/PositionSelect'
 import { BrokerMark } from '../tradepanel/BrokerMark'
 import { legIsClosed, money, withLiveTick } from '../tradepanel/legFormat'
 import { CompactLegs, LegsTable } from '../tradepanel/strategyLegsView'
@@ -125,6 +126,10 @@ function SyncNetPositions() {
   const [dateFilter, setDateFilter] = useState('all')
   const [selectedLegKeys, setSelectedLegKeys] = useState(() => new Set())
   const [removingLegs, setRemovingLegs] = useState(false)
+  const [movingLegs, setMovingLegs] = useState(false)
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false)
+  const [moveTargetCode, setMoveTargetCode] = useState('')
+  const [moveError, setMoveError] = useState('')
   const [clearingStrategies, setClearingStrategies] = useState(false)
   const [editingStrategyCode, setEditingStrategyCode] = useState('')
   const [editingStrategyId, setEditingStrategyId] = useState('')
@@ -689,6 +694,108 @@ function SyncNetPositions() {
     }
   }, [selectedLegKeys, loadStrategies, userId])
 
+  // Which strategies the ticked legs currently sit in. A leg's home is just its
+  // strategy_code, so this is what the move re-points - and what decides which
+  // groups are worth offering as a destination.
+  const selectedLegSources = useMemo(() => {
+    if (!selectedLegKeys.size) return []
+    return strategies.filter((strategy) => (
+      (strategy.legs || []).some((leg) => selectedLegKeys.has(leg.id))
+    ))
+  }, [selectedLegKeys, strategies])
+
+  // Every other group of this user's. A group is only dropped from the list when
+  // it already holds ALL the ticked legs - with a mixed selection it is still a
+  // valid destination for the rest.
+  const moveTargetOptions = useMemo(() => {
+    if (!selectedLegKeys.size) return []
+
+    const selectedIds = [...selectedLegKeys]
+    return strategies.filter((strategy) => {
+      const legIds = new Set((strategy.legs || []).map((leg) => leg.id))
+      return !selectedIds.every((id) => legIds.has(id))
+    })
+  }, [selectedLegKeys, strategies])
+
+  const moveTarget = useMemo(
+    () => strategies.find((strategy) => strategy.strategy_code === moveTargetCode) || null,
+    [moveTargetCode, strategies],
+  )
+
+  // Each leg carries the account it was actually traded on, and both the sync's
+  // scope gate and the Client Dashboard's feed gate read that leg tag before the
+  // group's. So a cross-broker move is correct, not dangerous - it just makes
+  // the destination a mixed-broker group, which is worth saying out loud since
+  // that group's own broker tag will no longer describe everything inside it.
+  const moveBrokerNote = useMemo(() => {
+    if (!moveTarget) return ''
+
+    const targetBroker = String(moveTarget.broker_name || '').trim().toLowerCase()
+    const incoming = selectedLegSources.find((source) => {
+      const sourceBroker = String(source.broker_name || '').trim().toLowerCase()
+      return sourceBroker && targetBroker && sourceBroker !== targetBroker
+    })
+    if (!incoming) return ''
+
+    return `"${moveTarget.strategy_name}" is tagged ${moveTarget.broker_name}, so it will hold legs from two brokers. These legs stay owned by ${incoming.broker_name} and keep syncing and pricing with that account.`
+  }, [moveTarget, selectedLegSources])
+
+  const openMoveDialog = useCallback(() => {
+    setMoveTargetCode('')
+    setMoveError('')
+    setMoveDialogOpen(true)
+  }, [])
+
+  // Re-points the ticked legs at another group. Unlike Remove + re-add from Get
+  // Position this keeps each leg's id, created_at and exit columns, which is also
+  // the only way a CLOSED leg can move at all - it is no longer in the broker's
+  // position snapshot, so there would be nothing to re-add.
+  const moveSelectedLegs = useCallback(async () => {
+    const ids = Array.from(selectedLegKeys)
+    if (!ids.length || !moveTargetCode || movingLegs) return
+
+    setMovingLegs(true)
+    setMoveError('')
+    try {
+      const res = await apiPost('/strategy-master/move-leg.php', {
+        user_id: Number(userId),
+        target_strategy_code: moveTargetCode,
+        leg_ids: ids,
+      })
+
+      const emptied = res.data?.emptied_groups || []
+      const parts = [res.message || 'Legs moved']
+      if (emptied.length) {
+        parts.push(`${emptied.join(', ')} ${emptied.length === 1 ? 'is' : 'are'} now empty`)
+      }
+      setStatus(parts.join(' · '))
+
+      setSelectedLegKeys(new Set())
+      setMoveDialogOpen(false)
+      setMoveTargetCode('')
+      await loadStrategies(userId)
+    } catch (error) {
+      setMoveError(error.message || 'Failed to move legs')
+    } finally {
+      setMovingLegs(false)
+    }
+  }, [selectedLegKeys, moveTargetCode, movingLegs, userId, loadStrategies])
+
+  useEffect(() => {
+    if (!moveDialogOpen) return undefined
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && !movingLegs) setMoveDialogOpen(false)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [moveDialogOpen, movingLegs])
+
+  // Nothing ticked means nothing to move - and the dialog's own target list is
+  // derived from that selection, so leaving it open would strand it empty.
+  useEffect(() => {
+    if (!selectedLegKeys.size) setMoveDialogOpen(false)
+  }, [selectedLegKeys])
+
   // Wipe every saved strategy (and all their legs) for the selected user from the
   // backend in one call. Permanent and unlike per-leg removal there is no unsync
   // to bring these back, so it is gated behind an explicit confirm.
@@ -1222,6 +1329,17 @@ function SyncNetPositions() {
             <>
               <span className="positions-toolbar-divider" aria-hidden="true" />
               <span className="positions-selection-count">{selectedLegKeys.size} selected</span>
+              <button
+                type="button"
+                className="positions-group-btn"
+                onClick={openMoveDialog}
+                disabled={movingLegs || !moveTargetOptions.length}
+                title={moveTargetOptions.length
+                  ? 'Move the selected legs into another group, keeping their entry date and exit data'
+                  : 'No other group to move these legs into'}
+              >
+                <ArrowRightLeft size={13} /> Move to group
+              </button>
               <button type="button" className="positions-remove-btn" onClick={removeSelectedLegs} disabled={removingLegs}>
                 <Trash2 size={13} /> {removingLegs ? 'Removing…' : 'Remove'}
               </button>
@@ -1596,6 +1714,101 @@ function SyncNetPositions() {
           </div>
         )}
       </div>
+
+      {moveDialogOpen && createPortal(
+        <div
+          className="strategy-dialog-backdrop"
+          onMouseDown={() => { if (!movingLegs) setMoveDialogOpen(false) }}
+        >
+          <div
+            className="strategy-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="move-legs-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="strategy-dialog-head">
+              <div className="strategy-dialog-title">
+                <span className="strategy-dialog-title-icon"><ArrowRightLeft size={17} /></span>
+                <span className="strategy-dialog-heading">
+                  <strong id="move-legs-dialog-title">Move legs to another group</strong>
+                  <small>Keeps entry date, exit price and closed state</small>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="strategy-dialog-close"
+                onClick={() => setMoveDialogOpen(false)}
+                disabled={movingLegs}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="strategy-dialog-body">
+              <div className="strategy-dialog-selection">
+                <span className="strategy-dialog-selection-count">
+                  <strong>{selectedLegKeys.size}</strong>
+                  <small>Selected {selectedLegKeys.size === 1 ? 'leg' : 'legs'}</small>
+                </span>
+                <span className="strategy-dialog-selection-scope">
+                  <small>From</small>
+                  <strong>
+                    {selectedLegSources.length === 1
+                      ? selectedLegSources[0].strategy_name
+                      : `${selectedLegSources.length} groups`}
+                  </strong>
+                </span>
+                <span className="strategy-dialog-selection-scope">
+                  <small>Client</small>
+                  <strong>{userLabel(selectedUser) || 'Selected client'}</strong>
+                </span>
+              </div>
+
+              <label className="strategy-dialog-field">
+                <span>Move into</span>
+                <PositionSelect
+                  value={moveTargetCode}
+                  onChange={(value) => { setMoveTargetCode(value); setMoveError('') }}
+                  emptyLabel="Select a group"
+                  portal
+                  options={moveTargetOptions.map((strategy) => ({
+                    value: strategy.strategy_code,
+                    label: strategy.strategy_name,
+                    meta: strategyBrokerLabel(strategy) || `${(strategy.legs || []).length} legs`,
+                  }))}
+                />
+              </label>
+
+              {moveBrokerNote && (
+                <p className="strategy-dialog-note"><Info size={13} /> {moveBrokerNote}</p>
+              )}
+              {moveError && <p className="strategy-dialog-error">{moveError}</p>}
+            </div>
+
+            <div className="strategy-dialog-actions">
+              <button
+                type="button"
+                className="strategy-dialog-cancel"
+                onClick={() => setMoveDialogOpen(false)}
+                disabled={movingLegs}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="strategy-dialog-save"
+                onClick={moveSelectedLegs}
+                disabled={movingLegs || !moveTargetCode}
+              >
+                {movingLegs ? 'Moving…' : <><Layers size={13} /> Move {selectedLegKeys.size} {selectedLegKeys.size === 1 ? 'leg' : 'legs'}</>}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

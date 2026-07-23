@@ -92,10 +92,15 @@ function ClientDashboard({ active = true }) {
   const legFeedKey = useMemo(() => {
     const seen = new Set()
     brokerStrategies.forEach((strategy) => {
-      // A strategy saved from a Kotak account stores Kotak tokens on its legs.
-      if (strategy.broker_name && !isAngelBroker(strategy.broker_name)) return
       ;(strategy.legs || []).forEach((leg) => {
         if (legIsClosed(leg)) return
+        // Gated per LEG, not per group. A leg carries the account it was traded
+        // on, and legs can be moved between groups - so a group is no longer
+        // guaranteed to be single-broker, and gating on the group's tag would
+        // either drop Angel legs sitting in a Kotak-tagged group or (far worse)
+        // let a Kotak token onto Angel's feed because the group looked Angel.
+        const broker = leg.broker_name || strategy.broker_name
+        if (broker && !isAngelBroker(broker)) return
         const token = leg.symbol_token
         if (token == null || token === '') return
         seen.add(`${leg.exchange || 'NFO'}|${token}`)

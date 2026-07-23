@@ -39,12 +39,18 @@ export function useAvailableAccounts() {
  * Order Book, which went on showing whoever it had loaded with. This adopts the
  * change instead, so switching tabs keeps the same client on screen.
  */
+// `enabled` opts a page out of adoption while it is showing something the shared
+// selection cannot describe - Get Position reading a whole GROUP of accounts at
+// once, where there is no single "current account" to be adopted into. Without
+// it, another tab changing account would silently collapse that group view back
+// to one client, possibly mid-load.
 export function useSharedTradeAccount({
-  userId, setUserId, configId, setConfigId, configs, onAdopt,
+  userId, setUserId, configId, setConfigId, configs, onAdopt, enabled = true,
 }) {
   const shared = useTradeAccount()
 
   useEffect(() => {
+    if (!enabled) return
     const next = String(shared.userId || '')
     if (!next || next === String(userId)) return
     setUserId(next)
@@ -57,11 +63,12 @@ export function useSharedTradeAccount({
   }, [shared.userId])
 
   useEffect(() => {
+    if (!enabled) return
     const next = String(shared.configId || '')
     if (!next || next === String(configId)) return
     if (!configs.some((config) => String(config.id) === next)) return
     setConfigId(next)
     onAdopt?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shared.configId, configs])
+  }, [shared.configId, configs, enabled])
 }
