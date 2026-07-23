@@ -301,7 +301,18 @@ function BrokerConfigDialog({ user, open, onClose }) {
   }, [open, user?.id])
 
   useEffect(() => {
-    const allowedOrigins = new Set(['http://127.0.0.1:3001', 'http://localhost:3001'])
+    // The callback page is served by the Node backend, so the message arrives from
+    // the backend's origin - which is not always :3001, since `npm run dev` moves
+    // the backend to the next free port when that one is taken (see scripts/dev.mjs)
+    // and reports it here. The default stays listed as well, so a build served
+    // behind a plain reverse proxy still matches.
+    const backendPort = Number(import.meta.env.VITE_BACKEND_PORT) || 3001
+    const allowedOrigins = new Set([
+      `http://127.0.0.1:${backendPort}`,
+      `http://localhost:${backendPort}`,
+      'http://127.0.0.1:3001',
+      'http://localhost:3001',
+    ])
 
     const onMessage = (event) => {
       if (!allowedOrigins.has(event.origin)) return
